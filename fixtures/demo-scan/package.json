@@ -1,0 +1,6 @@
+{
+  "name": "demo-scan",
+  "version": "0.0.0",
+  "private": true,
+  "description": "OpenArch Phase 1 demo — synthetic TS fixture for scan e2e verification"
+}

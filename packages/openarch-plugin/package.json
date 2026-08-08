@@ -1,0 +1,43 @@
+{
+  "name": "@openarch/plugin",
+  "version": "0.1.0",
+  "description": "OpenArch 架构治理工具——Coding Agent 插件。防腐主线闭环 + 多平台适配（Claude Code、Cursor、Codex、OpenCode、Hermes）。",
+  "author": "VilTea <https://github.com/VilTea>",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "openarch-agent-install": "./bin/openarch-agent-install.js"
+  },
+  "files": [
+    "bin",
+    "assets",
+    "skills",
+    "commands",
+    ".codex-plugin",
+    ".claude-plugin",
+    ".cursor-plugin",
+    ".codex",
+    ".opencode",
+    ".hermes",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "openarch",
+    "architecture",
+    "governance",
+    "skills",
+    "claude-code",
+    "cursor",
+    "codex",
+    "opencode",
+    "hermes-agent",
+    "code-quality"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openarch/openarch.git"
+  }
+}

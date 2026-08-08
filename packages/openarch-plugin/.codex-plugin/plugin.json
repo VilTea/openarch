@@ -1,0 +1,32 @@
+{
+  "name": "openarch",
+  "version": "0.1.0+codex.20260711182754",
+  "description": "OpenArch architecture governance for evidence-based coding-agent workflows.",
+  "author": {
+    "name": "OpenArch"
+  },
+  "license": "MIT",
+  "keywords": [
+    "architecture",
+    "governance",
+    "code-quality",
+    "agent-workflow"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "OpenArch",
+    "shortDescription": "Evidence-based architecture governance",
+    "longDescription": "Guide coding agents through evidence-based impact analysis, policy evaluation, testing, and experience capture.",
+    "developerName": "OpenArch",
+    "category": "Productivity",
+    "capabilities": [
+      "Architecture analysis",
+      "Governance guidance"
+    ],
+    "defaultPrompt": [
+      "Assess this change with OpenArch evidence.",
+      "Review the architecture signals for this project.",
+      "Set up appropriate OpenArch governance assets."
+    ]
+  }
+}

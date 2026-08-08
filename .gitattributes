@@ -1,0 +1,3 @@
+# 关闭行尾转换——消除 Windows CRLF warning 刷屏，保持 git hook gate 输出可读
+* -text
+.openarch/**/*.json -text

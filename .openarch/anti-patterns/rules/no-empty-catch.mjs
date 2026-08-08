@@ -1,0 +1,18 @@
+export default {
+  scope: "file",
+  stages: {
+    text: ({ files, text }) => files.filter((file) => text(file).includes("catch")),
+    ast: {
+      pattern: "(catch_clause body: (statement_block) @body)",
+      extract: (matches) => matches.flatMap((match) => {
+        const body = match.captures.find((capture) => capture.name === "body")?.text;
+        return body ? [{ body }] : [];
+      }),
+    },
+  },
+  link({ records }) {
+    return records.flatMap((record) => record.body?.replace(/\s/g, "") === "{}" ? [{
+      ruleId: "no-empty-catch", file: record._file, message: "empty catch block discards an error", evidence: record.body,
+    }] : []);
+  },
+};

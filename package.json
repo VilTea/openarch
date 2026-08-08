@@ -1,0 +1,32 @@
+{
+  "name": "openarch",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "openarch": "tsx packages/cli/src/main.ts",
+    "build": "pnpm -r build",
+    "release:local": "node scripts/package-local.mjs",
+    "release:binary": "node scripts/package-binary.mjs",
+    "release:local-command": "pnpm release:binary && node scripts/install-local-binary.mjs",
+    "test": "pnpm -r test",
+    "lint": "eslint packages/ --ext .ts --ignore-pattern '**/dist/**' && pnpm -r lint"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.12.0",
+    "@typescript-eslint/eslint-plugin": "^8.62.1",
+    "@typescript-eslint/parser": "^8.62.1",
+    "eslint": "^10.6.0",
+    "fast-check": "^3.19.0",
+    "js-yaml": "^5.2.1",
+    "tree-sitter-java": "0.23.5",
+    "tsx": "^4.7.0",
+    "typescript": "^6.0.2",
+    "vitest": "^1.6.0"
+  },
+  "packageManager": "pnpm@9.0.0"
+}

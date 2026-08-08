@@ -1,0 +1,44 @@
+# Governance Lifecycle
+
+> “一切实际工作者必须向下调查。” — Mao Zedong, *Rural Surveys* (1941)
+
+Read this page before initialization, persistence, hooks, semantic evidence, DocumentStore, or experience records.
+
+## Initialization And Persistence
+
+`openarch context` is read-only project-fact discovery. It does not refresh the baseline, create evidence, select a workflow, or authorize policy change.
+
+`governance.persistence` in `.openarch/config.yml` is the sole authority. `tracked` commits team-reviewable runtime artifacts; `local` manages only OpenArch's block in `.git/info/exclude`. Hooks validate evidence and policy in both modes, while only `tracked` auto-stages runtime artifacts.
+
+`presentation.locale` selects default CLI presentation and the Skill tree installed by `init --agent` (`zh` or `en`). `--lang` and `OPENARCH_LANG` change CLI presentation for one invocation only; they do not change the Skill, metrics, policy, gate, or JSON contract. Install a Skill only with explicit `init --agent <known>` or `--skill-dir <project-relative-directory>`; never guess an Agent directory or write a user-global directory.
+
+## Baseline, Evidence, And Hook
+
+`scan` publishes structural baseline facts; only a complete `scan` atomically updates the canonical generation. `check --worktree` and `check --staged` produce replaceable pending after-metric overlays and semantic evidence, never canonical baseline shards. Consumers that describe current state (`gate`, `review`, and graph rebuild) read the complete generation plus an overlay whose source `SHA-256` still matches; scan/evolution consumers read the stable generation only. Pre-commit evaluates the staged candidate projection first, then requires exactly matching paths and `SHA-256` evidence before history can be sealed. A complete scan removes the superseded overlay.
+
+Atomic publication does not prove that a generation is always complete. Readers must validate the index, shard set, path counts and content identity. Missing or corrupt shards, contradictory generations, or an unreadable history marker are `UNAVAILABLE/PARTIAL`, never clean or zero facts. Canonical recovery belongs to a locked complete scan or explicit recovery operation; pre-commit only validates candidates and seals matching evidence.
+
+When structural and test-provider facts were separated, one known legacy baseline identity included `testMetrics`. It remains readable for one migration path and the next complete `scan` republishes the structural identity. Any other identity mismatch remains unavailable; do not bypass validation by deleting shards or weakening the check.
+
+After an interruption, `baseline.staging-*` and `baseline.backup-*` are observable temporary-generation facts: `context --json` reports the active generation, the readable generation, and each artifact's validity and age without moving or deleting anything. `status` renders an old `scan-status.json` running marker as stale. This is an interruption signal, not a failure or clean result; only a complete `scan` may recover or publish under the write lock.
+
+After sealing, the history adapter retains recent raw evidence according to `governance.history.raw_window_days` and compacts older CRL contributions into a mathematically equivalent checkpoint; it never discards the trend merely because it is old. Replaying the checkpoint with retained records equals replaying complete sealed history, and raw files removed from the worktree remain auditable in Git. `_compaction.v1.json` is the crash-recovery logical publication point: readers never double-count, and a later successful run completes physical cleanup. The default window is 180 days; high-frequency projects may configure any positive whole number of days.
+
+### Recovering Corrupt History
+
+History records, `_checkpoint.v1.json`, or `_compaction.v1.json` written by an older version can make `readAllHistory` fail closed after an upgrade. Readers do not skip one record, downgrade to an empty history, or overwrite the original. Recover in this order:
+
+1. Copy the entire `.openarch/history/` directory to an external recovery location and preserve the reported path, commit, and time; do not delete or rename the bad file just to obtain `PASS`.
+2. For `tracked` projects, use `git log -- .openarch/history` to find the last known-good commit, then restore the affected file with `git restore --source=<known-good-commit> -- .openarch/history/<file>`. Treat a checkpoint, compaction marker, and every raw entry it lists as one publication set; do not restore only one marker.
+3. For `local` projects, restore from an external backup. If no verifiable copy exists, do not fabricate JSON or silently discard the bad entry. Historical CRL is `UNAVAILABLE`, not zero or clean.
+4. After recovery, rerun `openarch review` or `openarch check` to verify readability. If only the structural baseline needs rebuilding, run `openarch scan` separately; `scan` cannot reconstruct missing historical CRL.
+
+Do not delete pending evidence, baseline fragments, history, or audit output to manufacture a clean commit. Identical checks must be idempotent. Investigate content identity, time, adapter contract, reachability, and reconciliation before changing a hook or adding an exception.
+
+Regardless of persistence mode, `pending/`, `scan-status.json`, and lock files are replaceable runtime state. `init` maintains this minimal ignore set in the project's `.openarch/.gitignore`, so a nested project never relies on its parent Git root's ignore rules. Auditable baseline, history, and audit artifacts still follow `persistence`.
+
+## Documents And Experience
+
+Resolve the DocumentStore before editing. A project-local store is `docs/openarch`; a shared store needs an explicit `scope-id` and may read only its bound `scopeRoot`. A missing binding is `UNAVAILABLE`, not permission to scan neighboring projects.
+
+When the current project owns a public capability, workflow, provider, or script contract, update that project's `CORE-CAPABILITIES.md` and run `openarch docs check --changed <path>`. An integrated project does not maintain OpenArch's product capability inventory or release documentation; report a product change upstream. Record with `docs record --category patterns|anti_patterns|decisions` only after a verifiable review. Write the document before checking similarity. See [record-guide.md](../record-guide.md) for categories and writing requirements.

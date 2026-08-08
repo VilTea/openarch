@@ -1,0 +1,5 @@
+# OpenArch runtime artifacts
+pending/
+scan-status.json
+.*.lock
+coordination.json

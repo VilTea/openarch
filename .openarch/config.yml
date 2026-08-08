@@ -1,0 +1,163 @@
+# OpenArch 配置文件（design v5.2 §8.1）
+version: "5.2"
+
+# 人类与 Agent 的默认 CLI 展示语言；可由 --lang 或 OPENARCH_LANG 临时覆盖。
+presentation:
+  locale: "zh"
+
+# 高频 dogfood 项目只保留 14 天原始 sealed evidence；旧记录被精确压缩为 checkpoint，
+# 不改变 CRL replay，也仍可经 Git 历史审计。
+governance:
+  history:
+    raw_window_days: 14
+
+# 项目语言（决定 openarch scan 匹配的文件扩展名）
+# CLI 入口 packages/cli/bin/openarch.js 与 coordination Go service 都是生产代码；
+# 它们必须共同纳入 baseline/gate，不能只因服务使用另一语言而留下治理盲区。
+languages: ["typescript", "javascript", "go"]
+
+# 项目文件参与角色。auxiliary 是 fixtures/examples/samples 等非生产输入：
+# 不进入生产依赖图、P95、I_push、CRL_state、gate 或测试治理。
+file_kinds:
+  # Vitest runner configuration only controls this repository's test execution.
+  - pattern: "vitest.config.ts"
+    kind: "auxiliary"
+  - pattern: "fixtures/demo-scan/**"
+    kind: "auxiliary"
+  - pattern: "packages/core/fixtures/**"
+    kind: "auxiliary"
+  # 本地发行 bundle 是可执行验证产物，不是 OpenArch 自身生产源码。
+  - pattern: "artifacts/**"
+    kind: "auxiliary"
+  # 校准/工具脚本（seed-symbol-calibration 等）是开发工具，非治理对象；
+  # 但保留在 src 外可被 tsx 直跑，避免 tsconfig 项目外的 .mts 污染 workspace 扫描。
+  - pattern: "packages/core/scripts/**"
+    kind: "auxiliary"
+  # 分发给接入项目的扩展脚本资产由 manifest、合同与执行测试治理；
+  # 保留可观测性，但不将其作为 OpenArch 自身生产实现参与影响公式或 gate。
+  - pattern: "packages/core/assets/templates/**"
+    kind: "auxiliary"
+
+# 分层 path_class。paths 只管文件分类（pattern）+ 可选层权重（weight，I_push 因子4 ω_layer）。
+# weight > 1 放大该层变更的 I_push，< 1 缩小。缺省 1.0。
+paths:
+  parser:                         # 解析器/编译器（CEL求值器 + TreeSitter AST，天然复杂）
+    pattern: "**/adapter/{rule,parser}/**"
+    weight: 0.8
+  adapter:                        # I/O adapter；先保留 default 的 CRL WARN 门槛，积累独立校准样本后再调整
+    pattern: "packages/core/src/adapter/**"
+  application:                    # orchestration / CLI 分派
+    pattern: "{packages/core/src/application/**,packages/cli/src/commands/**}"
+  domain:                         # 纯函数（变更影响更危险）
+    pattern: "**/domain/**"
+    weight: 1.3
+  contract:                       # 契约/事实文件（interface/type 密集，crl loc 因子失真，校准 2026-08-08）
+    pattern: "**/script-runtime/**"
+  default:                        # 其余（port/bin/adapter 非解析器）
+    pattern: "**"
+
+# 结构阈值只在可比较的语言总体内有效。Go 的首条项目试行规则来自
+# services/coordination 的独立基线校准（P95=4.15，authority.go=5.30）；
+# 它不继承 TS/JS 阈值，也不是可移植产品默认值。
+structural_policies:
+  - id: "typescript-js"
+    languages: ["typescript", "javascript"]
+    mode: enforce
+    rules_block:
+      - name: "函数分支过多（BLOCK）"
+        condition: "max_func_branch > 25"
+    rules_warn:
+      - name: "domain 单函数分支过多"
+        condition: 'path_class == "domain" && max_func_branch > 5'
+      - name: "application 单函数分支过多"
+        condition: 'path_class == "application" && max_func_branch > 15'
+      - name: "解析器单函数分支过多（超出 parser 放宽上限）"
+        condition: 'path_class == "parser" && max_func_branch > 20'
+      - name: "非核心层单函数分支偏多"
+        condition: 'path_class == "default" && max_func_branch > 8'
+      - name: "单次冲击过高"
+        condition: "i_push > 10"
+      - name: "domain 局部负担过高"
+        condition: 'path_class == "domain" && crl_local > 0.55'
+      - name: "application 局部负担过高"
+        condition: 'path_class == "application" && crl_local > 0.65'
+      - name: "解析器局部负担过高"
+        condition: 'path_class == "parser" && crl_local > 0.70'
+      - name: "adapter 局部负担过高"
+        condition: 'path_class == "adapter" && crl_local > 0.55'
+      - name: "非核心层局部负担过高"
+        condition: 'path_class == "default" && crl_local > 0.55'
+      - name: "契约文件局部负担偏高（interface/type 密集，loc 因子失真）"
+        condition: 'path_class == "contract" && crl_local > 0.55 && exposure > 0.6'
+      - name: "核心模块局部负担偏高"
+        condition: 'path_class != "contract" && crl_local > 0.45 && exposure > 0.6'
+    crl_state_weights:
+      branch: 0.2
+      nesting: 0.2
+      loc: 0.15
+      alpha: 0.15
+      connectedness: 0.15
+      externalPassthrough: 0.15
+  - id: "go-coordination"
+    languages: ["go"]
+    scope:
+      include: ["services/coordination/**"]
+    mode: enforce
+    rules_block: []
+    rules_warn:
+      - name: "Go 函数局部复杂度试行 WARN"
+        condition: "max_func_branch > 5"
+
+# Dogfood 项目策略：provider/script 只报告 finding，此处是唯一的裁决权威。
+test_governance:
+  providers: ["typescript-vitest", "go-testing"]
+  rules:
+    focused_test: block
+    unapproved_skip: block
+    missing_assertion: warn
+    project_baseline_cleanup: block
+  exemptions: []
+
+# Dogfood authority：脚本领域声明语义，不得重建加载或遍历机制。
+# 提升需要可复核正例与正/负/unavailable fixture；回扫存量为零是治理完成的 CLEAN 状态，
+# 不是校准失败，也不降低提升资格。该裁决独立于 architecture gate、I_push 与 CRL。
+authority_hygiene:
+  quality_rules:
+    "authority-import-bypass.mjs": block
+    "no-inline-script-starters.mjs": block
+    "no-legacy-document-capability-path.mjs": block
+    "no-regex-parser-source.mjs": block
+    "no-direct-baseline-storage.mjs": block
+  authorities:
+    - id: "staged-script-execution"
+      owner: "packages/core/src/staged-analysis/engine.ts"
+      public_entry: "packages/core/src/staged-analysis/engine.ts"
+      protected_paths:
+        - "packages/core/src/implicit-deps/engine.ts"
+        - "packages/core/src/anti-patterns/engine.ts"
+        - "packages/core/src/test-governance/engine.ts"
+      prohibited_imports: ["node:fs", "node:url"]
+    # 历史 TsStrategy 曾直接依赖 node:fs/node:path 并自行解析 module specifier；
+    # 现以 TsModuleResolver 为唯一 authority。当前回扫应为零。
+    - id: "module-resolution"
+      owner: "packages/core/src/adapter/parser/TsModuleResolver.ts"
+      public_entry: "packages/core/src/adapter/parser/TsModuleResolver.ts"
+      protected_paths:
+        - "packages/core/src/adapter/parser/TsStrategy.ts"
+      prohibited_imports: ["node:fs", "node:path"]
+    # Test-governance roles share the application orchestration point. Providers
+    # collect static syntax facts; they must not grow an execution engine.
+    - id: "test-governance-static-facts"
+      owner: "packages/core/src/application/testGovernance.ts"
+      public_entry: "packages/core/src/application/testGovernance.ts"
+      protected_paths:
+        - "packages/core/src/test-governance/providers/"
+      prohibited_imports: ["node:child_process", "node:child_process/promises"]
+    # Runners execute a configured command only. Parsing belongs to the static
+    # provider contract, so importing ParserService here is a parallel engine.
+    - id: "test-governance-execution"
+      owner: "packages/core/src/application/testGovernance.ts"
+      public_entry: "packages/core/src/application/testGovernance.ts"
+      protected_paths:
+        - "packages/core/src/test-governance/runners/"
+      prohibited_imports: ["../../port/ParserService", "../port/ParserService"]

@@ -1,0 +1,40 @@
+# ---- 构建产物 ----
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+artifacts/
+
+# ---- 本地工具/Agent 配置（个人，不发布）----
+.reasonix/
+.claude/
+.codex/
+.cursor/
+.opencode/
+.obsidian/
+# .agents/ 是 skill 发行源（zh/en 树同步到 plugin assets），需发布——不忽略
+
+# ---- 开发期内部文档（统一在 docs/internal/，不发布）----
+docs/internal/
+
+# ---- 协调服务本地投影缓存（disposable，可从 Git 重建）----
+coordination-projection.ndjson
+
+# ---- .openarch/ 边界：只发布配置与 demo 规则，其余执行产物一律忽略 ----
+.openarch/.docs-repo-config.json
+.openarch/docs-repo
+.openarch/.*.lock
+.openarch/scan-status.json
+.openarch/pending/
+.openarch/baseline.staging-*/
+.openarch/baseline/
+.openarch/audit/
+.openarch/history/
+.openarch/calibration/
+.openarch/document-store.json
+.openarch/test-governance/observations/
+services/coordination/.openarch/baseline/
+services/coordination/.openarch/audit/
+services/coordination/.openarch/calibration/
+services/coordination/.openarch/pending/
+services/coordination/.openarch/scan-status.json
