@@ -1,0 +1,43 @@
+# OpenArch Site — GitHub Pages 部署
+# 把 site/ 目录发布为 GitHub Pages 站点（<user>.github.io/openarch）。
+# 启用：仓库 Settings → Pages → Source 选择 "GitHub Actions"。
+name: Site Pages
+
+on:
+  push:
+    branches: [release]
+    paths:
+      - 'site/**'
+      - '.github/workflows/site-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时刻只跑一个部署，新推送取消进行中的旧部署
+concurrency:
+  group: site-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 上传 site 为 Pages 构件
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: 部署到 GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4

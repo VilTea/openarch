@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OpenArch · 给 AI 编码团队的反腐败防线</title>
+<style>
+  :root[data-theme="dark"] {
+    --page: #0d0d0d; --surface-1: #1a1a19; --surface-2: #20201e;
+    --ink-1: #ffffff; --ink-2: #c3c2b7; --ink-3: #898781;
+    --hairline: rgba(255,255,255,0.10); --series-1: #3987e5; --series-3: #199e70;
+    --glow: rgba(57,135,229,0.35); --particle: rgba(57,135,229,0.55); --link: rgba(255,255,255,0.10);
+  }
+  :root[data-theme="light"] {
+    --page: #f9f9f7; --surface-1: #fcfcfb; --surface-2: #f3f2ee;
+    --ink-1: #0b0b0b; --ink-2: #52514e; --ink-3: #898781;
+    --hairline: rgba(11,11,11,0.10); --series-1: #2a78d6; --series-3: #1baf7a;
+    --glow: rgba(42,120,214,0.22); --particle: rgba(42,120,214,0.40); --link: rgba(11,11,11,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--page); color: var(--ink-2); line-height: 1.65;
+    -webkit-font-smoothing: antialiased; overflow-x: hidden;
+    transition: background .4s ease, color .4s ease;
+  }
+  #bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  .wrap { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+  .toolbar { position: fixed; top: 18px; right: 22px; z-index: 50; display: flex; gap: 8px; }
+  .toolbar a, .toolbar button {
+    background: var(--surface-1); color: var(--ink-2); border: 1px solid var(--hairline);
+    border-radius: 999px; padding: 8px 14px; font-size: 0.8rem; cursor: pointer;
+    backdrop-filter: blur(8px); transition: all .2s ease; font-family: inherit; text-decoration: none;
+  }
+  .toolbar a:hover, .toolbar button:hover { color: var(--ink-1); border-color: var(--series-1); }
+
+  header.hero { min-height: 88vh; display: flex; flex-direction: column; justify-content: center; padding: 120px 0 50px; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 0.74rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--series-1); font-weight: 600; margin-bottom: 22px; }
+  .eyebrow::before { content: ""; width: 28px; height: 1px; background: var(--series-1); }
+  h1 { font-size: clamp(2.8rem, 8vw, 5.4rem); line-height: 1; font-weight: 800; color: var(--ink-1); letter-spacing: -0.03em; }
+  h1 .accent { background: linear-gradient(110deg, var(--series-1), var(--series-3)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tagline { margin-top: 20px; font-size: clamp(1.15rem, 2.2vw, 1.6rem); color: var(--ink-1); font-weight: 600; max-width: 24ch; }
+  .lede { margin-top: 18px; font-size: 1.02rem; color: var(--ink-2); max-width: 60ch; }
+  .hero-cta { margin-top: 34px; display: flex; flex-wrap: wrap; gap: 12px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 13px 22px; border-radius: 10px; font-weight: 600; font-size: 0.95rem; text-decoration: none; transition: all .2s ease; }
+  .btn.primary { background: var(--series-1); color: #fff; }
+  .btn.primary:hover { transform: translateY(-2px); box-shadow: 0 10px 30px var(--glow); }
+  .btn.ghost { background: var(--surface-1); color: var(--ink-1); border: 1px solid var(--hairline); }
+  .btn.ghost:hover { border-color: var(--series-1); }
+
+  section { padding: 56px 0; border-top: 1px solid var(--hairline); }
+  .sec-num { font-size: 0.78rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--series-1); font-weight: 600; }
+  h2 { font-size: clamp(1.4rem, 2.6vw, 1.9rem); color: var(--ink-1); font-weight: 700; margin-top: 8px; }
+
+  /* portal cards */
+  .portal { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; margin-top: 30px; }
+  .portal-card {
+    display: block; text-decoration: none; position: relative; overflow: hidden;
+    background: linear-gradient(150deg, var(--surface-1), var(--surface-2));
+    border: 1px solid var(--hairline); border-radius: 16px;
+    padding: 30px 30px 26px; transition: transform .3s ease, border-color .3s ease, box-shadow .3s ease;
+  }
+  .portal-card::after { content: ""; position: absolute; top: -50px; right: -50px; width: 180px; height: 180px; border-radius: 50%; background: radial-gradient(circle, var(--glow), transparent 70%); opacity: .6; }
+  .portal-card:hover { transform: translateY(-5px); border-color: var(--series-1); box-shadow: 0 22px 50px rgba(0,0,0,.4); }
+  .pc-top { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; position: relative; }
+  .pc-icon { width: 50px; height: 50px; border-radius: 13px; display: grid; place-items: center; font-size: 1.5rem; background: rgba(57,135,229,0.14); border: 1px solid rgba(57,135,229,0.3); }
+  .pc-tag { font-size: 0.72rem; color: var(--series-1); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .portal-card h3 { color: var(--ink-1); font-size: 1.32rem; font-weight: 700; position: relative; }
+  .portal-card .q { color: var(--ink-2); font-size: 0.95rem; margin-top: 10px; font-style: italic; position: relative; }
+  .portal-card .d { color: var(--ink-3); font-size: 0.86rem; margin-top: 12px; position: relative; }
+  .portal-card .go { margin-top: 20px; color: var(--series-1); font-weight: 600; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 6px; position: relative; }
+  .portal-card .arrow { transition: transform .25s ease; }
+  .portal-card:hover .arrow { transform: translateX(5px); }
+
+  /* features */
+  .feats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 28px; }
+  .feat { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 11px; padding: 18px 20px; }
+  .feat .fk { color: var(--series-1); font-weight: 700; font-size: 0.92rem; display: flex; align-items: center; gap: 8px; }
+  .feat .fv { color: var(--ink-3); font-size: 0.82rem; margin-top: 6px; }
+
+  /* value cards (before -> after) */
+  .val-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin-top: 28px; }
+  .val { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 14px; padding: 22px 24px; }
+  .val .vh { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .val .vicon { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-size: 1.05rem; background: rgba(57,135,229,0.14); color: var(--series-1); flex-shrink: 0; }
+  .val h3 { color: var(--ink-1); font-size: 1.02rem; font-weight: 700; }
+  .ba { display: grid; grid-template-columns: 1fr 22px 1fr; gap: 10px; align-items: stretch; }
+  .ba .pole { padding: 11px 13px; border-radius: 8px; font-size: 0.84rem; line-height: 1.55; }
+  .ba .before { background: rgba(208,59,59,0.08); border: 1px solid rgba(208,59,59,0.22); color: var(--ink-2); }
+  .ba .after { background: rgba(12,163,12,0.09); border: 1px solid rgba(12,163,12,0.25); color: var(--ink-1); }
+  .ba .pole small { display: block; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; font-weight: 700; }
+  .ba .before small { color: #d03b3b; } .ba .after small { color: #0ca30c; }
+  .ba .arrow { display: grid; place-items: center; color: var(--ink-3); font-size: 1rem; }
+  @media (max-width:760px){ .ba{grid-template-columns:1fr} .ba .arrow{transform:rotate(90deg);padding:4px 0} }
+
+  /* script engine section */
+  .se-desc { color: var(--ink-2); margin-top: 10px; max-width: 68ch; font-size: .96rem; }
+  .se-desc code { font-family: ui-monospace, monospace; color: var(--series-1); font-size: .88em; }
+  .stages { display: flex; align-items: stretch; gap: 10px; margin: 26px 0; }
+  .stage { flex: 1; background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 10px; padding: 14px 16px; }
+  .stage .sn { font-family: ui-monospace, "SF Mono", Consolas, monospace; color: var(--series-1); font-weight: 700; font-size: .92rem; }
+  .stage p { color: var(--ink-3); font-size: .82rem; margin-top: 4px; }
+  .stage-arrow { display: grid; place-items: center; color: var(--ink-3); font-size: 1.1rem; }
+  pre.code { background: var(--surface-1); border: 1px solid var(--hairline); border-left: 3px solid var(--series-1); border-radius: 8px; padding: 16px 18px; overflow-x: auto; font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: .8rem; color: var(--ink-2); line-height: 1.75; margin: 16px 0; }
+  pre.code .c { color: var(--ink-3); }
+  pre.code .k { color: var(--series-1); }
+  .se-note { color: var(--ink-3); font-size: .86rem; margin-top: 14px; line-height: 1.7; }
+  .se-note code { font-family: ui-monospace, monospace; color: var(--series-1); font-size: .88em; }
+  @media (max-width:680px){ .stages{flex-direction:column} .stage-arrow{transform:rotate(90deg);height:18px} }
+
+  /* end CTA */
+  .cta-end { text-align: center; padding: 30px 0 10px; }
+  .cta-end h2 { font-size: clamp(1.5rem, 3vw, 2rem); margin-bottom: 12px; }
+  .cta-end p { color: var(--ink-3); margin-bottom: 18px; }
+  .cta-end pre.code { text-align: left; max-width: 520px; margin: 0 auto 24px; }
+  /* scroll reveal */
+  .wrap > section { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s ease; }
+  .wrap > section.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce){ .wrap>section{opacity:1;transform:none;transition:none} }
+
+  footer { padding: 50px 0 70px; border-top: 1px solid var(--hairline); text-align: center; }
+  footer p { font-size: 0.82rem; color: var(--ink-3); }
+  footer a { color: var(--series-1); text-decoration: none; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+
+<div class="toolbar">
+  <a href="https://github.com/VilTea/openarch" target="_blank" rel="noopener">GitHub ↗</a>
+  <button id="themeBtn">🌙 深色</button>
+</div>
+
+<div class="wrap">
+
+  <header class="hero">
+    <span class="eyebrow">让 AI 改代码的冲击，可见 · 可控</span>
+    <h1>Open<span class="accent">Arch</span></h1>
+    <p class="tagline">给 AI 编码团队的反腐败防线</p>
+    <p class="lede">
+      CI 绿了 ≠ 没破坏。每一次改动都在悄悄增加耦合、漏掉消费者、堆出 god-function。
+      OpenArch 用本地、确定的符号级分析，在提交前把这些看不见的冲击<b style="color:var(--ink-1)">照亮</b>——
+      并给你的 Agent 一份它真正会读的防线手册。
+    </p>
+    <div class="hero-cta">
+      <a class="btn primary" href="#why">看它替你挡掉什么 ↓</a>
+      <a class="btn ghost" href="openarch-usage-guide.html">直接上手安装 →</a>
+    </div>
+  </header>
+
+  <section id="why">
+    <span class="sec-num">为什么引入</span>
+    <h2>它替你的 AI 开发挡掉什么</h2>
+    <p style="color:var(--ink-3);margin-top:10px;max-width:68ch;font-size:.96rem">每个痛点都是 AI 辅助开发里真实会遇到的腐化形态。左列是"没有 OpenArch 时"，右列是"装上之后"。</p>
+    <div class="val-grid" id="valGrid"></div>
+  </section>
+
+  <section id="script-engine">
+    <span class="sec-num">动态防线 · 核心</span>
+    <h2>脚本引擎：写一个 .mjs，就筑起一条新防线</h2>
+    <p class="se-desc">不用改 OpenArch 核心，也不用等官方发版。发现一种新的腐化模式，写一个脚本把它固化成检测规则——这就是"防线廉价可重建"的真正含义。内置 <code>authority-import-bypass</code>、<code>placeholder-implementation</code> 等跨语言规则，你也可以随时加自己的。</p>
+    <div class="stages">
+      <div class="stage"><span class="sn">text</span><p>文本剪枝候选，只读不解析</p></div>
+      <div class="stage-arrow">→</div>
+      <div class="stage"><span class="sn">ast</span><p>tree-sitter 结构化查询</p></div>
+      <div class="stage-arrow">→</div>
+      <div class="stage"><span class="sn">link</span><p>脚本消费事实，产出 finding</p></div>
+    </div>
+    <pre class="code"><span class="c">// 检测 authority 边界内代码是否越界 import 禁止模块（如 node:fs）</span>
+export default {
+  scope: <span class="k">"repository"</span>,
+  requires: [<span class="k">"authorities.v1"</span>],          <span class="c">// 声明所需事实；缺则 UNAVAILABLE（fail-closed）</span>
+  targets: { authority: <span class="k">"any"</span> },
+  stages: {
+    text: ({ files, text, facts }) =>       <span class="c">// ① 文本剪枝候选</span>
+      files.filter(f => facts.authorities.value
+        .some(a => a.prohibitedImports?.some(s => text(f).includes(s)))),
+    ast: { fact: <span class="k">"static-imports.v1"</span> },  <span class="c">// ② tree-sitter 确认结构</span>
+  },
+  link({ records, facts }) {                 <span class="c">// ③ 脚本产出 finding</span>
+    <span class="c">// 命中 prohibitedImports 即报告，由项目策略决定 block/warn</span>
+    return hits;
+  },
+};</pre>
+    <p class="se-note">脚本只负责<b style="color:var(--ink-2)">发现</b>，<b style="color:var(--ink-2)">裁决</b>由项目 <code>config.yml</code> 的 <code>authority_hygiene.quality_rules</code> 决定（block / warn / report-only）。声明 <code>requires</code> 的事实不可用时返回 <code>UNAVAILABLE</code>——fail-closed，不降级兑底。</p>
+  </section>
+
+  <section>
+    <span class="sec-num">两份文档</span>
+    <h2>从了解，到用上</h2>
+    <div class="portal">
+      <a class="portal-card" href="openarch-analysis-report.html">
+        <div class="pc-top">
+          <div class="pc-icon">📊</div>
+          <div><div class="pc-tag">源码审计</div></div>
+        </div>
+        <h3>源码哲学实践分析报告</h3>
+        <p class="q">"OpenArch 是否践行了它自己的哲学？"</p>
+        <p class="d">八维度评分 · 11 道 fail-closed 守卫 · 两处诚实张力。用 OpenArch 自己的标准审视 OpenArch 自己的源码，全部基于逐行核对与 openarch context/review 自审。</p>
+        <span class="go">进入报告 <span class="arrow">→</span></span>
+      </a>
+      <a class="portal-card" href="openarch-usage-guide.html">
+        <div class="pc-top">
+          <div class="pc-icon">📖</div>
+          <div><div class="pc-tag">使用手册</div></div>
+        </div>
+        <h3>使用手册</h3>
+        <p class="q">"三步让 AI 团队装上反腐败防线"</p>
+        <p class="d">让 Agent 读 INSTALL.md 的最省事路径 · 为什么该引入（before/after）· 安装时间线 · 五 harness · 命令速查 · FAQ。面向人类，命令零臆测。</p>
+        <span class="go">打开手册 <span class="arrow">→</span></span>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <span class="sec-num">为什么是它</span>
+    <h2>四个根本立场</h2>
+    <div class="feats">
+      <div class="feat"><div class="fk">🏠 本地优先</div><div class="fv">代码不出楼。结构分析、变更冲击、规则执行全部本地运行，可复现。</div></div>
+      <div class="feat"><div class="fk">🚫 门禁无 LLM</div><div class="fv">裁决靠 tree-sitter / 编译器 / LSP 符号级分析，不是云端的黑箱判断。</div></div>
+      <div class="feat"><div class="fk">🔒 Fail-closed</div><div class="fv">证据缺失或模糊时返回 PARTIAL / UNAVAILABLE，绝不假装通过。</div></div>
+      <div class="feat"><div class="fk">🌐 五语言符号级</div><div class="fv">TypeScript · Python · Rust · Java · Go，下探到确认的消费者。</div></div>
+    </div>
+  </section>
+
+  <section class="cta-end">
+    <h2>现在就让你的代码库停止静默腐化</h2>
+    <p>三条命令，从克隆到 Agent 真正用上：</p>
+<pre class="code"><span class="c"># 克隆并安装（或直接让 Agent 读 INSTALL.md 代你执行）</span>
+git clone https://github.com/VilTea/openarch
+openarch init --agent claude
+openarch context</pre>
+    <a class="btn primary" href="https://github.com/VilTea/openarch" target="_blank" rel="noopener">在 GitHub 开始 ↗</a>
+  </section>
+
+  <footer>
+    <p>OpenArch · 源码仓库 <a href="https://github.com/VilTea/openarch" target="_blank" rel="noopener">github.com/VilTea/openarch</a></p>
+    <p style="margin-top:8px">MIT License · Copyright © 2026 OpenArch Contributors</p>
+  </footer>
+
+</div>
+
+<script>
+const VALUES = [
+  { icon:'🎯', t:'看不见的变更冲击', before:'Agent 改了个函数签名，CI 绿了，三天后另一个 Agent 的调用处崩了。', after:'check 用符号级 I_push / C_push 确认每个消费者，签名变更的所有调用点被照亮。' },
+  { icon:'🧱', t:'God-function 静默长出来', before:'第五次让 Agent 加功能，同一个文件被堆成无人敢动的巨型函数。', after:'CRL_state 局部负担按项目 P95 校准，Top-3 持续上榜，动手前就知道是治理候选。' },
+  { icon:'🔐', t:'模块权限边界泄漏', before:'A 模块悄悄伸手 import 了 B 模块的私有路径，边界一点点烂掉。', after:'authority 规则用静态 import 分析强制，越界即 fail-closed，不靠运行时猜。' },
+  { icon:'📋', t:'测试样板复制八遍', before:'每个测试都 copy 同一段 setup，维护时改一处要改八处。', after:'TEST_BLOAT 用 minhash 相似度检测重复样板，给出文件级证据便于抽取。' },
+  { icon:'♻️', t:'同一个坑反复踩', before:'Agent 每次都重新踩同一个 import 圈依赖的坑，经验随会话流失。', after:'Skill playbook + docs record 把经验沉淀进文档库，下次 Agent 动手前先读复用。' },
+  { icon:'🚪', t:'门禁老化 / 代码出楼 / 假装通过', before:'linter 一次设好就过时；云端 review bot 把代码送出去；缺证据就装 clean。', after:'阈值随项目漂移自校准；门禁本地确定无 LLM；缺证据返回 UNAVAILABLE，绝不假装。' },
+];
+document.getElementById('valGrid').innerHTML = VALUES.map(v => `
+  <div class="val">
+    <div class="vh"><div class="vicon">${v.icon}</div><h3>${v.t}</h3></div>
+    <div class="ba">
+      <div class="pole before"><small>没有 OpenArch</small>${v.before}</div>
+      <div class="arrow">→</div>
+      <div class="pole after"><small>装上之后</small>${v.after}</div>
+    </div>
+  </div>`).join('');
+
+const themeBtn = document.getElementById('themeBtn');
+let theme = 'dark';
+themeBtn.addEventListener('click', () => {
+  theme = theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+  themeBtn.textContent = theme === 'dark' ? '🌙 深色' : '☀️ 浅色';
+  initBg();
+});
+const token = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+let bg, ctx, P = [], W, H, raf;
+const mouse = { x: -9999, y: -9999 };
+function initBg() {
+  bg = document.getElementById('bg'); ctx = bg.getContext('2d');
+  resize(); build();
+  if (!raf) raf = requestAnimationFrame(loop);
+}
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  bg.width = W * dpr; bg.height = H * dpr; bg.style.width = W + 'px'; bg.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function build() {
+  const n = Math.min(85, Math.floor(W * H / 15000));
+  P = Array.from({ length: n }, () => ({ x: Math.random()*W, y: Math.random()*H, vx:(Math.random()-.5)*.28, vy:(Math.random()-.5)*.28, r: Math.random()*1.6+.6 }));
+}
+function loop() {
+  ctx.clearRect(0,0,W,H);
+  const pc = token('--particle'), link = token('--link'), md2 = 130;
+  for (const p of P) {
+    p.x += p.vx; p.y += p.vy;
+    if (p.x<0||p.x>W) p.vx*=-1; if (p.y<0||p.y>H) p.vy*=-1;
+    const dx=p.x-mouse.x, dy=p.y-mouse.y, m=Math.hypot(dx,dy);
+    if (m<160) { p.x+=dx/m*.4; p.y+=dy/m*.4; }
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fillStyle=pc; ctx.fill();
+  }
+  for (let i=0;i<P.length;i++) for (let j=i+1;j<P.length;j++) {
+    const a=P[i],b=P[j],d=Math.hypot(a.x-b.x,a.y-b.y);
+    if (d<md2) { ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.strokeStyle=link; ctx.globalAlpha=(1-d/md2)*.7; ctx.lineWidth=1; ctx.stroke(); ctx.globalAlpha=1; }
+  }
+  raf = requestAnimationFrame(loop);
+}
+addEventListener('resize', () => { resize(); build(); });
+addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; });
+addEventListener('mouseout', () => { mouse.x=-9999; mouse.y=-9999; });
+const revealIO = new IntersectionObserver((entries) => entries.forEach(e => {
+  if (e.isIntersecting) { e.target.classList.add('in'); revealIO.unobserve(e.target); }
+}), { threshold: 0.12 });
+document.querySelectorAll('.wrap > section').forEach(s => revealIO.observe(s));
+initBg();
+</script>
+</body>
+</html>

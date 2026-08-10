@@ -1,0 +1,110 @@
+# OpenArch Gate — MR/PR 验证
+# CI 跑 openarch check --report，结果注入 PR comment / MR 描述。
+# 默认 warn-only（不过阻断 CI）；可通过 workflow input 开启 strict 模式（OPENARCH_STRICT=1 时 WARN→失败）。
+
+name: OpenArch Gate
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/**/*.ts'
+      - 'packages/**/*.tsx'
+      - '.openarch/**'
+  workflow_dispatch:
+    inputs:
+      strict:
+        description: 'Strict mode (WARN → fail)'
+        type: boolean
+        default: false
+
+jobs:
+  coordination-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/coordination/go.mod
+          cache-dependency-path: services/coordination/go.sum
+
+      # 并发写测试计划 L1/L2 依赖真实 git；-race 需要 gcc（ubuntu-latest 自带）。
+      - name: Coordination service build and vet
+        run: |
+          cd services/coordination
+          go build ./...
+          go vet ./...
+
+      - name: Coordination service tests with race detector（L1-L2 并发矩阵）
+        run: |
+          cd services/coordination
+          go test -race ./...
+
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Unit and type validation
+        run: pnpm lint && pnpm test
+
+      - name: Release artifact build validation（发布形态不被破坏：tsc 产物 + 三包 pack 可生成）
+        run: |
+          pnpm build
+          pnpm --dir packages/core pack --pack-destination /tmp/ci-pack
+          pnpm --dir packages/cli pack --pack-destination /tmp/ci-pack
+          pnpm --dir packages/openarch-plugin pack --pack-destination /tmp/ci-pack
+          test -s /tmp/ci-pack/openarch-core-*.tgz
+          test -s /tmp/ci-pack/openarch-cli-*.tgz
+          test -s /tmp/ci-pack/openarch-plugin-*.tgz
+          echo "release artifacts OK"
+
+      - name: OpenArch baseline scan（恢复基线——CI 无本地 .openarch/，需从 git/空重建）
+        run: pnpm openarch scan
+
+      - name: OpenArch gate
+        id: gate
+        run: |
+          set +e
+          REPORT=$(pnpm openarch check --report 2>&1)
+          EXIT=$?
+          set -e
+          echo "$REPORT"
+          # GitHub Actions output → 后续步骤可引用
+          echo 'report<<EOF' >> $GITHUB_OUTPUT
+          echo "$REPORT" >> $GITHUB_OUTPUT
+          echo 'EOF' >> $GITHUB_OUTPUT
+          # exit code 映射（WARN=1, BLOCK=2）
+          if [ "$EXIT" -eq 2 ]; then exit 2; fi
+          if [ "$EXIT" -ge 1 ] && [ "${{ inputs.strict }}" = "true" ]; then exit 1; fi
+
+      - name: OpenArch test governance
+        run: |
+          set +e
+          pnpm openarch check --tests
+          EXIT=$?
+          set -e
+          if [ "$EXIT" -eq 2 ]; then exit 2; fi
+          if [ "$EXIT" -ge 1 ] && [ "${{ inputs.strict }}" = "true" ]; then exit 1; fi
+
+      - name: OpenArch authority hygiene quality
+        run: pnpm openarch rules scan --check
+
+      - uses: actions/github-script@v7
+        if: success() || failure()  # 无论 gate 通过或 WARN，都贴报告
+        with:
+          script: |
+            const report = `${{ steps.gate.outputs.report }}`;
+            github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: `## OpenArch Gate\n\n${report}`,
+            });
