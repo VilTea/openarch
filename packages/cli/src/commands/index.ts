@@ -10,6 +10,7 @@ import { reviewCommand } from "./review";
 import { rulesCommand } from "./rules";
 import { scanCommand } from "./scan";
 import { toolchainsCommand } from "./toolchains";
+import { updateCommand } from "./update";
 import type { MessageKey } from "../i18n";
 import type { CommandHandler } from "../runtime";
 
@@ -33,6 +34,7 @@ export const commandDefinitions: readonly CommandDefinition[] = [
   { name: "rules", usage: "rules <action>", summaryKey: "command.rules", visibility: "default", handler: rulesCommand, helpKey: "help.rules" },
   { name: "docs", usage: "docs <action>", summaryKey: "command.docs", visibility: "default", handler: docsCommand, helpKey: "help.docs", actionHelpKeys: { record: "help.record" } },
   { name: "toolchains", usage: "toolchains [--json]", summaryKey: "command.toolchains", visibility: "default", handler: toolchainsCommand, helpKey: "help.toolchains" },
+  { name: "update", usage: "update [--json]", summaryKey: "command.update", visibility: "default", handler: updateCommand, helpKey: "update.usage" },
   { name: "calibration", usage: "calibration export test", summaryKey: "command.calibration", visibility: "advanced", handler: calibrationCommand },
   { name: "coordination", usage: "coordination <action>", summaryKey: "command.coordination", visibility: "advanced", handler: coordinationCommand, helpKey: "help.coordination" },
   { name: "lsp", usage: "lsp <start|stop|status>", summaryKey: "command.lsp", visibility: "advanced", handler: lspCommand },

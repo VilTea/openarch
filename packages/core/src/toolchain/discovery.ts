@@ -138,6 +138,27 @@ const bundledTypeScriptFact = (runtime: ToolchainRuntime): SemanticToolchainFact
   : { id: "typescript-compiler", kind: "compiler", availability: "unavailable", reason: "typescript package is not resolvable" };
 
 /**
+ * 异步 typescript 编译器检测（A2 修复 2026-08-10 二进制场景）：
+ * bun build --compile 单文件二进制里，同步探测（require / import.meta.require /
+ * createRequire.resolve）全部按虚拟路径 B:\~BUN\root 失败，只有动态
+ * import("typescript") 能命中 bundle 内模块（已用真实二进制验证）。
+ * node/tsx 环境动态 import 同样可用（hoisted node_modules）。这是唯一在
+ * 两种发行形态（bundle / node）都可靠的探测路径。
+ */
+export const detectTypeScriptCompiler = async (): Promise<SemanticToolchainFact> => {
+  try {
+    const module = await import("typescript");
+    const compiler = (module as { default?: { createProgram?: unknown } }).default;
+    const usable = typeof compiler?.createProgram === "function";
+    return usable
+      ? { id: "typescript-compiler", kind: "compiler", availability: "available", location: "bundled" }
+      : { id: "typescript-compiler", kind: "compiler", availability: "unavailable", reason: "typescript module lacks compiler API" };
+  } catch {
+    return { id: "typescript-compiler", kind: "compiler", availability: "unavailable", reason: "typescript package is not resolvable" };
+  }
+};
+
+/**
  * Finds local semantic tooling without installing, starting, or trusting it as a symbol-use result.
  * The returned fact is an input to future providers; it is never equivalent to complete references.
  */
@@ -159,4 +180,40 @@ export const discoverSemanticToolchains = (
     ...(availability === "unavailable" ? { reason: "no complete semantic toolchain is discoverable for this language" } : {}),
   };
   });
+};
+
+/**
+ * 异步 discovery（A2 修复 2026-08-10）：bun 单文件二进制中同步探测全部失败，
+ * TS/JS 的 bundled fact 改用动态 import 检测（detectTypeScriptCompiler）；
+ * 外部语言（go/rust/python/java）仍走同步 commandFact。Live 层使用此函数。
+ */
+export const discoverSemanticToolchainsAsync = async (
+  cwd: string,
+  languages: readonly Language[],
+  runtime: ToolchainRuntime,
+): Promise<readonly SemanticToolchainReport[]> => {
+  const configuration = readToolchainConfiguration(cwd, runtime);
+  const tsFactPromise = detectTypeScriptCompiler();
+  const reports = await Promise.all([...new Set(languages)].map(async (language) => {
+    if (language === "typescript" || language === "javascript") {
+      const fact = await tsFactPromise;
+      const tools = [fact];
+      const availability = aggregateAvailability(tools);
+      return {
+        language,
+        availability,
+        tools,
+        ...(availability === "unavailable" ? { reason: "no complete semantic toolchain is discoverable for this language" } : {}),
+      };
+    }
+    const tools = externalToolchains[language].map((tool) => commandFact(runtime, cwd, language, tool, configuration));
+    const availability = aggregateAvailability(tools);
+    return {
+      language,
+      availability,
+      tools,
+      ...(availability === "unavailable" ? { reason: "no complete semantic toolchain is discoverable for this language" } : {}),
+    };
+  }));
+  return reports;
 };

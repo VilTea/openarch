@@ -1,5 +1,6 @@
 import type { CRLStateWeights } from "./crlState";
 import { minimatch } from "minimatch";
+import { toPosixPath } from "../infra/paths";
 
 export type StructuralPolicyMode = "observe" | "enforce";
 
@@ -34,7 +35,7 @@ export interface StructuralPolicySubject {
   readonly language: string;
 }
 
-const repositoryPath = (path: string): string => path.replace(/\\/g, "/").replace(/^\.\/+/u, "");
+const repositoryPath = (path: string): string => toPosixPath(path).replace(/^\.\/+/u, "");
 const matchesAny = (path: string, patterns: readonly string[] | undefined): boolean =>
   !!patterns?.some((pattern) => minimatch(path, pattern, { dot: true }));
 

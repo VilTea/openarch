@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
-import { resolve } from "node:path";
 import { buildDependencyGraph, buildDependencyGraphFromEdges, computeReverseEdges } from "../../src/domain/graph";
 import type { FileAst } from "../../src/domain/ast";
 import type { ImplicitEdge } from "../../src/domain/graph";
+import { absolutePathKey } from "../../src/infra/paths";
 
 // resolveTsPath returns absolute paths; tests simulate with resolve()
 const mkAst = (path: string, deps: (string | null)[]): FileAst => ({
@@ -14,13 +14,13 @@ const mkAst = (path: string, deps: (string | null)[]): FileAst => ({
   functionCount: 1,
   passthroughCalls: 0,
   imports: deps.map((p) => ({
-    resolvedPath: p ? resolve(p) : null,
+    resolvedPath: p ? absolutePathKey(p) : null,  // 与实现同源（A1：统一 absolutePathKey）
     source: p ?? "external",
   })),
   functions: [],
 });
 
-const R = (p: string) => resolve(p).replace(/\\/g, "/");  // 与 graph.ts map 对齐
+const R = (p: string) => absolutePathKey(p);  // 与 graph.ts map 同源（A1：统一 absolutePathKey）
 
 describe("buildDependencyGraph", () => {
   it("构建邻接表：A 依赖 B + C", () => {

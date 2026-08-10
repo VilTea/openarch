@@ -41,6 +41,7 @@ describe("CLI command registry", () => {
       "rules",
       "scan",
       "toolchains",
+      "update",
     ]);
   });
 

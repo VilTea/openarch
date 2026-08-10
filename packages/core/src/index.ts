@@ -164,6 +164,8 @@ export type { SemanticRelationFact, SemanticRelationKind, SemanticRelationReport
 export { SemanticToolchainDiscoveryLive } from "./adapter/toolchain/SemanticToolchainDiscoveryLive";
 export { discoverSemanticToolchains } from "./toolchain/discovery";
 export { initializeToolchainConfig } from "./application/toolchainConfigSetup";
+export { checkForUpdates, compareVersions, fetchLatestVersion, REMOTE_TAGS_URL } from "./application/updateCheck";
+export type { UpdateCheckResult } from "./application/updateCheck";
 export { projectToolchainConfigPath, readToolchainConfiguration, toolchainConfigPaths, userToolchainConfigPath } from "./toolchain/config";
 export type { ToolchainConfigScope, ToolchainConfiguration, ToolchainConfigPaths, ToolchainExecutableOverride } from "./toolchain/config";
 export type { SemanticToolchainAvailability, SemanticToolchainDiscoveryRequest, SemanticToolchainFact, SemanticToolchainKind, SemanticToolchainLocation, SemanticToolchainReport, ToolchainCommandResult, ToolchainRuntime } from "./toolchain/types";

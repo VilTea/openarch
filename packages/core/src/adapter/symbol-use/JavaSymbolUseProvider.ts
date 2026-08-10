@@ -6,6 +6,7 @@ import { basename, delimiter, dirname, join, relative } from "node:path";
 import type { SymbolUseProvider, SymbolUseProviderContext } from "../../symbol-use/provider";
 import { collectLspSymbolUse, type LspSymbolUseDefinition, type LspSymbolUseRuntime } from "./LspSymbolUse";
 import { jdtlsDaemonStatus } from "./jdtlsDaemon";
+import { toPosixPath } from "../../infra/paths";
 
 const javaDefinition = {
   language: "java",
@@ -62,7 +63,7 @@ export type JavaSymbolUseRuntime = LspSymbolUseRuntime;
  * 全量重建；稳定目录让二次会话走增量索引加载。
  */
 export const jdtlsDataDir = (cwd: string): string => {
-  const hash = createHash("sha256").update(cwd.replace(/\\/g, "/")).digest("hex").slice(0, 12);
+  const hash = createHash("sha256").update(toPosixPath(cwd)).digest("hex").slice(0, 12);
   const base = process.env.LOCALAPPDATA ?? tmpdir();
   return join(base, "openarch", "jdtls", hash);
 };

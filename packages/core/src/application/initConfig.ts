@@ -57,7 +57,9 @@ presentation:
   locale: "${defaultPresentationLocale()}"
 
 governance:
-  # tracked: 团队可复核治理证据；local: 仅本机治理状态。
+  # tracked: 决策产物（config.yml/规则/校准样本）自动暂存随提交复核，运行产物
+  #   （baseline/history/audit）不自动提交，可由 openarch scan 幂等重建；
+  # local: 仅本机治理状态，.openarch 整体不进 git。
   persistence: tracked
   # 保留近期原始 sealed history；更早记录压缩为数学等价的 CRL checkpoint。
   history:

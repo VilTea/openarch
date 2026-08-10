@@ -20,7 +20,8 @@ describe("writeInitConfig", () => {
     expect(config).not.toContain("max_branch:");
     expect(config).not.toContain("cumulative_thresholds:");
     expect(config).toMatch(/presentation:\r?\n  locale: "(?:zh|en)"/);
-    expect(config).toContain("governance:\n  # tracked: 团队可复核治理证据；local: 仅本机治理状态。\n  persistence: tracked");
+    expect(config).toContain("governance:\n  # tracked: 决策产物（config.yml/规则/校准样本）自动暂存随提交复核，运行产物");
+    expect(config).toContain("persistence: tracked");
     expect(readFileSync(join(dir, ".openarch", ".gitignore"), "utf8")).toContain("pending/");
     expect(readFileSync(join(dir, ".openarch", ".gitignore"), "utf8")).toContain("scan-status.json");
     expect(readFileSync(join(dir, ".openarch", ".gitignore"), "utf8")).toContain(".*.lock");
@@ -227,8 +228,39 @@ exit 0
     expect(readFileSync(join(dir, ".openarch", "hook-commands.log"), "utf8")).toContain("check --pre-commit");
     expect(existsSync(join(dir, ".openarch", "history", "current.json"))).toBe(true);
     expect(committed).toContain("source.ts");
-    expect(committed).toContain(".openarch/history/current.json");
+    // B2（2026-08-10）：运行产物（history/baseline）不自动暂存，可幂等重建。
+    expect(committed).not.toContain(".openarch/history/current.json");
     expect(committed).not.toContain(".openarch/baseline/preexisting.json");
+  }));
+
+  it("stages decision artifacts（config/rules）but not runtime artifacts", () => withTemporaryDirectory("decision-hook", async (dir) => {
+    initGit(dir);
+    writeFileSync(join(dir, "source.ts"), "export const version = 1;\n");
+    execFileSync("git", ["add", "source.ts"], { cwd: dir });
+    execFileSync("git", ["commit", "--quiet", "--no-verify", "-m", "seed"], { cwd: dir });
+
+    await initApp({ cwd: dir, installHook: true });
+    // 运行产物：baseline 修改（hook 前）
+    mkdirSync(join(dir, ".openarch", "baseline"), { recursive: true });
+    writeFileSync(join(dir, ".openarch", "baseline", "generated.json"), '{"version":2}\n');
+    writeFileSync(join(dir, "source.ts"), "export const version = 2;\n");
+    execFileSync("git", ["add", "source.ts"], { cwd: dir });
+    const executable = join(dir, "openarch-stub");
+    // stub 在 hook 执行期间修改 config.yml（模拟治理动作更新决策产物）
+    writeFileSync(executable, `#!/bin/sh
+mkdir -p .openarch
+printf 'languages: [typescript]\\nstructural_policies: []\\n' > .openarch/config.yml
+exit 0
+`);
+    chmodSync(executable, 0o755);
+
+    execFileSync("git", ["commit", "--quiet", "-m", "decision artifacts"], {
+      cwd: dir,
+      env: { ...process.env, OPENARCH_BIN: executable.replace(/\\/g, "/") },
+    });
+    const committed = execFileSync("git", ["show", "--format=", "--name-only", "HEAD"], { cwd: dir, encoding: "utf8" }).split(/\r?\n/);
+    expect(committed).toContain(".openarch/config.yml");
+    expect(committed).not.toContain(".openarch/baseline/generated.json");
   }));
 
   it("keeps local persistence artifacts out of a real hook-created commit", () => withTemporaryDirectory("personal-hook", async (dir) => {

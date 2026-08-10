@@ -6,6 +6,7 @@ import { analyzeSemanticChanges, type SemanticChange } from "../domain/semanticC
 import { classifyFileKindWithPolicy } from "../domain/testGovernance";
 import { readProjectFileKindRules } from "../projectFiles";
 import { ParserService } from "../port/ParserService";
+import { toPosixPath } from "../infra/paths";
 
 export interface SemanticBeforeMetrics {
   readonly weightedBranchTotal: number;
@@ -60,8 +61,8 @@ export const analyzeChangeSetSemantics = (cwd: string, changeSet: ChangeSetConte
     const parser = yield* ParserService;
     const fileKindRules = readProjectFileKindRules(cwd);
     const profiles: SemanticFileProfile[] = [];
-    const requested = options.paths ? new Set(options.paths.map((path) => path.replace(/\\/g, "/"))) : undefined;
-    const files = requested ? changeSet.files.filter((file) => requested.has(file.path.replace(/\\/g, "/"))) : changeSet.files;
+    const requested = options.paths ? new Set(options.paths.map((path) => toPosixPath(path))) : undefined;
+    const files = requested ? changeSet.files.filter((file) => requested.has(toPosixPath(file.path))) : changeSet.files;
     if (requested && files.length === 0) {
       return { availability: "unavailable", profiles: [], reason: "requested historical files are absent from the revision" } satisfies SemanticDiffReport;
     }

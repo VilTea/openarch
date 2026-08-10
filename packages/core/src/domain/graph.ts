@@ -1,6 +1,6 @@
 // packages/core/src/domain/graph.ts
 import type { FileAst } from "./ast";
-import { resolve } from "node:path";
+import { absolutePathKey } from "../infra/paths";
 
 export type DependencyGraph = ReadonlyMap<string, readonly string[]>;
 
@@ -43,7 +43,7 @@ export const buildDependencyGraph = (
   implicitDeps?: readonly ImplicitEdge[],
   basePath = ".",
 ): DependencyGraph => {
-  const map = (p: string) => resolve(basePath, p).replace(/\\/g, "/");  // normalize 分隔符（跨平台一致 + 与 toAbsolute 对齐）
+  const map = (p: string) => absolutePathKey(p, basePath); // 统一盘符/分隔符（A1：与 scanEntries norm 同 key，Windows 盘符大小写一致）
   const knownPaths = new Set(asts.map((a) => map(a.path)));
   const graph = new Map<string, string[]>();
 

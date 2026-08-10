@@ -4,6 +4,7 @@ import type { QueryCapture, QueryMatch, ParserService } from "../../port/ParserS
 import type { TestCaseMetric, TestFindingInput } from "../../domain/testGovernance";
 import type { TestFrameworkProvider, TestProviderResult } from "../provider";
 import { capturesInTestBody, controlFlowInTestBody } from "../controlFlow";
+import { toPosixPath } from "../../infra/paths";
 
 const directTestPattern = `
 (call_expression
@@ -77,7 +78,7 @@ export const VITEST_PROVIDER_ID = "typescript-vitest";
 
 export const vitestProvider: TestFrameworkProvider = {
   id: VITEST_PROVIDER_ID,
-  supports: (file) => /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file.replace(/\\/g, "/")) || file.includes("/__tests__/"),
+  supports: (file) => /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(toPosixPath(file)) || file.includes("/__tests__/"),
   collect: async (file: string, parser: ParserService): Promise<TestProviderResult> => {
     // ParserService 的 WASM parser 是共享实例；顺序 query 避免首次初始化及 tree 访问竞态。
     const direct = await Effect.runPromise(parser.query(file, directTestPattern));

@@ -61,8 +61,11 @@ export const renderHookPersistenceResolver = (): string => [
 ].join("\n");
 
 /**
- * Stage only governance artifacts changed by this hook invocation. A blanket
- * `git add .openarch/...` would silently capture unrelated worktree drift.
+ * Stage only governance *decision artifacts* changed by this hook invocation
+ * (B2 2026-08-10): 只暂存决策产物——config.yml 与规则/校准脚本；运行产物
+ * （baseline/history/audit/pending/scan-status/document-store.json）不自动暂存，
+ * 它们可由 `openarch scan` 幂等重建。`git add` 只针对本次 hook 前后有差异的
+ * 决策文件，避免 blanket add 捕获无关工作树漂移。
  */
 export const renderGovernanceArtifactStager = (): string => `snapshot_governance_artifacts() (
   # Git Bash process startup is expensive. Bound batches by both file count
@@ -89,7 +92,12 @@ export const renderGovernanceArtifactStager = (): string => `snapshot_governance
     batch_bytes=0
   }
 
-  find .openarch/baseline .openarch/history .openarch/audit -type f -print0 > "$paths_file" 2>/dev/null || true
+  # 决策产物（幂等重建物除外）：配置 + 规则 + 校准样本 + 隐式依赖声明。
+  find .openarch -type f \\
+    \\( -path "./.openarch/anti-patterns/*" -o -path "./.openarch/test-governance/*" \\
+       -o -path "./.openarch/calibration/*" -o -path "./.openarch/implicit-deps*" \\
+       -o -name "config.yml" -o -name ".docs-repo-config.json" -o -name "config.yaml" \\) \\
+    -print0 > "$paths_file" 2>/dev/null || true
   while IFS= read -r -d '' path; do
     [ -f "$path" ] || continue
     batch+=("$path")

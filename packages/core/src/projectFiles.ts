@@ -6,11 +6,11 @@ import type { Language } from "./domain/ast";
 import { classifyFileKindWithPolicy, isFileKindRule, type FileKindRule } from "./domain/testGovernance";
 import { participatesInPopulation, type GovernancePopulation } from "./domain/fileParticipation";
 import { globSync } from "./infra/glob";
-import { projectRoot } from "./infra/paths";
+import { toPosixPath, projectRoot } from "./infra/paths";
 import { detectProjectLanguages } from "./languageSupport";
 import { createAnalysisScope, isPathInAnalysisScope } from "./domain/analysisScope";
 
-const normalizePath = (path: string): string => path.replace(/\\/g, "/").toLowerCase();
+const normalizePath = (path: string): string => toPosixPath(path).toLowerCase();
 
 /** Ordinary project scans cannot widen their source population through ../ or an absolute sibling. */
 const isWithinProjectRoot = (path: string, cwd: string): boolean => {

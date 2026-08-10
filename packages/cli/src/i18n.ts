@@ -318,10 +318,16 @@ const catalog = {
     "command.rules": "管理项目规则：check|facts|skeleton|scan|discover",
     "command.docs": "管理治理文档：check|record|status",
     "command.toolchains": "显示外部语义工具及用户/项目本机配置位置",
+    "command.update": "检查远端 release 是否有新版本（只读，不自动更新）",
     "command.calibration": "导出高级校准证据",
     "command.coordination": "协作协调服务命令族（status/bootstrap/refresh/scope/evidence/task）",
     "command.lsp": "LSP 进程守护命令族（start/stop/status——jdtls 转发 daemon）",
     "command.antiPatterns": "反模式规则校准（默认仅报告——含文件/行明细）",
+    "update.usage": "用法: openarch update [--json]",
+    "update.available": "发现新版本: 当前 {current} → 最新 {latest}",
+    "update.action": "更新步骤: 1) 从 GitHub release 下载新二进制替换 %LOCALAPPDATA%\\OpenArch\\bin 下的 openarch；2) 重新运行 openarch init --agent <your-agent> 刷新项目 Skill 树。",
+    "update.upToDate": "已是最新版本: {version}",
+    "update.failed": "更新检查失败: {detail}（网络不可达或远端不可用，本地治理不受影响）",
     "help.init": `openarch init [options]
 
 初始化治理边界、项目文档库和可选的提交 hook。
@@ -647,10 +653,16 @@ actions:
     "command.rules": "Manage project rules: check|facts|skeleton|scan|discover",
     "command.docs": "Manage governance documents: check|record|status",
     "command.toolchains": "Show external semantic tools and user/checkout-local config locations",
+    "command.update": "Check whether a newer release exists (read-only, no auto-update)",
     "command.calibration": "Export advanced calibration evidence",
     "command.coordination": "coordination service command family (status/bootstrap/refresh/scope/evidence/task)",
     "command.lsp": "LSP daemon command family (start/stop/status - jdtls forwarding daemon)",
     "command.antiPatterns": "Anti-pattern rule calibration (report-only by default - includes file/line details)",
+    "update.usage": "Usage: openarch update [--json]",
+    "update.available": "New version available: current {current} → latest {latest}",
+    "update.action": "To update: 1) download the new release binary and replace openarch under %LOCALAPPDATA%\\OpenArch\\bin; 2) re-run openarch init --agent <your-agent> to refresh the project Skill tree.",
+    "update.upToDate": "Already up to date: {version}",
+    "update.failed": "Update check failed: {detail} (network unreachable or remote unavailable; local governance is unaffected)",
     "help.init": `openarch init [options]
 
 Initialize governance boundaries, the project document store, and an optional commit hook.

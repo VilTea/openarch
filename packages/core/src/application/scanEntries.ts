@@ -9,11 +9,11 @@ import { confidence } from "../domain/confidence";
 import { alphaStruct } from "../domain/alpha";
 import { weightedBranchTotalOf } from "../domain/branchMetrics";
 import { participatesInPopulation } from "../domain/fileParticipation";
-import { projectRoot, toRelative } from "../infra/paths";
+import { projectRoot, toRelative, absolutePathKey } from "../infra/paths";
 import { contentHashesOf } from "../projectFiles";
 import { projectBaselineEntry } from "./baselineEntry";
 
-const norm = (p: string) => resolve(p).replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_match, drive: string) => `${drive.toLowerCase()}:`);
+const norm = (p: string) => absolutePathKey(p);
 
 /** 单文件 baseline entry 计算。 */
 const computeEntryForAst = (

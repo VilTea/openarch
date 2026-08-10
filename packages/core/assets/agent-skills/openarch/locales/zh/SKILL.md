@@ -42,7 +42,7 @@ OpenArch 是面向编码 Agent 的本地、可审计约束，不替用户编排�
 
 ## 最小闭环
 
-1. 先运行 `openarch context`。无 config 时 init；无 baseline 时 scan；不要预先暂存。若基线作用域当前且项目架构策略为 `UNCONFIGURED`，不要在 `PASS` 后停止：继续运行 `openarch review`，依据 P95/Top-3 主动发起一次探索性策略校准，并用宿主原生单选/多选请项目所有者选择“试行一条最小 WARN、试行两条独立 WARN，或暂缓并记录理由”。首轮不自动写配置、不自动 BLOCK；阈值必须说明容忍度、样本范围和回扫计划。
+1. 先运行 `openarch context`。无 config 时 init；无 baseline 时 scan；不要预先暂存。若基线作用域当前且项目架构策略为 `UNCONFIGURED`，不要在 `PASS` 后停止：继续运行 `openarch review`，依据 P95/Top-3 主动发起一次探索性策略校准，并用宿主原生单选/多选请项目所有者选择“试行一条最小 WARN、试行两条独立 WARN，或暂缓并记录理由”。首轮不自动写配置、不自动 BLOCK；阈值必须说明容忍度、样本范围和回扫计划。**修改了 `structural_policies`/`file_kinds` 等配置后必须 `openarch scan --rebuild`**（增量 scan 按内容 `SHA-256` 短路，不感知配置变化；否则 gate 会报 `policy_calibration_missing` 或沿用旧 scope）。
 2. 编辑前读取当前项目绑定的 DocumentStore 能力资产（若存在）和任务相关经验；明确复用哪项项目能力，或为何不适用。接入项目只维护自己的资产、规则和经验；已安装的 OpenArch Skill、runtime/plugin 镜像和发行资产是只读输入，发现过期或不匹配时上报上游，不在接入项目内修改。只有明确维护产品发行仓库时，才按该仓库的发布流程更新源文件和镜像。缺 scope/资产如实报告 unavailable。
 3. 实施后，未暂存改动用 `openarch check --worktree --report`；非 TypeScript 项目需要更精确的符号引用或消费者证据时，先按语言配置全局 LSP 工具链，再运行 `openarch check --worktree --semantic --report`，读取实际 provider、coverage 与风险。Go/Rust/Python 首次冷启动会等待 LSP 索引（Go 实测 ~70s 一次性，daemon 热后快）；Java 经 `openarch lsp start` 的 jdtls 转发 daemon 预热（advanced 命令，可按宿主 `SessionStart` hook 常驻——见 `docs/lsp-daemon-hooks.md`），工具链不可用时符号级证据不输出（fail-closed，不降级兑底）。常规报告是行动摘要；仅在调查 D_MR、符号证据或公式准入时追加 `--verbose` 取证。准备提交时用 `openarch check --staged --report`；LSP 只读取工作树，不能冒充 Git index 证据。同一文件反复修改或用户要求架构检查时先 `openarch review`——review 输出直接包含架构门禁 WARN 触发明细（规则 + 条件 + 触发文件），无需绕道；提交门禁才用 `check --staged`。命令级详细帮助用 `openarch <command> --help`。
 4. 功能、provider、脚本、配置或命令改变当前项目能力时，按该项目的 DocumentStore 约定维护其能力资产并执行 `openarch docs check --changed <path>`；没有项目资产或不属于当前项目时不要创建/修改它。有可复查结论才 record。

@@ -8,9 +8,33 @@
 
 `openarch context` 是只读项目事实调查；它不刷新 baseline、不创建证据、不选择工作流，也不授权策略变更。
 
-`.openarch/config.yml` 中的 `governance.persistence` 是唯一权威：`tracked` 将团队可复核运行产物纳入 Git；`local` 只管理 `.git/info/exclude` 的 OpenArch 区块。两者的 hook 都验证证据和策略，只有 `tracked` 自动暂存运行产物。
+`.openarch/config.yml` 中的 `governance.persistence` 是唯一权威：`tracked` 只自动暂存 hook 期间变化的**决策产物**（config.yml、anti-patterns/test-governance 规则、calibration 校准样本、implicit-deps 声明）；**运行产物**（baseline/history/audit/pending/scan-status/document-store.json）永不自动暂存，可由 `openarch scan` 幂等重建。`local` 只管理 `.git/info/exclude` 的 OpenArch 区块。两者的 hook 都验证证据和策略。
 
 `presentation.locale` 同时选择人类、Agent 的默认 CLI 输出和由 `init --agent` 安装的 Skill 语言树（`zh` 或 `en`）。`--lang` 与 `OPENARCH_LANG` 只临时改变 CLI 展示，不改变 Skill、指标、策略、门禁或 JSON 合同。仅用显式 `init --agent <known>` 或 `--skill-dir <项目相对目录>` 安装 Skill；不得猜测 Agent 目录或写入用户全局目录。
+
+## 策略配置实操
+
+`structural_policies` 的规则字段是 **`condition`（CEL 表达式子集）**，不是 `n`；`mode` 决定是否裁决：`enforce` 评估规则并产生 WARN/BLOCK，`observe` 只覆盖 population 不评估规则（首次校准"试行"用 `enforce` + `warn` 级别即可，不自动建 BLOCK）。`scope.include/exclude` 用 minimatch，单文件可直接写字面路径：
+
+```yaml
+structural_policies:
+  - id: ts-core
+    mode: enforce
+    languages: [typescript]
+    scope:
+      include: ["src/**"]
+    rules_warn:
+      - name: max-func-branch
+        condition: "max_func_branch > 12"
+```
+
+**每个生产文件必须恰好命中一个 profile**（零命中或多命中都是 `UNAVAILABLE`，不会借用邻近语言或默认阈值）；多语言/多服务项目须显式声明全部 population。阈值按**本项目 baseline 的 P95** 校准，不是跨项目可复制的默认值；`review` 的 P95/Top-3 是校准输入。
+
+**配置变更后必须 `openarch scan --rebuild`**：增量 scan 按文件内容 `SHA-256` 短路，`structural_policies`/`file_kinds`/`analysisScope` 变化不会触发重算——配置改了但 gate 仍报 `policy_calibration_missing` 或沿用旧 scope 时，先 `scan --rebuild` 再排查其他原因。profile id/scope 变更也会使旧校准失效，同样需要重建。
+
+`--docs-scope` 参数格式是 **`<scopeId>=<相对路径>`**（如 `fund-claude-agent=agent`）：等号前是 scopeId，等号后是文档库内相对路径；不带 `=` 会校验失败。
+
+`init` 不会自动探测 TypeScript/JavaScript（它们无项目指示文件）；`languages: []` 表示"尚无已支持语言"，此时 `scan` 完成 0 文件。TS/JS 项目需手动配置 `languages: [typescript]` 后重新 `scan`。
 
 ## 基线、证据与 hook
 

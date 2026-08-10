@@ -9,6 +9,7 @@ import { createJsonPendingDiffStore } from "./JsonPendingDiffStore";
 import { createJsonSymbolCalibrationStore } from "./JsonSymbolCalibrationStore";
 import { SymbolCalibrationStore } from "../../port/SymbolCalibrationStore";
 import { IndexEntrySchema } from "../../validation/schemas";
+import { toPosixPath } from "../../infra/paths";
 
 // Resolve the environment lazily so independently constructed test layers stay isolated.
 const baseDir = () => process.env.OPENARCH_BASE_DIR ?? ".openarch";
@@ -38,14 +39,14 @@ const storageLayer = (rootDir: () => string) => Layer.merge(
             if (candidate.baselineSnapshotSha256 !== index?.meta.snapshotSha256) return complete;
 
             const evidenceByFile = new Map(
-              (candidate.evidence ?? []).map((evidence) => [evidence.file.replace(/\\/g, "/"), evidence.sha256]),
+              (candidate.evidence ?? []).map((evidence) => [toPosixPath(evidence.file), evidence.sha256]),
             );
             const projected = new Map(complete);
             for (const value of candidate.overlayMetrics) {
               const parsed = IndexEntrySchema.safeParse(value);
               if (!parsed.success) continue;
               const entry = parsed.data;
-              const path = entry.path.replace(/\\/g, "/");
+              const path = toPosixPath(entry.path);
               const expected = evidenceByFile.get(path);
               if (!expected) continue;
               const absolute = isAbsolute(path) ? path : resolve(rootDir(), "..", path);

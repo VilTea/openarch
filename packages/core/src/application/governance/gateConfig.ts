@@ -6,11 +6,12 @@ import { isAbsolute } from "node:path";
 import { gatePerFile, type GateRule } from "./gate";
 import { parsePathClasses } from "../pathClass";
 import { DEFAULT_CRL_STATE_WEIGHTS, type P95Values, type CRLStateWeights } from "../../domain/crlState";
-import { baselineIndex, configPath } from "../../infra/paths";
+import { baselineIndex, configPath, toPosixPath } from "../../infra/paths";
 import { createAnalysisScope, type AnalysisScope } from "../../domain/analysisScope";
 import { nonGateMetricsInCondition } from "../../domain/metricCatalog";
 import { isFileKindRule } from "../../domain/testGovernance";
 import type { StructuralPolicy, StructuralPolicyMode, StructuralPolicyRule, StructuralPolicyScope } from "../../domain/structuralPolicy";
+
 
 interface ParsedConfig {
   languages?: string[];
@@ -75,7 +76,7 @@ const policyScope = (value: unknown, label: string): StructuralPolicyScope | und
   if (!Object.keys(candidate).every((key) => key === "include" || key === "exclude")) throw new Error(`${label} supports only include/exclude`);
   const patterns = (raw: unknown, field: "include" | "exclude"): readonly string[] | undefined => {
     if (raw === undefined) return undefined;
-    if (!Array.isArray(raw) || raw.some((pattern) => typeof pattern !== "string" || pattern.trim() === "" || isAbsolute(pattern) || pattern.replace(/\\/g, "/").split("/").includes(".."))) {
+    if (!Array.isArray(raw) || raw.some((pattern) => typeof pattern !== "string" || pattern.trim() === "" || isAbsolute(pattern) || toPosixPath(pattern).split("/").includes(".."))) {
       throw new Error(`${label}.${field} must contain project-relative patterns`);
     }
     return raw as readonly string[];

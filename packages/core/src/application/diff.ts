@@ -14,7 +14,7 @@ import { computeFileImpact, type ImpactOutput } from "./diffImpact";
 import { loadGateConfig } from "./governance/gateConfig";
 import type { MRDiagnosis } from "../domain/mrDiagnosis";
 import type { SemanticEvidence } from "../domain/crl";
-import { toRelative } from "../infra/paths";
+import { toRelative, toPosixPath } from "../infra/paths";
 import type { SemanticFileProfile } from "./semanticDiff";
 import { buildImpactPlan, type ImpactPlanItem } from "./impactPlan";
 import { computeChangeSurfaceForProfiles, type ChangeSurfaceCollection } from "./changeSurface";
@@ -93,7 +93,7 @@ export const diff = (input: DiffInput) =>
       const afterText = input.afterTexts?.get(toRelative(p));
       return afterText === undefined ? parser.parse(p) : parser.parseText(p, afterText);
     }), { concurrency: DEFAULT_ANALYSIS_CONCURRENCY });
-    const profilesByFile = new Map(input.semanticProfiles?.map((profile) => [profile.file.replace(/\\/g, "/"), profile]) ?? []);
+    const profilesByFile = new Map(input.semanticProfiles?.map((profile) => [toPosixPath(profile.file), profile]) ?? []);
     const changesFor = (path: string) => {
       const profile = profilesByFile.get(toRelative(path));
       if (profile) return profile.changes;

@@ -10,6 +10,7 @@ import { maxFuncWeightedBranchOf } from "../domain/branchMetrics";
 import { replayHistoricalCrl } from "./governance/historyCrl";
 import { StorageService } from "../port/StorageService";
 import { participatesInPopulation } from "../domain/fileParticipation";
+import { toPosixPath } from "../infra/paths";
 
 export interface RecordInput {
   readonly title: string;
@@ -74,7 +75,7 @@ export const record = (input: RecordInput) =>
     let maxCrl = 0, topFile = "", topBranch = 0;
     for (const [, metric] of metrics) {
       if (!participatesInPopulation(metric.fileKind, "production-governance")) continue;
-      const historicalCrl = crlByFile.get(metric.path) ?? crlByFile.get(metric.path.replace(/\\/g, "/")) ?? 0;
+      const historicalCrl = crlByFile.get(metric.path) ?? crlByFile.get(toPosixPath(metric.path)) ?? 0;
       if (historicalCrl > maxCrl) {
         maxCrl = historicalCrl;
         topFile = metric.path;
