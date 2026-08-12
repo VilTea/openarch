@@ -74,6 +74,7 @@ export const BaselineIndexSchema = z.object({
     scanAt: z.string().min(10),
     snapshotSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     sourceSnapshotSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+    configSnapshotSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     nFiles: z.number().int().min(0),
     nProductionFiles: z.number().int().min(0).optional(),
     nTestFiles: z.number().int().min(0).optional(),

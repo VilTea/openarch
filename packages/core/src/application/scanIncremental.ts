@@ -10,8 +10,9 @@ import { buildDependencyGraphFromEdges, type ImplicitEdge } from "../domain/grap
 import { DEFAULT_ANALYSIS_CONCURRENCY } from "../infra/boundedConcurrency";
 import { snapshotIdentity, normalizeBaselineSnapshot } from "../adapter/storage/BaselineGenerationValidation";
 import { IoError } from "../errors/errors";
+import { absolutePathKey } from "../infra/paths";
 
-const norm = (p: string) => resolve(p).replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_match, drive: string) => `${drive.toLowerCase()}:`);
+const norm = (p: string) => absolutePathKey(p);
 
 export interface IncrementalScanResult {
   readonly asts: readonly import("../domain/ast").FileAst[];

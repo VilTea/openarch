@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { defaultScriptAssets } from "../script-runtime/defaultScriptAssets";
 import { runtimeResourcePath } from "../runtimeAssets";
+import { toPosixPath } from "../infra/paths";
 
 const manifest = () => defaultScriptAssets();
 const templateRoot = runtimeResourcePath("assets", "templates");
@@ -18,7 +19,7 @@ export interface DefaultScriptInstallResult {
 }
 
 export const defaultScriptIdForPath = (path: string): string | undefined => {
-  const normalized = path.replace(/\\/g, "/");
+  const normalized = toPosixPath(path);
   return manifest().find((entry) => entry.kind === "script" && entry.target && normalized.endsWith(`/${entry.target}`))?.id;
 };
 

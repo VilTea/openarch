@@ -3,6 +3,7 @@ import type { QueryMatch, ParserService } from "../../port/ParserService";
 import type { TestCaseMetric, TestFindingInput } from "../../domain/testGovernance";
 import type { TestFrameworkProvider, TestProviderResult } from "../provider";
 import { capturesInTestBody, controlFlowInTestBody } from "../controlFlow";
+import { toPosixPath } from "../../infra/paths";
 
 const methodPattern = `(method_declaration (modifiers) @modifiers name: (identifier) @name body: (block) @body) @method`;
 const importPattern = `(import_declaration) @import`;
@@ -22,7 +23,7 @@ interface JunitCandidate {
 }
 
 const capture = (match: QueryMatch, name: string) => match.captures.find((item) => item.name === name);
-const normalized = (file: string): string => file.replace(/\\/g, "/");
+const normalized = (file: string): string => toPosixPath(file);
 const isTestFile = (file: string): boolean => /(^|\/)src\/test\/java\//i.test(normalized(file)) || /(?:Test|Tests|IT)\.java$/i.test(file);
 const annotationNames = (modifiers: string): readonly string[] => [...modifiers.matchAll(/@(?:[\w.]+\.)?([A-Za-z_]\w*)\b/g)].map((match) => match[1]);
 const hasJunitImport = (imports: readonly QueryMatch[]): boolean => imports.some((entry) => /\b(?:static\s+)?org\.junit(?:\.|;)/.test(capture(entry, "import")?.text ?? ""));

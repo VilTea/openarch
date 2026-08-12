@@ -3,6 +3,7 @@ import { analyzeEvolutionSignals, type EvolutionChangeSet, type EvolutionSignalR
 import { COCHANGE_EVIDENCE_COMMIT_BUDGET, enrichCochangeSets, enrichCoordinationCandidates, pruneUncorroboratedCochangeSets, type CochangeSetEnrichmentTrace, type EvolutionEnrichmentTrace } from "./evolutionEvidence";
 import { ParserService } from "../port/ParserService";
 import { StorageService } from "../port/StorageService";
+import { toPosixPath } from "../infra/paths";
 
 export interface EvolutionReviewReport extends EvolutionSignalReport {
   readonly enrichment: EvolutionEnrichmentTrace;
@@ -30,7 +31,7 @@ export const evolutionReview = (cwd: string, changeSets: readonly EvolutionChang
     const rawSignals = analyzeEvolutionSignals(
       changeSets,
       metrics.map(([path, entry]) => ({
-        path: path.replace(/\\/g, "/"),
+        path: toPosixPath(path),
         fileKind: entry.fileKind,
         loc: entry.loc,
         inDegree: entry.inDegree,

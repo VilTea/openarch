@@ -1,5 +1,6 @@
 import { dirname, relative, resolve } from "node:path";
 import ts from "typescript";
+import { toPosixPath } from "../../infra/paths";
 
 export interface TypeScriptProject {
   readonly configPath: string;
@@ -9,7 +10,7 @@ export interface TypeScriptProject {
   readonly sources: readonly ts.SourceFile[];
 }
 
-export const normalizeTypeScriptPath = (path: string): string => path.replace(/\\/g, "/");
+export const normalizeTypeScriptPath = (path: string): string => toPosixPath(path);
 
 export const aliasTypeScriptSymbol = (checker: ts.TypeChecker, symbol: ts.Symbol | undefined): ts.Symbol | undefined =>
   symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(symbol) : symbol;

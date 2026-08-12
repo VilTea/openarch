@@ -7,7 +7,7 @@ import { invocationBindingsGo, parseGo, parseGoText, queryGo } from "./GoStrateg
 import { invocationBindingsJava, parseJava, parseJavaText, queryJava } from "./JavaStrategy";
 import { invocationBindingsPython, parsePython, parsePythonText, queryPython } from "./PythonStrategy";
 import { invocationBindingsRust, parseRust, parseRustText, queryRust } from "./RustStrategy";
-import { invocationBindingsTs, parseTs, parseTsText, queryTs } from "./TsStrategy";
+import { invocationBindingsTs, parseTs, parseTsText, queryTs, parseVue, parseVueText, queryVue, invocationBindingsVue } from "./TsStrategy";
 
 export interface ParserStrategy {
   readonly parse: (path: string) => Effect.Effect<FileAst, ParseError>;
@@ -33,6 +33,14 @@ const tsFamilyStrategy = (language: "typescript" | "javascript"): ParserStrategy
   invocationBindings: invocationBindingsTs,
 });
 
+/** vue SFC：提取 <script> 块后按 javascript 语义分析（行号对齐保留源文件行号）。 */
+const vueStrategy: ParserStrategy = {
+  parse: parseVue,
+  parseText: parseVueText,
+  query: queryVue,
+  invocationBindings: invocationBindingsVue,
+};
+
 const goStrategy: ParserStrategy = { parse: parseGo, parseText: parseGoText, query: queryGo, invocationBindings: invocationBindingsGo };
 const rustStrategy: ParserStrategy = { parse: parseRust, parseText: parseRustText, query: queryRust, invocationBindings: invocationBindingsRust };
 const pythonStrategy: ParserStrategy = { parse: parsePython, parseText: parsePythonText, query: queryPython, invocationBindings: invocationBindingsPython };
@@ -41,6 +49,7 @@ const javaStrategy: ParserStrategy = { parse: parseJava, parseText: parseJavaTex
 const LANGUAGE_REGISTRATIONS: readonly LanguageRegistration[] = Object.freeze([
   { id: "typescript", extensions: [".ts", ".tsx", ".mts", ".cts"], strategy: tsFamilyStrategy("typescript") },
   { id: "javascript", extensions: [".js", ".jsx", ".mjs", ".cjs"], strategy: tsFamilyStrategy("javascript") },
+  { id: "vue", extensions: [".vue"], strategy: vueStrategy },
   { id: "go", extensions: [".go"], projectIndicators: ["go.mod"], strategy: goStrategy },
   { id: "rust", extensions: [".rs"], projectIndicators: ["Cargo.toml"], strategy: rustStrategy },
   { id: "python", extensions: [".py"], projectIndicators: ["pyproject.toml", "setup.py", "setup.cfg"], strategy: pythonStrategy },

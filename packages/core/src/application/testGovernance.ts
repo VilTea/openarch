@@ -9,7 +9,7 @@ import { assessTestGovernanceCoverage, type TestGovernanceCoverage } from "../do
 import { assessTestProviderCoverage, type TestProviderCoverage } from "../domain/testProviderCoverage";
 import { summarizeTestFacts, type TestProviderSummary } from "../domain/testFacts";
 import type { TestModuleAssociation } from "../domain/testAssociations";
-import { projectRoot, toAbsolute } from "../infra/paths";
+import { projectRoot, toAbsolute, toPosixPath } from "../infra/paths";
 import { collectProviderFacts } from "./testGovernanceCollection";
 import { executeTestFindingScript } from "../test-governance/engine";
 import type { ProjectTestExecution } from "../test-governance/runner";
@@ -19,6 +19,7 @@ import { discoverProjectTestFiles, loadTestGovernanceConfiguration, selectTestGo
 import { currentFileMetrics } from "./currentMetrics";
 import { withGovernanceWriteLock } from "./governance/writeLock";
 import { testBloatMetrics, type TestBloatMetrics } from "./testBloatMetrics";
+
 
 /** Policy outcome. A PASS remains meaningful only with its collection evidence. */
 export interface TestGovernanceDecision {
@@ -122,7 +123,7 @@ export const testGovernance = (options: TestGovernanceOptions = {}) =>
     const unbaselinedTestFiles = discoveredTestFiles.filter((path) => !baselineTestFiles.has(path));
     const productionPaths = new Set(entries
       .filter(([, entry]) => participatesInPopulation(entry.fileKind, "production-governance"))
-      .map(([path]) => path.replace(/\\/g, "/")));
+      .map(([path]) => toPosixPath(path)));
     const files = testEntries.map(([path]) => path);
     const collection = yield* collectProviderFacts(parser, storage, testEntries, selectedProviders, productionPaths, { persist });
     const findings: TestFinding[] = [...collection.findings];

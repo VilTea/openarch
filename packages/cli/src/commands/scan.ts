@@ -1,5 +1,7 @@
 import { Effect, Either } from "effect";
-import { classifyFileKindWithPolicy, createAnalysisScope, globSync, loadGateConfig, readProjectFileKindRules, readProjectLanguages, scan, sourceSnapshotSha256, type ScanResult } from "@openarch/core";
+import { classifyFileKindWithPolicy, configSnapshotSha256, configPath, createAnalysisScope, globSync, loadGateConfig, readProjectFileKindRules, readProjectLanguages, scan, sourceSnapshotSha256, type ScanResult } from "@openarch/core";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { exitCodeFromError } from "../exit-code";
 import {
   CommandHandler,
@@ -45,11 +47,29 @@ export const scanCommand: CommandHandler = async (args, context) => {
   const fileKindRules = readProjectFileKindRules(projectCwd);
   const scope = createAnalysisScope(readProjectLanguages(projectCwd), fileKindRules);
   const gateConfig = await loadGateConfig();
+  // P2-1（2026-08-11 体验反馈）：config.yml 内容变化时增量 scan 必须自动退化全量重建，
+  // 否则 per-file sha256 身份对比对配置不敏感，策略改动后指标与策略匹配不更新。
+  let configChanged = false;
+  if (!rebuild && rawPatterns.length === 0) {
+    const indexPath = resolve(projectCwd, ".openarch", "baseline", "_index.json");
+    const cfgPath = resolve(projectCwd, ".openarch", "config.yml");
+    const currentConfigHash = configSnapshotSha256(cfgPath);
+    if (currentConfigHash !== undefined && existsSync(indexPath)) {
+      try {
+        const meta = JSON.parse(readFileSync(indexPath, "utf8")).meta as { configSnapshotSha256?: unknown } | undefined;
+        configChanged = typeof meta?.configSnapshotSha256 === "string" && meta.configSnapshotSha256 !== currentConfigHash;
+      } catch {
+        configChanged = false;
+      }
+    }
+    if (configChanged) console.error("⚠ 检测到 .openarch/config.yml 变更，自动退化全量重建（增量 scan 不感知配置变化）");
+  }
   const result = await Effect.runPromise(scan(paths, implicitDeps, {
     analysisScope: scope,
     completeScope: rawPatterns.length === 0,
-    incremental: !rebuild && rawPatterns.length === 0,
+    incremental: !rebuild && !configChanged && rawPatterns.length === 0,
     ...(rawPatterns.length === 0 ? { sourceSnapshotSha256: sourceSnapshotSha256(paths, projectCwd) } : {}),
+    ...(rawPatterns.length === 0 ? { configSnapshotSha256: configSnapshotSha256(resolve(projectCwd, ".openarch", "config.yml")) } : {}),
     calibrationWeights: gateConfig.crlStateWeights,
     structuralPolicies: gateConfig.structuralPolicies,
     sealCalibration,

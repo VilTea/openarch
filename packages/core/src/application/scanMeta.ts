@@ -15,6 +15,7 @@ interface ScanCalibrationOptions {
   readonly sealCalibration?: boolean;
   readonly completeScope?: boolean;
   readonly sourceSnapshotSha256?: string;
+  readonly configSnapshotSha256?: string;
   readonly calibrationWeights?: CRLStateWeights;
 }
 
@@ -127,4 +128,5 @@ export const buildBaselineIndexMeta = (input: {
   calibration: (input.calibrationUpdate as { state: StructuralCalibrationState }).state,
   ...(Object.keys(input.policyCalibrations).length > 0 ? { policyCalibrations: input.policyCalibrations } : {}),
   ...((input.options.completeScope ?? true) && input.options.sourceSnapshotSha256 ? { sourceSnapshotSha256: input.options.sourceSnapshotSha256 } : {}),
+  ...(input.options.configSnapshotSha256 ? { configSnapshotSha256: input.options.configSnapshotSha256 } : {}),
 });

@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { LspLaunchSpec } from "../lsp/NodeLspSession";
+import { toPosixPath } from "../../infra/paths";
 
 /**
  * jdtls 转发 daemon（校准 2026-08-06：Java 单项目符号级刚需）。
@@ -21,7 +22,7 @@ import type { LspLaunchSpec } from "../lsp/NodeLspSession";
 
 /** 项目绑定的 daemon 端口（40000-49999，按 cwd hash 稳定分配）。 */
 export const jdtlsDaemonPort = (cwd: string): number => {
-  const hash = createHash("sha256").update(cwd.replace(/\\/g, "/")).digest("hex").slice(0, 6);
+  const hash = createHash("sha256").update(toPosixPath(cwd)).digest("hex").slice(0, 6);
   return 40000 + (parseInt(hash, 16) % 10000);
 };
 

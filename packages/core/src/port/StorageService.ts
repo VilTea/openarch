@@ -51,6 +51,8 @@ export interface BaselineIndex {
     readonly snapshotSha256?: string;
     /** Content identity of the complete governed source population at scan time. */
     readonly sourceSnapshotSha256?: string;
+    /** Content identity of .openarch/config.yml at scan time (P2-1: config changes force full rebuild). */
+    readonly configSnapshotSha256?: string;
     readonly nFiles: number;
     readonly nProductionFiles?: number;
     readonly nTestFiles?: number;

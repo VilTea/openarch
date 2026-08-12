@@ -8,7 +8,7 @@ import { ParserService } from "../port/ParserService";
 import { isAnalyzableProjectFile, listProjectSourceFiles, resolveProjectExtensions } from "../projectFiles";
 import { globSync } from "../infra/glob";
 
-import { implicitDepsRulesDir } from "../infra/paths";
+import { implicitDepsRulesDir, toPosixPath } from "../infra/paths";
 import { executeRule } from "../implicit-deps/engine";
 import { readImplicitDepsYml, mergeBySource, writeImplicitDepsYml } from "../implicit-deps/merge";
 import type { DiscoveredEdge, StoredEdge } from "../implicit-deps/types";
@@ -19,6 +19,7 @@ import { collectGitChangeSet } from "./changeSet";
 import { analyzeChangeSetSemantics } from "./semanticDiff";
 import type { ChangeSurfaceContainer, ChangeSurfaceFact, ChangeSurfaceFileChange, ChangeSurfaceHunk, ChangeSurfaceSymbolFact, FactResult } from "../script-runtime/projectFacts";
 import { implicitDependencyAdapterFor } from "../script-runtime/implicitDependencyAdapters";
+
 
 export interface DiscoverInput {
   /** 显式指定的规则 mjs 路径（覆盖默认 glob） */
@@ -170,10 +171,10 @@ export const changeSurfaceFactsFor = (cwd: string, source: "staged" | "worktree"
     // 变更集，校准 2026-08-07）——按 cwd 已配置语言的扩展名判断（isAnalyzableProjectFile
     // 用全局 projectRoot，不适用变更集上下文）；规则 mjs 本身排除
     const extensions = resolveProjectExtensions(cwd);
-    const excludedRules = new Set((input?.rules ?? []).map((rule) => rule.replace(/\\/g, "/")));
+    const excludedRules = new Set((input?.rules ?? []).map((rule) => toPosixPath(rule)));
     const analyzable = changeSet.files.filter((file) =>
       extensions.some((ext) => file.path.toLowerCase().endsWith(ext))
-      && !excludedRules.has(file.path.replace(/\\/g, "/")),
+      && !excludedRules.has(toPosixPath(file.path)),
     );
     if (analyzable.length === 0) {
       return { files: [], changeSurface: { availability: "unavailable", reason: "no analyzable changed files" } };
@@ -185,14 +186,14 @@ export const changeSurfaceFactsFor = (cwd: string, source: "staged" | "worktree"
     const changedSymbols: ChangeSurfaceSymbolFact[] = report.profiles.flatMap((profile) =>
       profile.changes
         .filter((change) => !change.anchor.startsWith("import:"))
-        .map((change) => ({ file: profile.file.replace(/\\/g, "/"), anchor: change.anchor, kind: change.kind })),
+        .map((change) => ({ file: toPosixPath(profile.file), anchor: change.anchor, kind: change.kind })),
     );
     // 文件内具体变更部分（hunk 级）——git diff --unified=0 的变更行片段；
     // 每个 hunk 附加语义容器（变更行所在的方法/函数/类——tree-sitter 查询，
     // 非 LSP：脚本引擎自身用于发现 LSP 看不到的隐式依赖，容器只是定位上下文）
     const hunksByFile = gitDiffHunks(cwd, source);
     const changes: ChangeSurfaceFileChange[] = [...hunksByFile.entries()].map(([file, hunks]) => {
-      const normalized = file.replace(/\\/g, "/");
+      const normalized = toPosixPath(file);
       const containers = containersForFile(parser, resolve(cwd, normalized));
       return {
         file: normalized,
@@ -201,7 +202,7 @@ export const changeSurfaceFactsFor = (cwd: string, source: "staged" | "worktree"
       };
     });
     return {
-      files: [...new Set(report.profiles.map((profile) => profile.file.replace(/\\/g, "/")))],
+      files: [...new Set(report.profiles.map((profile) => toPosixPath(profile.file)))],
       changeSurface: changedSymbols.length > 0
         ? { availability: "available", value: { schemaVersion: 2, languages: [...new Set(report.profiles.map((profile) => profile.file))], changedSymbols, changes } }
         : { availability: "unavailable", reason: "no changed declarations detected" },

@@ -72,10 +72,11 @@ export const createTreeSitterRuntime = (grammarFile: string) => {
 
   const parse = (filePath: string) => parseText(filePath, readFileSync(filePath, "utf8"));
 
-  const query = (filePath: string, pattern: string) =>
+  const query = (filePath: string, pattern: string) => queryText(filePath, readFileSync(filePath, "utf8"), pattern);
+
+  const queryText = (filePath: string, code: string, pattern: string) =>
     Effect.gen(function* () {
       const activeParser = yield* ensureParser();
-      const code = readFileSync(filePath, "utf8");
       const tree = activeParser.parse(code);
       if (!tree) {
         return yield* Effect.fail(new ParseError({ path: filePath, cause: new Error("tree-sitter parse returned null") }));
@@ -98,5 +99,5 @@ export const createTreeSitterRuntime = (grammarFile: string) => {
       })) satisfies QueryMatch[];
     });
 
-  return { parse, parseText, query };
+  return { parse, parseText, query, queryText };
 };

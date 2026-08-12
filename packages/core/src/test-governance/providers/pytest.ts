@@ -3,6 +3,7 @@ import type { QueryMatch, ParserService } from "../../port/ParserService";
 import type { TestCaseMetric, TestFindingInput } from "../../domain/testGovernance";
 import type { TestFrameworkProvider, TestProviderResult } from "../provider";
 import { capturesInTestBody, controlFlowInTestBody } from "../controlFlow";
+import { toPosixPath } from "../../infra/paths";
 
 const functionPattern = `(function_definition name: (identifier) @name body: (block) @body) @function`;
 const decoratedFunctionPattern = `(decorated_definition (decorator) @decorator (function_definition name: (identifier) @name body: (block) @body) @function) @definition`;
@@ -38,7 +39,7 @@ interface DecoratorFacts {
 }
 
 const capture = (match: QueryMatch, name: string) => match.captures.find((item) => item.name === name);
-const normalized = (file: string) => file.replace(/\\/g, "/");
+const normalized = (file: string) => toPosixPath(file);
 const isPytestFile = (file: string) => /(^|\/)(?:tests?|__tests__)\/.*\.py$/i.test(normalized(file)) || /(?:^|\/)test_[^/]+\.py$/i.test(normalized(file)) || /_test\.py$/i.test(normalized(file));
 const isTestName = (name: string) => /^test_/.test(name);
 const isInside = (inner: PytestCandidate, outer: PytestCandidate) =>

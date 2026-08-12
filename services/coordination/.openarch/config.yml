@@ -1,0 +1,31 @@
+# OpenArch 配置文件（design v5.2 §8.1）
+version: "5.2"
+
+# 项目语言（决定 openarch scan 匹配的文件扩展名）
+languages: ["go"]
+
+paths:
+  default:
+    pattern: "**"
+
+# rules 可使用 max_func_branch（单函数）、top_level_branch（顶层分派）和
+# weighted_branch_total（文件总加权控制流，建议先作 report）。阈值须由项目校准。
+
+rules_block: []
+
+# Phase 3 exploratory calibration (2026-08-02): baseline P95 max_func_branch=4.15;
+# the current production authority.go sample is 5.30. This project-local WARN is
+# intentionally the first trial, not a portable OpenArch default or a BLOCK.
+rules_warn:
+  - name: "函数局部复杂度试行 WARN"
+    condition: "max_func_branch > 5"
+
+cumulative_thresholds:
+  crl_warn: 50
+  ct_warn: -0.2
+
+# 测试治理由项目策略裁决；provider/script 只产生标准 finding。
+test_governance:
+  providers: ["go-testing"]
+  rules: {}
+  exemptions: []

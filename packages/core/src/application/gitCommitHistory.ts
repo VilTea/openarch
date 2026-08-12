@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { isAnalyzableProjectFile, readProjectFileKindRules, readProjectLanguages } from "../projectFiles";
 import type { EvolutionChangeKind, EvolutionChangeSet } from "../domain/evolutionSignals";
+import { toPosixPath } from "../infra/paths";
 
 export type GitCommitHistory =
   | { readonly availability: "available"; readonly changeSets: readonly EvolutionChangeSet[] }
@@ -29,7 +30,7 @@ export const collectGitCommitHistory = (cwd: string, maxCommits = 100): GitCommi
       if (!match) continue;
       const [, status, path] = match;
       if (!isAnalyzableProjectFile(resolve(cwd, path), { cwd, languages, fileKindRules, population: "production-governance" })) continue;
-      const normalizedPath = path.replace(/\\/g, "/");
+      const normalizedPath = toPosixPath(path);
       current.files.push(normalizedPath);
       current.changes.push({ path: normalizedPath, kind: status === "A" ? "added" : status === "D" ? "deleted" : "modified" });
     }

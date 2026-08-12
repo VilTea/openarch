@@ -10,6 +10,7 @@ import { replayHistoricalCrl } from "./historyCrl";
 import { StorageService } from "../../port/StorageService";
 import { participatesInPopulation } from "../../domain/fileParticipation";
 import { currentFileMetrics } from "../currentMetrics";
+import { toPosixPath } from "../../infra/paths";
 
 export interface ReviewEntry {
   readonly path: string;
@@ -57,7 +58,7 @@ export const review = () =>
         localBurden: breakdown?.localBurden ?? 0,
         exposure: breakdown?.exposure ?? 0,
         moduleShape: breakdown?.moduleShape ?? 0,
-        crl: crlMap.get(m.path) ?? crlMap.get(m.path.replace(/\\/g, "/")) ?? 0,
+        crl: crlMap.get(m.path) ?? crlMap.get(toPosixPath(m.path)) ?? 0,
         alphaStruct: m.alphaStruct,
         branchCount: m.branchCount,
         weightedBranchTotal: weightedBranchTotalOf(m),

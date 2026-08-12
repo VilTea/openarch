@@ -1,5 +1,5 @@
 // packages/core/src/domain/ast.ts
-export const LANGUAGES = ["typescript", "javascript", "go", "rust", "python", "java"] as const;
+export const LANGUAGES = ["typescript", "javascript", "vue", "go", "rust", "python", "java"] as const;
 export type Language = typeof LANGUAGES[number];
 
 export interface ImportRef {

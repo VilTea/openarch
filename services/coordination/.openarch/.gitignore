@@ -1,4 +1,13 @@
-# OpenArch runtime artifacts
+# OpenArch runtime artifacts (B2 2026-08-10: never committed — idempotently
+# rebuilt by `openarch scan`). Decision artifacts (config.yml, rules,
+# calibration samples, .docs-repo-config.json) stay tracked.
 pending/
 scan-status.json
 .*.lock
+coordination.json
+baseline/
+baseline.staging-*/
+history/
+audit/
+document-store.json
+.docs-repo-cache/

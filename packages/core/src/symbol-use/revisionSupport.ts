@@ -12,6 +12,7 @@ const typeScriptSupport = (path: string): boolean =>
 const languageSupport: Readonly<Record<Language, SupportMatcher>> = {
   typescript: typeScriptSupport,
   javascript: typeScriptSupport,
+  vue: typeScriptSupport,
   python: exact("pyrightconfig.json", "pyproject.toml"),
   go: exact("go.mod", "go.sum", "go.work"),
   rust: exact("Cargo.toml", "Cargo.lock"),

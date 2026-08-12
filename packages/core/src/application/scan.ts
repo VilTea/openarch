@@ -8,7 +8,7 @@ import { buildDependencyGraph, buildDependencyGraphFromEdges, computeInDegrees, 
 import { reach } from "../domain/reach";
 import { confidence } from "../domain/confidence";
 import { alphaStruct } from "../domain/alpha";
-import { projectRoot, toRelative } from "../infra/paths";
+import { projectRoot, toRelative, absolutePathKey } from "../infra/paths";
 import { publishIncrementalEntries } from "./scanIncremental";
 import { p95 } from "../domain/p95";
 import { classifyFileKindWithPolicy, type FileKind } from "../domain/testGovernance";
@@ -28,8 +28,8 @@ import { computeEntries, projectLanguages } from "./scanEntries";
 import { buildScanMeta } from "./scanMeta";
 import { matchesStructuralPolicy, type StructuralPolicy } from "../domain/structuralPolicy";
 
-/** 与 graph.ts map 一致的路径标准化 */
-const norm = (p: string) => resolve(p).replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_match, drive: string) => `${drive.toLowerCase()}:`);
+/** 与 graph.ts map 一致的路径标准化（A1：统一 absolutePathKey，盘符/分隔符一致） */
+const norm = (p: string) => absolutePathKey(p);
 
 export interface ScanOptions {
   /** 项目可替换默认目录/文件名约定；core 不把任何测试框架固化为分类策略。 */
@@ -44,6 +44,8 @@ export interface ScanOptions {
   readonly sealCalibration?: boolean;
   /** Content identity supplied by the caller that selected a complete source population. */
   readonly sourceSnapshotSha256?: string;
+  /** Content identity of .openarch/config.yml (P2-1: config change forces full rebuild). */
+  readonly configSnapshotSha256?: string;
   /** 增量扫描（校准 2026-08-08）：有 baseline 且 git 可用时只重算变更文件及其一级
    *  消费者，未变更文件复用既有 per-file metrics；图从 baseline imports 重建，
    *  不 parse 全量。`--rebuild`/无 baseline/无 git 时退化为全量重建。 */

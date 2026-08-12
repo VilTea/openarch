@@ -2,6 +2,7 @@
 import { minimatch } from "minimatch";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { TestModuleAssociation } from "./testAssociations";
+import { toPosixPath } from "../infra/paths";
 
 /** Single runtime/type authority for file participation roles. */
 export const FILE_KINDS = ["production", "test", "generated", "auxiliary"] as const;
@@ -21,14 +22,14 @@ export const isFileKindRule = (value: unknown): value is FileKindRule => {
 
 /** 保守默认分类。项目可在 scan 的 fileKindClassifier 中替换，不把目录惯例固化为产品策略。 */
 export const classifyFileKind = (filePath: string): FileKind => {
-  const path = filePath.replace(/\\/g, "/").toLowerCase();
+  const path = toPosixPath(filePath).toLowerCase();
   if (path.includes("/dist/") || path.includes("/generated/") || path.endsWith(".d.ts")) return "generated";
   if (/(^|\/)(?:__tests__|tests?)(?:\/|$)/.test(path) || /\.(?:test|spec)\.[^/]+$/.test(path) || /_test\.go$/.test(path) || /(?:test|tests|it)\.java$/.test(path)) return "test";
   return "production";
 };
 
 const normalizeForPolicy = (filePath: string, projectRoot?: string): string => {
-  const normalized = filePath.replace(/\\/g, "/");
+  const normalized = toPosixPath(filePath);
   if (!projectRoot || !isAbsolute(filePath)) return normalized;
   return relative(resolve(projectRoot), resolve(filePath)).replace(/\\/g, "/");
 };
@@ -40,7 +41,7 @@ export const classifyFileKindWithPolicy = (
   options: { readonly projectRoot?: string } = {},
 ): FileKind => {
   const policyPath = normalizeForPolicy(filePath, options.projectRoot).toLowerCase();
-  return rules.find((rule) => minimatch(policyPath, rule.pattern.replace(/\\/g, "/").toLowerCase()))?.kind ?? classifyFileKind(policyPath);
+  return rules.find((rule) => minimatch(policyPath, toPosixPath(rule.pattern).toLowerCase()))?.kind ?? classifyFileKind(policyPath);
 };
 
 /** provider 或项目脚本已经识别、但尚未被项目策略裁决的事实。 */

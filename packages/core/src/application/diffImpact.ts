@@ -88,15 +88,20 @@ export const computeFileImpact = (input: ImpactInput): ImpactOutput => {
   })));
 
   // D_MR: 复用 CRL_state 的局部负担语义；暴露度单独呈现，不混成腐化分数。
-  const beforeSource: MRBeforeSource = input.semanticBeforeState === "git"
-    ? "git"
-    : input.semanticBeforeState === "introduced"
-      ? "introduced"
-      : oldEntry
-        ? "baseline"
-        : input.semanticBeforeState === "unavailable"
-          ? "unavailable"
-          : "introduced";
+  // 冷启动（无 baseline P95 分母）时无法同口径归一化恶化——即使 git before 存在，
+  // 也诚实标为 unavailable，避免静默 0.00 误导。
+  const noP95Denominator = input.p95 === undefined;
+  const beforeSource: MRBeforeSource = noP95Denominator
+    ? "unavailable"
+    : input.semanticBeforeState === "git"
+      ? "git"
+      : input.semanticBeforeState === "introduced"
+        ? "introduced"
+        : oldEntry
+          ? "baseline"
+          : input.semanticBeforeState === "unavailable"
+            ? "unavailable"
+            : "introduced";
   const beforeMetrics = beforeSource === "git"
     ? input.semanticBefore
     : beforeSource === "baseline"

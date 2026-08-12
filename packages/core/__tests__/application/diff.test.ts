@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Effect, Layer } from "effect";
 import { diff } from "../../src/application/diff";
 import { ParserService } from "../../src/port/ParserService";
@@ -6,6 +6,7 @@ import { StorageService, type IndexEntry, type StoredHistoryEntry } from "../../
 import { LockService } from "../../src/port/LockService";
 import type { FileAst } from "../../src/domain/ast";
 import type { MRDiagnosis } from "../../src/domain/mrDiagnosis";
+import { withTemporaryDirectory } from "../support/temporaryDirectory";
 
 const before: IndexEntry = {
   path: "src/dmr-sample.ts",
@@ -36,7 +37,7 @@ const after: FileAst = {
 };
 
 describe("diff D_MR integration", () => {
-  it("requires a content-addressed baseline instead of using scanAt as a legacy identity", async () => {
+  it("requires a content-addressed baseline when neither baseline nor git HEAD is available (cold-start fallback absent)", async () => {
     const ParserTest = Layer.succeed(ParserService, {
       parse: () => Effect.succeed(after), query: () => Effect.succeed([]), supportedLanguages: Effect.succeed(["typescript"]),
     });
@@ -51,10 +52,18 @@ describe("diff D_MR integration", () => {
       acquire: () => Effect.succeed({ name: "diff", agentId: "test", acquiredAt: 0, lockId: "test-lock" }), release: () => Effect.void,
     });
 
-    const exit = await Effect.runPromiseExit(diff({
-      changedFiles: [before.path], baselinePath: ".openarch/baseline.json", changeKind: "function_body", agentId: "test",
-    }).pipe(Effect.provide(Layer.mergeAll(ParserTest, StorageTest, LockTest))));
-    expect(exit._tag).toBe("Failure");
+    // 在无 git 的临时目录跑：无 snapshotSha256 且无 git HEAD → 冷启动 fallback 不可用 → 仍失败。
+    await withTemporaryDirectory("diff-coldstart", async (cwd) => {
+      const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(cwd);
+      try {
+        const exit = await Effect.runPromiseExit(diff({
+          changedFiles: [before.path], baselinePath: ".openarch/baseline.json", changeKind: "function_body", agentId: "test",
+        }).pipe(Effect.provide(Layer.mergeAll(ParserTest, StorageTest, LockTest))));
+        expect(exit._tag).toBe("Failure");
+      } finally {
+        cwdSpy.mockRestore();
+      }
+    });
   });
 
   it("replaces pending evidence while retaining the sealed baseline metric", async () => {
