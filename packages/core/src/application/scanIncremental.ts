@@ -1,4 +1,8 @@
 // 增量扫描（校准 2026-08-08）：per-file sha256 内容身份变更检测 + 只重算变更文件
+// 覆盖面边界（2026-08-12 评估）：变更文件 + 其一级消费者重算；运行时图 inDegree
+// 从 edges 重建（正确）；baseline entry.inDegree 对"未变更但入度变化"的文件保持
+// 旧值——但 prefilter 只查询变更文件且多文件变更保守保留（symbolHygiene 2026-08-12），
+// 该滞后无实际危害，属已知边界。
 // 及其一级消费者。独立文件保持 scan.ts 的局部负担（CRL）在项目 P95 阈值内。
 import { Effect } from "effect";
 import { resolve } from "node:path";
@@ -10,8 +14,9 @@ import { buildDependencyGraphFromEdges, type ImplicitEdge } from "../domain/grap
 import { DEFAULT_ANALYSIS_CONCURRENCY } from "../infra/boundedConcurrency";
 import { snapshotIdentity, normalizeBaselineSnapshot } from "../adapter/storage/BaselineGenerationValidation";
 import { IoError } from "../errors/errors";
+import { absolutePathKey } from "../infra/paths";
 
-const norm = (p: string) => resolve(p).replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_match, drive: string) => `${drive.toLowerCase()}:`);
+const norm = (p: string) => absolutePathKey(p);
 
 export interface IncrementalScanResult {
   readonly asts: readonly import("../domain/ast").FileAst[];

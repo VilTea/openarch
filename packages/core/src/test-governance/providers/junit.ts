@@ -1,15 +1,21 @@
 import { Effect } from "effect";
 import type { QueryMatch, ParserService } from "../../port/ParserService";
 import type { TestCaseMetric, TestFindingInput } from "../../domain/testGovernance";
-import type { TestFrameworkProvider, TestProviderResult } from "../provider";
+import type { TestFrameworkProvider, TestProviderContext, TestProviderResult } from "../provider";
 import { capturesInTestBody, controlFlowInTestBody } from "../controlFlow";
+import { toPosixPath } from "../../infra/paths";
 
 const methodPattern = `(method_declaration (modifiers) @modifiers name: (identifier) @name body: (block) @body) @method`;
+/** 任意方法（含无修饰符的 helper/包装方法），用于断言包装作用域识别。 */
+const anyMethodPattern = `(method_declaration name: (identifier) @name body: (block) @body) @method`;
 const importPattern = `(import_declaration) @import`;
 const callPattern = `(method_invocation name: (identifier) @name) @call`;
 const controlFlowPattern = `[(if_statement) @full (switch_expression) @full (switch_label) @case]`;
 const nestedFunctionPattern = `[(lambda_expression) @nested (method_declaration) @nested (constructor_declaration) @nested]`;
 const assertionMethods = new Set(["assertEquals", "assertNotEquals", "assertTrue", "assertFalse", "assertNull", "assertNotNull", "assertSame", "assertNotSame", "assertThrows", "assertThat", "assertArrayEquals", "assertDoesNotThrow", "assertIterableEquals", "fail"]);
+
+// JUnit 断言识别（校准 2026-08-12 体验反馈）：标准 assert* 方法族 + 同文件内
+// 定义且体内含标准断言的包装方法（语法级作用域，不依赖命名前缀）。
 
 interface JunitCandidate {
   readonly name: string;
@@ -22,7 +28,7 @@ interface JunitCandidate {
 }
 
 const capture = (match: QueryMatch, name: string) => match.captures.find((item) => item.name === name);
-const normalized = (file: string): string => file.replace(/\\/g, "/");
+const normalized = (file: string): string => toPosixPath(file);
 const isTestFile = (file: string): boolean => /(^|\/)src\/test\/java\//i.test(normalized(file)) || /(?:Test|Tests|IT)\.java$/i.test(file);
 const annotationNames = (modifiers: string): readonly string[] => [...modifiers.matchAll(/@(?:[\w.]+\.)?([A-Za-z_]\w*)\b/g)].map((match) => match[1]);
 const hasJunitImport = (imports: readonly QueryMatch[]): boolean => imports.some((entry) => /\b(?:static\s+)?org\.junit(?:\.|;)/.test(capture(entry, "import")?.text ?? ""));
@@ -46,18 +52,41 @@ export const JUNIT_PROVIDER_ID = "java-junit";
 
 /** JUnit 4/5 standard syntax only. Custom annotations, parameterized tests, Mockito and framework lifecycle remain outside this static provider. */
 export const junitProvider: TestFrameworkProvider = {
-  id: JUNIT_PROVIDER_ID,
+    id: JUNIT_PROVIDER_ID,
+  label: "JUnit 4/5（Java）",
   supports: isTestFile,
-  collect: async (file: string, parser: ParserService): Promise<TestProviderResult> => {
-    const [methods, imports, calls, controlFlow, nested] = await Promise.all([
+  collect: async (file: string, parser: ParserService, context?: TestProviderContext): Promise<TestProviderResult> => {
+    const [methods, imports, calls, controlFlow, nested, anyMethods] = await Promise.all([
       Effect.runPromise(parser.query(file, methodPattern)), Effect.runPromise(parser.query(file, importPattern)),
       Effect.runPromise(parser.query(file, callPattern)), Effect.runPromise(parser.query(file, controlFlowPattern)),
-      Effect.runPromise(parser.query(file, nestedFunctionPattern)),
+      Effect.runPromise(parser.query(file, nestedFunctionPattern)), Effect.runPromise(parser.query(file, anyMethodPattern)),
     ]);
     const tests = candidates(methods, hasJunitImport(imports));
+    // 语法级断言作用域（校准 2026-08-12）：测试类/基类内定义、体内含标准 JUnit
+    // 断言的方法视为断言包装（自定义 helper 不依赖命名前缀）。
+    // 用 startIndex/endIndex（0-based 字节偏移）而非行号：与 capturesInTestBody 一致，
+    // 避免不同 provider 的行号语义差异。
+    const standardAssertionCalls = calls.filter((match) => {
+      const name = capture(match, "name")?.text;
+      return name !== undefined && assertionMethods.has(name);
+    });
+    const wrapperNames = new Set<string>();
+    for (const method of anyMethods) {
+      const name = capture(method, "name")?.text;
+      const bodyStart = capture(method, "body")?.startLine;
+      const bodyEnd = capture(method, "body")?.endLine;
+      if (name && bodyStart !== undefined && bodyEnd !== undefined
+        && standardAssertionCalls.some((call) => {
+          const callLine = capture(call, "call")?.startLine;
+          return callLine !== undefined && callLine >= bodyStart && callLine <= bodyEnd;
+        })) {
+        wrapperNames.add(name);
+      }
+    }
     const metrics: TestCaseMetric[] = tests.map((test) => ({
       name: test.name, loc: Math.max(0, test.endLine - test.startLine + 1),
-      assertionCount: capturesInTestBody(test, calls, nested, "name").filter((call) => assertionMethods.has(call.text)).length,
+      assertionCount: capturesInTestBody(test, calls, nested, "name").filter((call) =>
+        assertionMethods.has(call.text) || wrapperNames.has(call.text) || context?.isCrossFileWrapperCall(call.text) === true).length,
       mockCount: 0, statuses: test.statuses, testBodyControlFlow: controlFlowInTestBody(test, controlFlow, nested),
     }));
     const findings: TestFindingInput[] = tests.filter((test) => test.statuses.includes("ignored")).map((test) => ({

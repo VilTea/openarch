@@ -1,8 +1,10 @@
 import { Effect } from "effect";
 import type { QueryMatch, ParserService } from "../../port/ParserService";
 import type { TestCaseMetric, TestFindingInput } from "../../domain/testGovernance";
-import type { TestFrameworkProvider, TestProviderResult } from "../provider";
+import type { TestFrameworkProvider, TestProviderContext, TestProviderResult } from "../provider";
 import { capturesInTestBody, controlFlowInTestBody } from "../controlFlow";
+import { assertionWrapperScope, namedFunctionsFrom } from "../assertionScope";
+import { toPosixPath } from "../../infra/paths";
 
 const functionPattern = `(function_definition name: (identifier) @name body: (block) @body) @function`;
 const decoratedFunctionPattern = `(decorated_definition (decorator) @decorator (function_definition name: (identifier) @name body: (block) @body) @function) @definition`;
@@ -38,7 +40,7 @@ interface DecoratorFacts {
 }
 
 const capture = (match: QueryMatch, name: string) => match.captures.find((item) => item.name === name);
-const normalized = (file: string) => file.replace(/\\/g, "/");
+const normalized = (file: string) => toPosixPath(file);
 const isPytestFile = (file: string) => /(^|\/)(?:tests?|__tests__)\/.*\.py$/i.test(normalized(file)) || /(?:^|\/)test_[^/]+\.py$/i.test(normalized(file)) || /_test\.py$/i.test(normalized(file));
 const isTestName = (name: string) => /^test_/.test(name);
 const isInside = (inner: PytestCandidate, outer: PytestCandidate) =>
@@ -91,9 +93,10 @@ export const PYTEST_PROVIDER_ID = "python-pytest";
 
 /** Standard pytest naming and direct pytest APIs only; aliases, plugins and dynamic marks remain unavailable. */
 export const pytestProvider: TestFrameworkProvider = {
-  id: PYTEST_PROVIDER_ID,
+    id: PYTEST_PROVIDER_ID,
+  label: "pytest（Python）",
   supports: isPytestFile,
-  collect: async (file: string, parser: ParserService): Promise<TestProviderResult> => {
+  collect: async (file: string, parser: ParserService, context?: TestProviderContext): Promise<TestProviderResult> => {
     const [functions, decorated, classes, assertions, memberCalls, identifierCalls, controlFlow, nested] = await Promise.all([
       Effect.runPromise(parser.query(file, functionPattern)), Effect.runPromise(parser.query(file, decoratedFunctionPattern)),
       Effect.runPromise(parser.query(file, classPattern)),
@@ -102,13 +105,34 @@ export const pytestProvider: TestFrameworkProvider = {
       Effect.runPromise(parser.query(file, nestedFunctionPattern)),
     ]);
     const tests = collectCandidates(functions, decorated, classes);
+    // 语法级断言作用域（校准 2026-08-12）：文件级定义、体内含 assert 语句的
+    // 函数视为断言包装（validate_created 等，不依赖命名前缀）。嵌套在测试体内的
+    // 函数（嵌套 helper/嵌套测试）不计——其断言已由 belongs 的 nested 排除逻辑处理。
+    const testNames = new Set(tests.map((test) => test.name));
+    const fileLevelFunctions = namedFunctionsFrom([...functions, ...decorated].map((match) => ({
+      name: capture(match, "name")?.text,
+      bodyStart: capture(match, "body")?.startLine,
+      bodyEnd: capture(match, "body")?.endLine,
+    }))).filter((fn) => {
+      if (testNames.has(fn.name)) return false;
+      // 排除嵌套在任何测试候选体内的函数
+      return !tests.some((test) => fn.bodyStart >= test.startLine && fn.bodyStart <= test.endLine);
+    });
+    const wrapperCallees = assertionWrapperScope(
+      fileLevelFunctions,
+      assertions.map((match) => capture(match, "assertion")?.startLine ?? -1),
+    );
     const belongs = (test: PytestCandidate, match: QueryMatch, name: string) => capturesInTestBody(test, [match], nested, name).length > 0;
     const hasSkipCall = (test: PytestCandidate) => memberCalls.some((match) =>
       capture(match, "object")?.text === "pytest" && capture(match, "method")?.text === "skip" && belongs(test, match, "call"));
     const metrics: TestCaseMetric[] = tests.map((test) => ({
       name: test.name, loc: Math.max(0, test.endLine - test.startLine + 1), statuses: test.statuses,
       assertionCount: assertions.filter((match) => belongs(test, match, "assertion")).length
-        + memberCalls.filter((match) => capture(match, "object")?.text === "pytest" && capture(match, "method")?.text === "raises" && belongs(test, match, "call")).length,
+        + memberCalls.filter((match) => capture(match, "object")?.text === "pytest" && capture(match, "method")?.text === "raises" && belongs(test, match, "call")).length
+        + identifierCalls.filter((match) => {
+          const callee = capture(match, "callee")?.text ?? "";
+          return (wrapperCallees.isAssertionCall(callee) || context?.isCrossFileWrapperCall(callee) === true) && belongs(test, match, "call");
+        }).length,
       mockCount: memberCalls.filter((match) => ["monkeypatch", "mock"].includes(capture(match, "object")?.text ?? "")
         && ["setattr", "setitem", "patch"].includes(capture(match, "method")?.text ?? "") && belongs(test, match, "call")).length
         + identifierCalls.filter((match) => assertionMockConstructors.has(capture(match, "callee")?.text ?? "") && belongs(test, match, "call")).length,

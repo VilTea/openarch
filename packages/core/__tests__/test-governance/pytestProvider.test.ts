@@ -31,6 +31,10 @@ beforeAll(() => {
     "def test_expected_failure(): assert False",
     "def test_skip_call(): pytest.skip('conditional')",
     "def test_raises():\n    with pytest.raises(ValueError):\n        raise ValueError('expected')",
+    "def assert_created(entity):\n    assert entity is not None",
+    "def validate_created(entity):\n    assert entity.id is not None",
+    "def test_assert_helper(): assert_created(obj)",
+    "def test_validate_helper(): validate_created(obj)",
     "def test_mock(monkeypatch):\n    monkeypatch.setattr('module.value', 1)\n    MagicMock()\n    assert True",
     "def test_nested():\n    def test_helper():\n        assert True\n    test_helper()",
     "class Helper:\n    def test_not_collected(self):\n        assert True",
@@ -43,12 +47,15 @@ describe("pytestProvider", () => {
   it("collects standard pytest tests without treating fixtures or nested test-named helpers as cases", async () => {
     const result = await Effect.runPromise(collect());
     expect(result.tests.map((test) => test.name)).toEqual([
-      "test_assertion", "test_marked", "test_expected_failure", "test_skip_call", "test_raises", "test_mock", "test_nested", "test_method",
+      "test_assertion", "test_marked", "test_expected_failure", "test_skip_call", "test_raises", "test_assert_helper", "test_validate_helper", "test_mock", "test_nested", "test_method",
     ]);
     expect(result.tests.find((test) => test.name === "test_assertion")?.assertionCount).toBe(1);
     expect(result.tests.find((test) => test.name === "test_marked")?.statuses).toEqual(["skipped"]);
     expect(result.tests.find((test) => test.name === "test_expected_failure")?.statuses).toEqual(["xfail"]);
     expect(result.tests.find((test) => test.name === "test_raises")?.assertionCount).toBe(1);
+    // P3（2026-08-12 体验反馈）：同文件内体内含 assert 的包装函数（非前缀命名）视为断言
+    expect(result.tests.find((test) => test.name === "test_assert_helper")?.assertionCount).toBe(1);
+    expect(result.tests.find((test) => test.name === "test_validate_helper")?.assertionCount).toBe(1);
     expect(result.tests.find((test) => test.name === "test_mock")?.mockCount).toBe(2);
     expect(result.tests.find((test) => test.name === "test_nested")?.assertionCount).toBe(0);
     expect(result.tests.find((test) => test.name === "test_method")?.testBodyControlFlow).toBe(1);

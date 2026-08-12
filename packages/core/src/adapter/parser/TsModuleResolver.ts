@@ -12,7 +12,9 @@ const configPathFor = (filePath: string): string | null => {
   const importerDir = dirname(filePath);
   if (configPathByImporterDir.has(importerDir)) return configPathByImporterDir.get(importerDir) ?? null;
   const configPath = typeScriptConfigPathFor(filePath) ?? null;
-  configPathByImporterDir.set(importerDir, configPath);
+  // 只缓存成功结果（2026-08-12 修复，与 JavaModuleResolver 对齐）：tsconfig 可能
+  // 在首次解析后出现，缓存 null 会让新增 tsconfig 的项目永久解析失败。
+  if (configPath) configPathByImporterDir.set(importerDir, configPath);
   return configPath;
 };
 
@@ -24,7 +26,7 @@ const compilerOptionsFor = (filePath: string): CompilerOptionsState => {
 
   const config = ts.readConfigFile(configPath, ts.sys.readFile);
   if (config.error) {
-    compilerOptionsByConfigPath.set(configPath, "invalid");
+    // 不缓存 "invalid"（2026-08-12 修复）：配置文件错误可能在修复后恢复。
     return "invalid";
   }
 

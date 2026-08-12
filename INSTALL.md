@@ -68,6 +68,7 @@ anywhere (keeping the executable beside `resources/`) and add it to `PATH`.
 ## 3. Initialize a Governed Project
 
 ```bash
+# replace claude with your agent: claude | codex | cursor | opencode | reasonix
 openarch init --agent claude
 openarch context
 ```
@@ -177,6 +178,12 @@ After initialization, run `openarch context` for read-only project facts. During
 implementation use `openarch check --worktree --report`; after staging use
 `openarch check --staged --report`. The published command surface is `openarch init`,
 `openarch context`, `openarch scan`, `openarch review`, `openarch check`,
-`openarch rules`, `openarch docs`, and `openarch toolchains` (`openarch coordination`,
+`openarch rules`, `openarch docs`, `openarch test`, `openarch toolchains`, and `openarch update`
+(`openarch coordination`,
 `openarch lsp`, `openarch calibration`, and `openarch anti-patterns` are
-advanced-visible).
+advanced-visible). `openarch test --list` lists the registered test-governance
+providers (ids used in `test_governance.providers`); bare `openarch test` runs
+the test-governance evaluation. `openarch update` is read-only: it compares the installed
+version against the latest release and prints update steps; it never
+auto-installs. Re-run `openarch init --agent <harness>` after upgrading to
+refresh the installed Skill tree.

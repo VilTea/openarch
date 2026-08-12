@@ -1,6 +1,6 @@
 {
   "name": "@openarch/plugin",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "OpenArch 架构治理工具——Coding Agent 插件。防腐主线闭环 + 多平台适配（Claude Code、Cursor、Codex、OpenCode、Hermes）。",
   "author": "VilTea <https://github.com/VilTea>",
   "license": "MIT",

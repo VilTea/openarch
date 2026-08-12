@@ -57,7 +57,9 @@ presentation:
   locale: "${defaultPresentationLocale()}"
 
 governance:
-  # tracked: 团队可复核治理证据；local: 仅本机治理状态。
+  # tracked: 决策产物（config.yml/规则/校准样本）自动暂存随提交复核，运行产物
+  #   （baseline/history/audit）不自动提交，可由 openarch scan 幂等重建；
+  # local: 仅本机治理状态，.openarch 整体不进 git。
   persistence: tracked
   # 保留近期原始 sealed history；更早记录压缩为数学等价的 CRL checkpoint。
   history:
@@ -65,6 +67,10 @@ governance:
 
 # 项目语言（决定 openarch scan 匹配的文件扩展名）；空数组表示尚无已支持语言，
 # OpenArch 将诚实报告 unavailable，而不会把未知项目伪装成 TypeScript。
+# 支持的语言 id：typescript / javascript / vue / go / rust / python / java。
+# 注意：vue 是独立语言（只匹配 .vue 文件），不包含在 javascript 中——若项目既有
+# .vue 又有 .js/.jsx，需同时配置 "vue" 与 "javascript"（vue 的 <script> 块按
+# js/ts 语义分析，但扩展名匹配是各自独立的）。
 languages: [${languages.map((language) => `"${language}"`).join(", ")}]
 
 paths:

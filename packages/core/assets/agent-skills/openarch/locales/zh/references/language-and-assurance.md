@@ -8,6 +8,8 @@
 
 通用产品能力是指标、baseline、provider 与脚本合同、项目源码发现和语法解析，不依赖某种语言的目录惯例。当前发行版支持 TypeScript/JavaScript、Go、Rust、Python 与 Java 的语法解析；语法支持不等于完整导入解析、测试治理、authority 分析、符号使用或安全覆盖。
 
+语言 id 与扩展名一一对应：`typescript`（.ts/.tsx/.mts/.cts）、`javascript`（.js/.jsx/.mjs/.cjs）、`vue`（.vue）、`go`、`rust`、`python`、`java`。**vue 是独立语言**：`languages` 配置 `"vue"` 只匹配 `.vue` 文件，不包含在 `javascript` 中——项目既有 `.vue` 又有 `.js/.jsx` 时必须同时配置两者（vue 的 `<script>` 块按 js/ts 语义分析，但扩展名匹配各自独立）。
+
 Python 已校准静态根模块、相对模块与单根隐式命名空间包映射；动态导入、`sys.path`、导入 hook、多根命名空间包或显式 Pyright 执行环境仍保持 `PARTIAL` 或 `UNAVAILABLE`。执行环境包括优先的 `pyrightconfig.json`，或没有该文件时 `pyproject.toml` 的 `[tool.pyright]`；二者的 `executionEnvironments`/`extraPaths` 命中会保留引用事实但不证明完整范围。Java 只证明常规 Maven/Gradle 根目录和显式导入；类路径、通配导入、生成源码和反射保持 `UNAVAILABLE`。其他边界以当前命令输出和 provider 覆盖为准，不从运行时安装状态推断。
 
 ## 外部语义 provider
@@ -29,6 +31,17 @@ Tree-sitter 静态语法分析始终是 `I_push`、声明级 diff 和结构图�
 Python、Go、Rust、Java 的语义结果同样以本轮报告的 provider、范围和覆盖为准。Python 的 `__name__` 数据模型 hook 由运行时调度，不作为内部零引用候选；动态导入、反射、宏、条件编译、生成源码、别名插件或未声明的工作区形态会使结果保持 `PARTIAL` 或 `UNAVAILABLE`。`gopls` 的完整引用范围仅限单个 `go.mod` 根且没有 `go.work`、构建约束或生成 Go 源码，并要求为全部已打开的受治理源码发布诊断后再取引用；Java 的完整范围仅限常规单 Maven 根、无模块/外部依赖且未发现反射；Rust 的完整范围仅限单根 `Cargo.toml` 包、无 `build.rs`/工作区、宏调用或条件编译，并要求 Rust Analyzer 为全部已打开的受治理源码发布诊断后再取引用。没有这项就绪证据或遇到任何排除形态时保持 `PARTIAL`。其他情形不得从工具存在或空 finding 推出 clean。
 
 ## 测试 provider
+
+发行版注册的 provider（`openarch test --list` 可查）与静态范围：
+
+| provider id | 框架/语言 | 断言识别 |
+|---|---|---|
+| `typescript-vitest` | Vitest（TS/JS） | `expect(...)` 及 expect/assert/verify/should 前缀 helper |
+| `node-test` | node:test | `assert.*` 及 assert 前缀 helper |
+| `java-junit` | JUnit 4/5（Java） | `assert*` 方法族（含自定义 assert 前缀 helper） |
+| `go-testing` | Go testing | `t.Error/Fatal` 等（Go 无通用断言库，不设 missing-assertion 策略） |
+| `rust-testing` | Rust `#[test]` | `assert*!` 宏；委托调用视为验证意图 |
+| `python-pytest` | pytest | `assert` 语句；`assert_*` helper 调用 |
 
 `python-pytest` 只覆盖标准测试函数或方法、AST 确认的断言和少量直接标记或调用。Java JUnit 只覆盖标准注解与断言。Go、Rust 也只有明确的静态范围。动态标记、别名、插件、运行时条件、参数化或框架扩展保持 `PARTIAL`；runner 将实际命令与 provider 事实分开报告。
 

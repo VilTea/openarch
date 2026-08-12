@@ -112,9 +112,16 @@ const stagedDiffRequest = (args: readonly string[], cwd: string): DiffRequest | 
     console.error(`非法 --change-type: ${changeType}。合法值: ${Object.keys(LAMBDA_AST).join(", ")}`);
     return undefined;
   }
-  const paths = stagedPaths(cwd);
+  // 先取原始 git 暂存变更，区分"暂存区无变更"与"有暂存但无可分析文件"
+  //（体验反馈 2026-08-12：无变更却提示"没有可分析文件"是误导）。
+  const rawStaged = gitChangePaths(cwd, "staged");
+  if (rawStaged.length === 0) {
+    console.log("暂存区没有变更（无新增/修改的已跟踪文件）。");
+    return { paths: [], changeOverrides: new Map() };
+  }
+  const paths = rawStaged.filter((path) => isAnalyzableSourceFile(path, cwd, "change-evidence"));
   if (paths.length === 0) {
-    console.log("暂存区没有匹配当前项目 languages 配置的可分析文件。");
+    console.log(`暂存区有 ${rawStaged.length} 个变更文件，但没有匹配当前项目 languages 配置的可分析文件（变更仅涉及不可分析文件，如文档/配置/资源）。`);
     return { paths: [], changeOverrides: new Map() };
   }
   const changeOverrides = parseChangeOverrides(args);
@@ -145,7 +152,7 @@ const parseDiffRequest = (args: readonly string[], cwd: string): DiffRequest | u
   const providedPaths = fileArgs.filter((arg) => !arg.startsWith("--")).flatMap((arg) => arg.split(",")).map((path) => path.trim()).filter(Boolean);
   if (providedPaths.length === 0) { console.error("用法: openarch check [--change-type <type>|--change-override <path>=<type>] <files>"); return undefined; }
   const paths = providedPaths.filter((path) => isAnalyzableSourceFile(path, cwd, "change-evidence"));
-  if (paths.length === 0) { console.error("没有匹配当前项目 languages 配置的可分析文件。"); return undefined; }
+  if (paths.length === 0) { console.error(`指定路径中没有匹配当前项目 languages 配置的可分析文件（共 ${providedPaths.length} 个路径，均不可分析或不在 languages 扩展名内）。`); return undefined; }
   return { paths, changeOverrides, ...(changeType ? { changeType: changeType as ChangeKind } : {}) };
 };
 
@@ -200,6 +207,7 @@ export const diffCommand: CommandHandler = async (args, context) => {
   }
   const early = await earlyDiffCommand(args, context.cwd, context.locale);
   if (early !== undefined) return early;
+  const implicitDeps = await readImplicitDeps();
   const request = args.includes("--staged") ? stagedDiffRequest(args, context.cwd) : parseDiffRequest(args, context.cwd);
   if (!request) return 3;
   if (request.paths.length === 0) return 0;
@@ -217,7 +225,7 @@ export const diffCommand: CommandHandler = async (args, context) => {
   // 预筛（规格 §3.4）：静态上界为空（baseline inDegree=0）的变更文件跳过 LSP——
   // 符号消费者必为空（引用符号必须 import 其所在文件），无需启动昂贵的符号分析。
   const waitIndex = args.includes("--wait-index");
-  const demandProfiles = await Effect.runPromise(prefilterStaticBoundEmpty(semantic.profiles).pipe(Effect.provide(LiveLayer), Effect.either));
+  const demandProfiles = await Effect.runPromise(prefilterStaticBoundEmpty(semantic.profiles, { implicitDeps }).pipe(Effect.provide(LiveLayer), Effect.either));
   const filteredProfiles = demandProfiles._tag === "Right" && demandProfiles.right.length < semantic.profiles.length
     ? demandProfiles.right
     : semantic.profiles;

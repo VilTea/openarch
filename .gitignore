@@ -1,40 +1,38 @@
-# ---- 构建产物 ----
 node_modules/
 dist/
 *.tsbuildinfo
 coverage/
 artifacts/
 
-# ---- 本地工具/Agent 配置（个人，不发布）----
+# 工具/plugin 产物（不属于 OpenArch）
 .reasonix/
-.claude/
-.codex/
-.cursor/
-.opencode/
-.obsidian/
-# .agents/ 是 skill 发行源（zh/en 树同步到 plugin assets），需发布——不忽略
 
-# ---- 开发期内部文档（统一在 docs/internal/，不发布）----
-docs/internal/
-
-# ---- 协调服务本地投影缓存（disposable，可从 Git 重建）----
+# 协调服务本地投影缓存（disposable，可从 Git 重建；默认在系统临时目录，显式 --projection 覆盖时可能落在工作区）
 coordination-projection.ndjson
 
-# ---- .openarch/ 边界：只发布配置与 demo 规则，其余执行产物一律忽略 ----
+# .openarch/ 边界（design §3.3）：config + baseline + history 受 Git 版本控制。
+# 仅排除以下本地文件：
 .openarch/.docs-repo-config.json
 .openarch/docs-repo
 .openarch/.*.lock
 .openarch/scan-status.json
 .openarch/pending/
 .openarch/baseline.staging-*/
-.openarch/baseline/
-.openarch/audit/
-.openarch/history/
+
+# 个人 agent 配置（机器本地；release 分支同样排除）
+.claude/
+
+# ── release 分支发布排除（main 开发分支保留这些文件）──
+# 内部文档（设计/校准/经验/审计；docs/README.md 为内部文档索引）
+docs/internal/
+docs/README.md
+# 个人笔记配置
+.obsidian/
+# agent 开发树与指南
+.agents/
+AGENTS.md
+CLAUDE.md
+# 运行时校准样本（seed 脚本可重建）
 .openarch/calibration/
-.openarch/document-store.json
-.openarch/test-governance/observations/
-services/coordination/.openarch/baseline/
-services/coordination/.openarch/audit/
-services/coordination/.openarch/calibration/
-services/coordination/.openarch/pending/
-services/coordination/.openarch/scan-status.json
+# 愿景模拟文档
+simulation.md

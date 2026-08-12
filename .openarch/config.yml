@@ -14,6 +14,8 @@ governance:
 # 项目语言（决定 openarch scan 匹配的文件扩展名）
 # CLI 入口 packages/cli/bin/openarch.js 与 coordination Go service 都是生产代码；
 # 它们必须共同纳入 baseline/gate，不能只因服务使用另一语言而留下治理盲区。
+# 支持的语言 id：typescript / javascript / vue / go / rust / python / java。
+# 注意：vue 是独立语言（只匹配 .vue 文件），不包含在 javascript 中。
 languages: ["typescript", "javascript", "go"]
 
 # 项目文件参与角色。auxiliary 是 fixtures/examples/samples 等非生产输入：

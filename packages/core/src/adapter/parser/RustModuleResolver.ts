@@ -18,14 +18,15 @@ const cargoContextFor = (startDir: string): CargoContext | null => {
       const manifest = readFileSync(cargoToml, "utf8");
       const sourceDir = join(current, "src");
       const context = /\[package\]/.test(manifest) && existsSync(sourceDir) ? { rootDir: current, sourceDir } : null;
-      cargoContextCache.set(startDir, context);
+      if (context) cargoContextCache.set(startDir, context);
       return context;
     }
     const parent = dirname(current);
     if (parent === current) break;
     current = parent;
   }
-  cargoContextCache.set(startDir, null);
+  // 不缓存 null（2026-08-12 修复，与 JavaModuleResolver 对齐）：Cargo.toml 可能在
+  // 首次解析后出现，缓存 null 会让新增 Cargo.toml 的项目永久解析失败。
   return null;
 };
 

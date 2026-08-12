@@ -40,7 +40,9 @@ describe("CLI command registry", () => {
       "review",
       "rules",
       "scan",
+      "test",
       "toolchains",
+      "update",
     ]);
   });
 
@@ -55,7 +57,7 @@ describe("CLI command registry", () => {
   });
 
   it("does not retain removed command aliases", () => {
-    for (const command of ["diff", "gate", "test", "audit", "extensions", "discover", "record", "status", "evidence"]) {
+    for (const command of ["diff", "gate", "audit", "extensions", "discover", "record", "status", "evidence"]) {
       expect(findCommand(command)).toBeUndefined();
     }
   });
@@ -63,7 +65,7 @@ describe("CLI command registry", () => {
   it("keeps the public help surface aligned with the command registry boundary", () => {
     const help = mainHelpText("en");
     for (const command of defaultCommandDefinitions) expect(help).toContain(`  ${command.usage}`);
-    for (const removed of ["diff", "gate", "guide", "test", "audit", "extensions", "discover", "record", "status", "evidence"]) {
+    for (const removed of ["diff", "gate", "guide", "audit", "extensions", "discover", "record", "status", "evidence"]) {
       expect(help).not.toContain(`\n  ${removed} `);
     }
     expect(help).not.toContain("calibration"); // Advanced protocol entry is deliberately hidden.

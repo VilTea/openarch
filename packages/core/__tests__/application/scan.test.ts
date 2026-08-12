@@ -264,6 +264,17 @@ describe("scan application", () => {
     expect(indexes[0].meta.sourceSnapshotSha256).toBe("a".repeat(64));
   });
 
+  it("stores configSnapshotSha256 when caller provides it (P2-1)", async () => {
+    const indexes: Array<{ meta: { configSnapshotSha256?: string } }> = [];
+    const ParserTest = Layer.succeed(ParserService, { parse: (path) => Effect.succeed(mockAst(path)), query: () => Effect.succeed([]), supportedLanguages: Effect.succeed(["typescript"]) });
+    const StorageTest = Layer.succeed(StorageService, {
+      writeBaseline: (snapshot) => Effect.sync(() => { indexes.push(snapshot.index); }), readIndex: () => Effect.succeed(null), writeIndex: () => Effect.void,
+      writeFileMetrics: () => Effect.void, deleteFileMetrics: () => Effect.void, readFileMetrics: () => Effect.succeed(null), listAllFileMetrics: () => Effect.succeed([]), clearFileMetrics: () => Effect.void, writeHistory: () => Effect.void, readHistoryEntry: () => Effect.succeed(null), readAllHistory: () => Effect.succeed([]),
+    });
+    await Effect.runPromise(scan(["a.ts"], undefined, { configSnapshotSha256: "b".repeat(64) }).pipe(Effect.provide(Layer.mergeAll(ParserTest, StorageTest, LockTest, ScanProgressTest))));
+    expect(indexes[0].meta.configSnapshotSha256).toBe("b".repeat(64));
+  });
+
   it("file-kind policy 属于分析范围，策略变更会改变 fingerprint", () => {
     expect(createAnalysisScope(["typescript"], [{ pattern: "samples/**", kind: "auxiliary" }]).fingerprint)
       .not.toBe(createAnalysisScope(["typescript"]).fingerprint);

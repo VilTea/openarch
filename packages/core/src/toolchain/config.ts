@@ -105,15 +105,16 @@ export const TOOLCHAIN_CONFIG_TEMPLATE = `# OpenArch external semantic toolchain
 # 路径准则：executable 用当前平台的字面路径（Windows 用反斜杠或正斜杠均可，
 # Node fs 两者皆认）；值用单引号（YAML 双引号会把 Windows 反斜杠当转义序列，
 # 例如 \\w / \\l 会触发 unknown escape sequence）。
-# env 可选：工具的启动环境（机器本地；不进 governed 配置）。典型场景是 gopls
-# 内部调用 go 命令——go 不在全局 PATH 时，把 .tools 的 go bin 注入 PATH：
+# 跨环境提示（2026-08-12）：executable 是机器本地路径，不同成员/CI 位置不同；
+# 项目内不要提交 overrides（模板文件即 machine-local）。示例用 %USERPROFILE%
+# 这类环境变量或工具管理器（asdf/mise/brew）的稳定路径更可移植：
 #   tools:
 #     gopls:
-#       executable: 'E:\\workspace\\llm\\.tools\\bin\\gopls.exe'
+#       executable: '%USERPROFILE%\\.tools\\bin\\gopls.exe'
 #       env:
-#         PATH: 'E:\\workspace\\llm\\.tools\\go\\bin;%PATH%'
+#         PATH: '%USERPROFILE%\\.tools\\go\\bin;%PATH%'
 #     go:
-#       executable: 'E:\\workspace\\llm\\.tools\\go\\bin\\go.exe'
+#       executable: '%USERPROFILE%\\.tools\\go\\bin\\go.exe'
 version: 1
 tools: {}
 `;

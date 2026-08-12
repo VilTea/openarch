@@ -1,5 +1,6 @@
 import { dirname, relative, resolve } from "node:path";
 import ts from "typescript";
+import { toPosixPath } from "../../infra/paths";
 
 export interface TypeScriptProject {
   readonly configPath: string;
@@ -9,7 +10,7 @@ export interface TypeScriptProject {
   readonly sources: readonly ts.SourceFile[];
 }
 
-export const normalizeTypeScriptPath = (path: string): string => path.replace(/\\/g, "/");
+export const normalizeTypeScriptPath = (path: string): string => toPosixPath(path);
 
 export const aliasTypeScriptSymbol = (checker: ts.TypeChecker, symbol: ts.Symbol | undefined): ts.Symbol | undefined =>
   symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(symbol) : symbol;
@@ -55,6 +56,12 @@ const projectForConfig = (
  * Builds one compiler project for every tsconfig that governs configured
  * TypeScript source. This is intentionally source-led: monorepo layout is not
  * inferred from directory names or package-manager conventions.
+ *
+ * 有意不做 Program 缓存（2026-08-12 评估）：Program/TypeChecker 与工作树
+ * 源码绑定——工作树变更后必须重建，缓存会过期（正确性风险）；大项目
+ * Program 内存数百 MB，模块级缓存长期驻留不可接受；且每次 check 只构建
+ * 一次（collectTypeScriptSymbolUse 单次调用），缓存收益≈0。若未来出现
+ * 同进程多次收集的场景，应优先做"内容 hash 判失效"的进程级缓存而非盲缓存。
  */
 export const loadTypeScriptProjects = (cwd: string, sourceFiles: readonly string[]): readonly TypeScriptProject[] => {
   const governedSourcePaths = new Set(sourceFiles.map((file) => normalizeTypeScriptPath(resolve(file))));

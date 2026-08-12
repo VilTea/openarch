@@ -14,7 +14,7 @@ import { computeFileImpact, type ImpactOutput } from "./diffImpact";
 import { loadGateConfig } from "./governance/gateConfig";
 import type { MRDiagnosis } from "../domain/mrDiagnosis";
 import type { SemanticEvidence } from "../domain/crl";
-import { toRelative } from "../infra/paths";
+import { toRelative, toPosixPath } from "../infra/paths";
 import type { SemanticFileProfile } from "./semanticDiff";
 import { buildImpactPlan, type ImpactPlanItem } from "./impactPlan";
 import { computeChangeSurfaceForProfiles, type ChangeSurfaceCollection } from "./changeSurface";
@@ -25,6 +25,7 @@ import { assessSymbolScopeAdmissions } from "./symbolScopeAdmission";
 import type { SymbolScopeImpactAdmission } from "../domain/symbolScopeAdmission";
 import type { SymbolVersionPairReport } from "../domain/symbolVersionPair";
 import { withGovernanceWriteLock } from "./governance/writeLock";
+import { gitHeadSha, buildGitBeforeMetrics } from "./gitBaseline";
 
 export interface DiffInput {
   readonly changedFiles: readonly string[];
@@ -93,7 +94,7 @@ export const diff = (input: DiffInput) =>
       const afterText = input.afterTexts?.get(toRelative(p));
       return afterText === undefined ? parser.parse(p) : parser.parseText(p, afterText);
     }), { concurrency: DEFAULT_ANALYSIS_CONCURRENCY });
-    const profilesByFile = new Map(input.semanticProfiles?.map((profile) => [profile.file.replace(/\\/g, "/"), profile]) ?? []);
+    const profilesByFile = new Map(input.semanticProfiles?.map((profile) => [toPosixPath(profile.file), profile]) ?? []);
     const changesFor = (path: string) => {
       const profile = profilesByFile.get(toRelative(path));
       if (profile) return profile.changes;
@@ -104,7 +105,14 @@ export const diff = (input: DiffInput) =>
     }
     const oldIndex = yield* storage.readIndex();
     const nFiles = (oldIndex?.meta?.nProductionFiles ?? oldIndex?.meta?.nFiles ?? asts.length) || input.changedFiles.length || 1;
-    const evidence: SemanticEvidence[] = asts.flatMap((ast) => {
+    // 冷启动 git 基线（2026-08-11 体验反馈 P2-2 正面实现）：无 baseline 时从
+    // git HEAD blob 重建 before 度量，使首次 clone 后未 scan 也能算冲击量。
+    // baselineIdentity 用 git HEAD sha（有 scan 后由 scan 的 snapshotSha256 取代）。
+    const cwd = process.cwd();
+    const gitBaselineSha = oldIndex?.meta.snapshotSha256 ?? gitHeadSha(cwd);
+    if (!gitBaselineSha && !oldIndex?.meta.snapshotSha256) {
+      return yield* Effect.dieMessage("baseline lacks snapshotSha256 and git HEAD is unavailable; run openarch scan before diff");
+    }    const evidence: SemanticEvidence[] = asts.flatMap((ast) => {
       const afterText = input.afterTexts?.get(toRelative(ast.path));
       return (afterText !== undefined || existsSync(ast.path))
       ? changesFor(ast.path).map((change) => ({
@@ -113,11 +121,11 @@ export const diff = (input: DiffInput) =>
       }))
       : [];
     });
-    const snapshotSha256 = oldIndex?.meta.snapshotSha256;
+    const snapshotSha256 = oldIndex?.meta.snapshotSha256 ?? gitBaselineSha;
     if (!snapshotSha256) {
       return yield* Effect.dieMessage("baseline lacks snapshotSha256; run openarch scan before diff");
     }
-    const baselineIdentity = `${snapshotSha256}:${oldIndex?.meta.analysisScope?.fingerprint ?? "unknown"}`;
+    const baselineIdentity = `${snapshotSha256}:${oldIndex?.meta.analysisScope?.fingerprint ?? "git-cold-start"}`;
     const persistence = input.persistence ?? "history";
     const revisionKey = input.revisionKey ?? "legacy";
     const entryId = historyEntryId(baselineIdentity, revisionKey, evidence);
@@ -151,6 +159,7 @@ export const diff = (input: DiffInput) =>
     const rb = yield* rebuildGraph(asts, storage, input.implicitDeps, gateConfig.analysisScope.fileKindRules);
 
     // 4. 逐文件计算冲击（diffImpact）+ 汇总 D_MR
+    const coldStart = oldIndex === null;
     const impacts: ImpactOutput[] = [];
     for (const ast of asts) {
       const relPath = toRelative(ast.path);
@@ -158,11 +167,18 @@ export const diff = (input: DiffInput) =>
         ? pendingBaseMetrics.get(relPath) ?? null
         : yield* storage.readFileMetrics(ast.path);
       const profile = profilesByFile.get(relPath);
+      // 冷启动：无 baseline 且无 semantic profile 时，从 git HEAD 重建 before 度量。
+      let semanticBefore = profile?.beforeMetrics;
+      let semanticBeforeState = profile?.beforeState ?? (profile?.beforeMetrics ? "git" : undefined);
+      if (coldStart && !semanticBefore) {
+        const gitBefore = yield* Effect.promise(() => buildGitBeforeMetrics(parser, cwd, ast.path));
+        if (gitBefore) { semanticBefore = gitBefore; semanticBeforeState = "git"; }
+      }
       impacts.push(computeFileImpact({
         ast, graph: rb.graph, inDegrees: rb.inDegrees, reverseEdges: rb.reverseEdges,
         changedSet: rb.changedSet, nFiles, changeKinds: changesFor(ast.path).map((change) => change.kind), pathClasses, oldEntry,
-        semanticBefore: profile?.beforeMetrics,
-        semanticBeforeState: profile?.beforeState ?? (profile?.beforeMetrics ? "git" : undefined),
+        semanticBefore,
+        semanticBeforeState,
         p95, crlStateWeights: gateConfig.crlStateWeights, fileKindRules: gateConfig.analysisScope.fileKindRules,
       }));
     }

@@ -8,6 +8,8 @@ Read this page before relying on a parser, tests, compiler, `LSP`, `SCIP`, or an
 
 Shared product capabilities are metrics, baselines, provider and script contracts, project source discovery, and syntax parsing, not a language-directory convention. The released product parses TypeScript/JavaScript, Go, Rust, Python, and Java. Syntax support does not imply complete import resolution, test governance, authority analysis, symbol use, or security coverage.
 
+Language ids map one-to-one to extensions: `typescript` (.ts/.tsx/.mts/.cts), `javascript` (.js/.jsx/.mjs/.cjs), `vue` (.vue), `go`, `rust`, `python`, `java`. **vue is an independent language**: configuring `"vue"` in `languages` matches only `.vue` files and is not contained in `javascript` — a project with both `.vue` and `.js/.jsx` files must configure both (vue `<script>` blocks are analyzed with js/ts semantics, but extension matching is independent).
+
 Python has calibrated static-root, relative-module, and single-root implicit-namespace package mapping; dynamic imports, `sys.path`, import hooks, multi-root namespaces, or explicit Pyright execution environments remain `PARTIAL` or `UNAVAILABLE`. Execution-environment configuration means the preferred `pyrightconfig.json`, or `[tool.pyright]` in `pyproject.toml` when no JSON file exists; matching `executionEnvironments` or `extraPaths` retains reference facts but cannot establish complete scope. Java proves only conventional Maven/Gradle roots and explicit imports; classpath, wildcard imports, generated source, and reflection remain `UNAVAILABLE`. Read other boundaries from current command output and provider coverage, never from runtime installation alone.
 
 ## External Semantic Providers
@@ -29,6 +31,17 @@ Symbol-use results declare declaration coverage and repository-reference coverag
 Python, Go, Rust, and Java semantic results are likewise bounded by the provider, scope, and coverage reported for this run. Python `__name__` data-model hooks are runtime-dispatched and are not internal zero-reference candidates; dynamic imports, reflection, macros, conditional compilation, generated source, alias plugins, or an unsupported workspace shape keep the result `PARTIAL` or `UNAVAILABLE`. Complete gopls references apply only to one `go.mod` root without `go.work`, build constraints, or generated Go source, after gopls has published diagnostics for every opened governed source. Complete Java references apply only to a conventional single Maven root without modules, external dependencies, or detected reflection. Complete Rust references apply only to a single-root `Cargo.toml` crate without `build.rs`, a workspace, macro invocation, or conditional compilation, after Rust Analyzer has published diagnostics for every opened governed source. Without that readiness evidence or in any excluded shape, Go and Rust remain `PARTIAL`. Do not infer clean from a tool being installed or from an empty finding in any other shape.
 
 ## Test Providers
+
+Registered providers (query with `openarch test --list`) and their static scope:
+
+| provider id | framework/language | assertion recognition |
+|---|---|---|
+| `typescript-vitest` | Vitest (TS/JS) | `expect(...)`/`assert(...)` and same-file wrappers whose body contains an assertion |
+| `node-test` | node:test | `assert.*` and same-file wrappers whose body contains an assertion |
+| `java-junit` | JUnit 4/5 (Java) | `assert*` method family and same-file wrapper methods whose body contains an assertion |
+| `go-testing` | Go testing | `t.Error/Fatal` etc. (no universal assertion library; no missing-assertion policy) |
+| `rust-testing` | Rust `#[test]` | `assert*!` macros; delegated calls count as verification intent |
+| `python-pytest` | pytest | `assert` statements and file-level wrapper functions whose body contains an assert |
 
 `python-pytest` recognizes only conventional test functions or methods, AST-confirmed assertions, and a narrow set of direct markers or calls. Java JUnit recognizes conventional annotations and assertions. Go and Rust likewise have explicit static scope only. Dynamic marks, aliases, plugins, runtime conditions, parameterization, and framework extensions remain `PARTIAL`; runners report actual commands separately from provider facts.
 

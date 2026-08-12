@@ -18,7 +18,8 @@ const projectRootFor = (startDir: string): string | null => {
     if (parent === current) break;
     current = parent;
   }
-  projectRoots.set(startDir, null);
+  // 不缓存 null（2026-08-12 修复）：项目标记文件（pom.xml/build.gradle）可能在
+  // 首次解析后出现——缓存 null 会让新增标记的项目永远解析失败。
   return null;
 };
 

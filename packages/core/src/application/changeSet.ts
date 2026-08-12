@@ -5,6 +5,7 @@ import { isAnalyzableProjectFile, readProjectFileKindRules, readProjectLanguages
 import type { GovernancePopulation } from "../domain/fileParticipation";
 import type { ChangeSetContext, ChangeSetFile } from "../anti-patterns/engine";
 import { MAX_GIT_BLOB_BYTES, readGitBlobs, type SourceText } from "./gitBlobBatch";
+import { toPosixPath } from "../infra/paths";
 export { collectGitCommitHistory, type GitCommitHistory } from "./gitCommitHistory";
 
 type GitStatus = { readonly path: string; readonly beforePath?: string; readonly kind: ChangeSetFile["kind"] };
@@ -15,7 +16,7 @@ const git = (cwd: string, args: readonly string[]): string =>
 const gitPrefix = (cwd: string): string => git(cwd, ["rev-parse", "--show-prefix"]).trim().replace(/\\/g, "/");
 
 const repositoryPath = (prefix: string, projectPath: string): string =>
-  `${prefix}${projectPath.replace(/\\/g, "/")}`;
+  `${prefix}${toPosixPath(projectPath)}`;
 
 const relativePath = (cwd: string, path: string): string =>
   relative(cwd, resolve(cwd, path)).replace(/\\/g, "/");
@@ -91,8 +92,8 @@ export const collectGitChangeSet = (cwd: string, requestedPaths: readonly string
       const before = status.kind === "added" ? { omitted: false } : beforeTexts.get(status.path) ?? { omitted: false };
       if (current.omitted || before.omitted) omitted.push(status.path);
       return {
-        path: status.path.replace(/\\/g, "/"), kind: status.kind,
-        ...(status.beforePath ? { beforePath: status.beforePath.replace(/\\/g, "/") } : {}),
+        path: toPosixPath(status.path), kind: status.kind,
+        ...(status.beforePath ? { beforePath: toPosixPath(status.beforePath) } : {}),
         beforeText: before.text, afterText: current.text,
       };
     });
@@ -136,8 +137,8 @@ export const collectGitRevisionChangeSet = (cwd: string, revision: string): Chan
       const after = status.kind === "deleted" ? { omitted: false } : blobs.get(`after:${status.path}`) ?? { omitted: false };
       if (before.omitted || after.omitted) omitted.push(status.path);
       return {
-        path: status.path.replace(/\\/g, "/"), kind: status.kind,
-        ...(status.beforePath ? { beforePath: status.beforePath.replace(/\\/g, "/") } : {}),
+        path: toPosixPath(status.path), kind: status.kind,
+        ...(status.beforePath ? { beforePath: toPosixPath(status.beforePath) } : {}),
         beforeText: before.text, afterText: after.text,
       };
     });

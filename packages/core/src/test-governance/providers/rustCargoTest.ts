@@ -3,6 +3,7 @@ import type { QueryMatch, ParserService } from "../../port/ParserService";
 import type { TestCaseMetric, TestFindingInput } from "../../domain/testGovernance";
 import type { TestFrameworkProvider, TestProviderResult } from "../provider";
 import { capturesInTestBody, controlFlowInTestBody } from "../controlFlow";
+import { toPosixPath } from "../../infra/paths";
 
 const functionPattern = `(function_item name: (identifier) @name body: (block) @body) @function`;
 const attributePattern = `(attribute_item) @attribute`;
@@ -22,7 +23,7 @@ interface RustTestCandidate {
 }
 
 const capture = (match: QueryMatch, name: string) => match.captures.find((item) => item.name === name);
-const normal = (path: string) => path.replace(/\\/g, "/");
+const normal = (path: string) => toPosixPath(path);
 const isIntegrationTest = (file: string): boolean => /(^|\/)tests\/.+\.rs$/i.test(normal(file));
 const attributesBefore = (fn: QueryMatch, attributes: readonly QueryMatch[]) => {
   const start = capture(fn, "function")?.startLine ?? 0;
@@ -52,7 +53,8 @@ export const RUST_TESTING_PROVIDER_ID = "rust-testing";
 
 /** Standard Rust integration-test syntax only; Cargo execution belongs to the runner contract. */
 export const rustCargoTestProvider: TestFrameworkProvider = {
-  id: RUST_TESTING_PROVIDER_ID,
+    id: RUST_TESTING_PROVIDER_ID,
+  label: "Rust #[test]（cargo test）",
   supports: isIntegrationTest,
   collect: async (file: string, parser: ParserService): Promise<TestProviderResult> => {
     const [functions, attributes, macros, calls, controlFlow, nested] = await Promise.all([

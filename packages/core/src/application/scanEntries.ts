@@ -9,11 +9,12 @@ import { confidence } from "../domain/confidence";
 import { alphaStruct } from "../domain/alpha";
 import { weightedBranchTotalOf } from "../domain/branchMetrics";
 import { participatesInPopulation } from "../domain/fileParticipation";
-import { projectRoot, toRelative } from "../infra/paths";
+import { projectRoot, toRelative, absolutePathKey } from "../infra/paths";
+import { findLanguageForFile } from "../adapter/parser/LanguageRegistry";
 import { contentHashesOf } from "../projectFiles";
 import { projectBaselineEntry } from "./baselineEntry";
 
-const norm = (p: string) => resolve(p).replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_match, drive: string) => `${drive.toLowerCase()}:`);
+const norm = (p: string) => absolutePathKey(p);
 
 /** 单文件 baseline entry 计算。 */
 const computeEntryForAst = (
@@ -99,8 +100,12 @@ export const computeEntries = (
   return { entries, p95Inputs };
 };
 
-/** 项目可用语言（增量扫描时复用文件的 language 从 baseline entry 取）。 */
+/** 项目可用语言（增量扫描时复用文件的 language 从 baseline entry 取；
+ *  vue 等 SFC 的 ast.language 是解析语义（javascript），需按扩展名补充源语言）。 */
 export const projectLanguages = (incremental: boolean, reusedEntries: readonly IndexEntry[], asts: readonly FileAst[]): readonly string[] =>
   incremental
     ? [...new Set([...reusedEntries.map((entry) => entry.language).filter((language): language is Language => language !== undefined), ...asts.map((ast) => ast.language)])]
-    : [...new Set(asts.map((ast) => ast.language))];
+    : [...new Set(asts.flatMap((ast) => {
+      const sourceLanguage = findLanguageForFile(ast.path)?.id;
+      return sourceLanguage && sourceLanguage !== ast.language ? [ast.language, sourceLanguage] : [ast.language];
+    }))];

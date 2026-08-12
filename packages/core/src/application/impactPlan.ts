@@ -1,8 +1,9 @@
 import type { SemanticChange } from "../domain/semanticChanges";
-import { toAbsolute, toRelative } from "../infra/paths";
+import { toAbsolute, toRelative, toPosixPath } from "../infra/paths";
 import type { SemanticFileProfile } from "./semanticDiff";
 import type { SymbolUseReport } from "../symbol-use/types";
 import type { SymbolUseDemand } from "../port/SymbolUseService";
+
 
 export interface SymbolConsumerEvidence {
   readonly symbol: string;
@@ -71,14 +72,14 @@ export const symbolUseDemandForProfiles = (
 ): SymbolUseDemand => {
   const declarations = profiles.flatMap((profile) => {
     const names = [...changedSymbolNames(profile.changes)].filter((name) => name !== "file").sort();
-    if (names.length > 0) return [{ file: profile.file.replace(/\\/g, "/"), names }];
+    if (names.length > 0) return [{ file: toPosixPath(profile.file), names }];
     // 文件级兜底（--change-override 的 manual:file 无符号名，校准 2026-08-06）：
     // names 空仍进 demand——LspSymbolUse 对空 names 查该文件全部（公共）声明；
     // 纯注释变更（anchor "file" + comment_whitespace）无符号级意义，排除。
     const hasFileLevelSemanticChange = profile.changes.some(
       (change) => change.anchor === "manual:file" || change.kind !== "comment_whitespace",
     );
-    return hasFileLevelSemanticChange ? [{ file: profile.file.replace(/\\/g, "/"), names }] : [];
+    return hasFileLevelSemanticChange ? [{ file: toPosixPath(profile.file), names }] : [];
   });
   return { declarations, ...(consumerFiles && consumerFiles.length > 0 ? { consumerFiles } : {}) };
 };

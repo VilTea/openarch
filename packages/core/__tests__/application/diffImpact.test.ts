@@ -118,4 +118,24 @@ describe("compatible contract impact", () => {
     expect(impact.writeEntry.localBurdenFingerprint).toBeUndefined();
     expect(impact.writeEntry.previousLocalBurdenFingerprint).toBeUndefined();
   });
+
+  it("cold start (no baseline P95) reports before unavailable instead of silent 0.00", () => {
+    const impact = computeFileImpact({
+      ast: { ...ast, loc: 10, maxFuncBranch: 2 },
+      graph: new Map(),
+      inDegrees: new Map(),
+      reverseEdges: new Map(),
+      changedSet: new Set(),
+      nFiles: 10,
+      changeKinds: ["function_body"],
+      pathClasses: [],
+      // git before exists (cold-start rebuild) but no baseline P95 denominator
+      semanticBefore: { weightedBranchTotal: 0, maxFuncBranch: 0, nestingDepth: 1, loc: 1, externalPassthroughCalls: 0 },
+      semanticBeforeState: "git",
+      crlStateWeights: { branch: 1, nesting: 1, loc: 1, externalPassthrough: 1 },
+    });
+
+    expect(impact.mrDetail.beforeSource).toBe("unavailable");
+    expect(impact.mrDetail.localBurden.deterioration).toBe(0);
+  });
 });

@@ -32,6 +32,10 @@ beforeAll(() => {
       [1].forEach(() => { if (true) { expect(true).toBe(true); } });
     });
     it("calls imported subject", () => { expect(subject()).toBe(true); });
+    function validateThrows(fn: () => void) { try { fn(); throw new Error("did not throw"); } catch { expect(true).toBe(true); } }
+    function verifyCalled(mock: { called: boolean }) { expect(mock.called).toBe(true); }
+    it("uses assertion helper wrapper", () => { validateThrows(() => { throw new Error("x"); }); });
+    it("uses verify helper", () => { verifyCalled(mock); });
   `);
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -39,9 +43,13 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }));
 describe("vitestProvider", () => {
   it("extracts test-body metrics and framework facts through AST queries", async () => {
     const result = await Effect.runPromise(collect());
-    expect(result.tests.map((test) => test.name)).toEqual(["focused", "skipped", "missing", "inside", "counts only its own control flow", "calls imported subject"]);
+    expect(result.tests.map((test) => test.name)).toEqual(["focused", "skipped", "missing", "inside", "counts only its own control flow", "calls imported subject", "uses assertion helper wrapper", "uses verify helper"]);
     expect(result.tests.find((test) => test.name === "focused")?.assertionCount).toBe(1);
     expect(result.tests.find((test) => test.name === "focused")?.mockCount).toBe(1);
+    // P3（2026-08-12 体验反馈）：helper 包装断言不再误扫为无断言
+    expect(result.tests.find((test) => test.name === "uses assertion helper wrapper")?.assertionCount).toBe(1);
+    expect(result.tests.find((test) => test.name === "uses verify helper")?.assertionCount).toBe(1);
+    expect(result.findings.some((finding) => finding.testName === "uses assertion helper wrapper" && finding.kind === "missing_assertion")).toBe(false);
     expect(result.findings.map((finding) => finding.kind)).toEqual(expect.arrayContaining(["focused_test", "unapproved_skip", "missing_assertion"]));
     expect(result.findings.some((finding) => finding.evidence.includes("describe.only"))).toBe(true);
     expect(result.tests.find((test) => test.name === "counts only its own control flow")?.testBodyControlFlow).toBeCloseTo(2.6, 5);

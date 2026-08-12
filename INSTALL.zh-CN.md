@@ -51,6 +51,7 @@ openarch --version
 ## 3. 初始化受治理项目
 
 ```bash
+# 把 claude 换成你的 Agent：claude / codex / cursor / opencode / reasonix
 openarch init --agent claude
 openarch context
 ```
@@ -114,6 +115,10 @@ openarch init --mode personal --install-hook
 ```bash
 openarch toolchains
 ```
+
+`openarch test --list` 列出全部已注册的测试治理 provider（id 用于 `test_governance.providers` 配置）；直接运行 `openarch test` 执行测试治理评估。
+
+`openarch update` 是只读版本检查：对比已安装版本与远端 release 分支的最新版本，打印更新步骤；绝不自动安装。升级后重跑 `openarch init --agent <harness>` 刷新已安装的 Skill 树（退役文件被原子清除）。
 
 创建用户级配置，再按需填写外部可执行文件的绝对路径：
 

@@ -61,6 +61,7 @@ export type { SealPendingEvidenceOptions, SealPendingEvidenceResult } from "./ap
 export type { GateFileMetric, GateRenderResult, GateReportFacts } from "./application/governance/gateReport";
 export { testGovernance } from "./application/testGovernance";
 export type { TestGovernanceReport } from "./application/testGovernance";
+export { testGovernanceProviderList } from "./test-governance/catalog";
 export * from "./application/diff";
 export { rebuildGraph } from "./application/diffGraph";
 export type { RebuiltGraph } from "./application/diffGraph";
@@ -164,6 +165,8 @@ export type { SemanticRelationFact, SemanticRelationKind, SemanticRelationReport
 export { SemanticToolchainDiscoveryLive } from "./adapter/toolchain/SemanticToolchainDiscoveryLive";
 export { discoverSemanticToolchains } from "./toolchain/discovery";
 export { initializeToolchainConfig } from "./application/toolchainConfigSetup";
+export { checkForUpdates, compareVersions, fetchLatestVersion, REMOTE_TAGS_URL } from "./application/updateCheck";
+export type { UpdateCheckResult } from "./application/updateCheck";
 export { projectToolchainConfigPath, readToolchainConfiguration, toolchainConfigPaths, userToolchainConfigPath } from "./toolchain/config";
 export type { ToolchainConfigScope, ToolchainConfiguration, ToolchainConfigPaths, ToolchainExecutableOverride } from "./toolchain/config";
 export type { SemanticToolchainAvailability, SemanticToolchainDiscoveryRequest, SemanticToolchainFact, SemanticToolchainKind, SemanticToolchainLocation, SemanticToolchainReport, ToolchainCommandResult, ToolchainRuntime } from "./toolchain/types";

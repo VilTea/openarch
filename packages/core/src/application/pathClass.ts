@@ -2,6 +2,7 @@
 // path_class 解析 + 层权重查询（gateApp + diff 共用，DRY）。
 // design v5.3 §7.2 因子4 ω_layer：文件路径 → 层权重，接入 I_push 乘法。
 import { minimatch } from "minimatch";
+import { toPosixPath } from "../infra/paths";
 
 /** Shared project classification, independent of gate evaluation. */
 export interface PathClass {
@@ -11,7 +12,7 @@ export interface PathClass {
 }
 
 export const classifyPath = (filePath: string, paths: readonly PathClass[]): string => {
-  const normalize = (value: string): string => value.replace(/\\/g, "/");
+  const normalize = (value: string): string => toPosixPath(value);
   const normalizedPath = normalize(filePath);
   for (const path of paths) {
     if (minimatch(normalizedPath, normalize(path.pattern))) return path.name;

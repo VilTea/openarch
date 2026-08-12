@@ -6,11 +6,11 @@ import type { Language } from "./domain/ast";
 import { classifyFileKindWithPolicy, isFileKindRule, type FileKindRule } from "./domain/testGovernance";
 import { participatesInPopulation, type GovernancePopulation } from "./domain/fileParticipation";
 import { globSync } from "./infra/glob";
-import { projectRoot } from "./infra/paths";
+import { toPosixPath, projectRoot } from "./infra/paths";
 import { detectProjectLanguages } from "./languageSupport";
 import { createAnalysisScope, isPathInAnalysisScope } from "./domain/analysisScope";
 
-const normalizePath = (path: string): string => path.replace(/\\/g, "/").toLowerCase();
+const normalizePath = (path: string): string => toPosixPath(path).toLowerCase();
 
 /** Ordinary project scans cannot widen their source population through ../ or an absolute sibling. */
 const isWithinProjectRoot = (path: string, cwd: string): boolean => {
@@ -133,6 +133,15 @@ export const sourceSnapshotSha256 = (paths: readonly string[], cwd = projectRoot
       .map((path) => [relative(cwd, path).replace(/\\/g, "/"), createHash("sha256").update(readFileSync(path)).digest("hex")] as const)
       .sort(([left], [right]) => left.localeCompare(right));
     return createHash("sha256").update(JSON.stringify(entries)).digest("hex");
+  } catch {
+    return undefined;
+  }
+};
+
+/** .openarch/config.yml 内容 hash（P2-1：配置变化时增量 scan 自动退化全量重建）。 */
+export const configSnapshotSha256 = (configPath: string): string | undefined => {
+  try {
+    return createHash("sha256").update(readFileSync(configPath)).digest("hex");
   } catch {
     return undefined;
   }

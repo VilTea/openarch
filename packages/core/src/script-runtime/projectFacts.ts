@@ -4,7 +4,7 @@ import type { PathClass } from "../application/pathClass";
 import { classifyPath } from "../application/pathClass";
 import { classifyFileKindWithPolicy } from "../domain/testGovernance";
 import { METRIC_CONTRACT_VERSION } from "../domain/metricCatalog";
-import { toAbsolute, toRelative } from "../infra/paths";
+import { toAbsolute, toRelative, toPosixPath } from "../infra/paths";
 import { isAbsolute, relative, resolve } from "node:path";
 import { minimatch } from "minimatch";
 import type { InvocationBindingFact } from "../domain/invocationBindings";
@@ -18,11 +18,12 @@ export * from "./projectFactsContract";
 import { isScriptFactRequirements, scriptFactRequirementsError, PROJECT_FACTS_VERSION, type FactAvailability, type FactResult, type ProjectFacts, type ProjectFactsInput, type ScriptAuthorityContract, type ScriptAuthorityDeclaration, type ScriptFactCapability, type ScriptFileTargets, type StructureMetricFact } from "./projectFactsContract";
 import { scriptDomainResult } from "./factDomains";
 
+
 export const normalizeRepositoryPath = (path: string, projectRoot?: string): string => {
   const relativePath = isAbsolute(path)
     ? projectRoot ? relative(resolve(projectRoot), resolve(path)) : toRelative(path)
     : path;
-  return relativePath.replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/\/+/g, "/");
+  return toPosixPath(relativePath).replace(/^\.\/+/, "").replace(/\/+/g, "/");
 };
 
 const protectedPath = (path: string): string | undefined => {

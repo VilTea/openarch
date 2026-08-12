@@ -108,6 +108,13 @@ describe("BaselineIndexSchema", () => {
     });
     expect(parsed.meta.calibration?.gate?.id).toBe(profile.id);
   });
+  it("preserves configSnapshotSha256 in meta (P2-1)", () => {
+    const parsed = BaselineIndexSchema.parse({
+      version: "5.2",
+      meta: { scanAt: "2026-07-05T00:00:00Z", nFiles: 3, languages: ["typescript"], configSnapshotSha256: "c".repeat(64) },
+    });
+    expect(parsed.meta.configSnapshotSha256).toBe("c".repeat(64));
+  });
   it("rejects an unknown present structural calibration version but accepts a legacy index without calibration", () => {
     const base = { version: "5.2", meta: { scanAt: "2026-07-05T00:00:00Z", nFiles: 3, languages: ["typescript"] } };
     expect(() => BaselineIndexSchema.parse(base)).not.toThrow();

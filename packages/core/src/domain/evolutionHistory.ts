@@ -1,5 +1,6 @@
 import type { CochangeActionSummary, CochangeSetAnalysis, CochangeSetCandidate, EvolutionChangeSet, EvolutionFileChange, EvolutionFileFact } from "./evolutionSignals";
 import { participatesInPopulation } from "./fileParticipation";
+import { toPosixPath } from "../infra/paths";
 
 type FactByPath = ReadonlyMap<string, EvolutionFileFact>;
 
@@ -35,16 +36,16 @@ export interface ClosedCochangeOptions {
 const setKey = (files: Iterable<string>): string => [...files].sort().join("\0");
 export const extensionKey = (coordinator: string, member: string): string => `${coordinator}\0${member}`;
 export const splitExtension = (key: string): readonly [string, string] => key.split("\0") as [string, string];
-export const normalizedReexports = (fact: EvolutionFileFact | undefined): readonly string[] => fact?.reexports?.map((path) => path.replace(/\\/g, "/")) ?? [];
+export const normalizedReexports = (fact: EvolutionFileFact | undefined): readonly string[] => fact?.reexports?.map((path) => toPosixPath(path)) ?? [];
 
 /** Public forwarding is a real module relation but not evidence that an implementation coordinator owns a new member. */
 export const normalizedImports = (fact: EvolutionFileFact | undefined): readonly string[] => {
   const reexports = new Set(normalizedReexports(fact));
-  return fact?.imports?.map((path) => path.replace(/\\/g, "/")).filter((path) => !reexports.has(path)) ?? [];
+  return fact?.imports?.map((path) => toPosixPath(path)).filter((path) => !reexports.has(path)) ?? [];
 };
 
 const productionFiles = (changeSet: EvolutionChangeSet, facts: FactByPath, unavailable: Set<string>): readonly string[] =>
-  [...new Set(changeSet.files.map((file) => file.replace(/\\/g, "/")))]
+  [...new Set(changeSet.files.map((file) => toPosixPath(file)))]
     .filter((file) => {
       const fact = facts.get(file);
       if (!fact) {
@@ -63,7 +64,7 @@ const recordExtensions = (
 ): void => {
   if (!changeSet.changes) return;
   const changes = changeSet.changes
-    .map((change) => ({ ...change, path: change.path.replace(/\\/g, "/") }))
+    .map((change) => ({ ...change, path: toPosixPath(change.path) }))
     .filter((change) => production.has(change.path));
   const addedMembers = changes.filter((change) => change.kind === "added").map((change) => change.path);
   const changedCoordinators = changes.filter((change) => change.kind === "modified").map((change) => change.path);
@@ -87,7 +88,7 @@ export const collectEvolutionHistory = (changeSets: readonly EvolutionChangeSet[
     if (files.length < 2) continue;
     const production = new Set(files);
     const changes = (changeSet.changes ?? [])
-      .map((change) => ({ ...change, path: change.path.replace(/\\/g, "/") }))
+      .map((change) => ({ ...change, path: toPosixPath(change.path) }))
       .filter((change) => production.has(change.path));
     // A set of newly created files has no prior relation to demonstrate. Keep
     // action-less inputs (for example imported history) explicit rather than

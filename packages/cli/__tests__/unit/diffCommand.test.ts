@@ -63,7 +63,7 @@ describe("diffCommand input filtering", () => {
     const exitCode = await diffCommand(["--change-type", "function_body", "services/coordination/main.go"], context);
 
     expect(exitCode).toBe(3);
-    expect(error).toHaveBeenCalledWith("没有匹配当前项目 languages 配置的可分析文件。");
+    expect(error).toHaveBeenCalledWith("指定路径中没有匹配当前项目 languages 配置的可分析文件（共 1 个路径，均不可分析或不在 languages 扩展名内）。");
   });
 
   it("keeps analyzable manual diff files", async () => {

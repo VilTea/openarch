@@ -3,6 +3,7 @@ import type { QueryMatch, ParserService } from "../../port/ParserService";
 import type { TestCaseMetric } from "../../domain/testGovernance";
 import type { TestFrameworkProvider, TestProviderResult } from "../provider";
 import { capturesInTestBody, controlFlowInTestBody } from "../controlFlow";
+import { toPosixPath } from "../../infra/paths";
 
 const testFunctionPattern = `
 (function_declaration
@@ -72,8 +73,9 @@ export const GO_TESTING_PROVIDER_ID = "go-testing";
 
 /** Go's standard test functions have no universal assertion library, so this provider reports facts without a missing-assertion policy. */
 export const goTestingProvider: TestFrameworkProvider = {
-  id: GO_TESTING_PROVIDER_ID,
-  supports: (file) => file.replace(/\\/g, "/").endsWith("_test.go"),
+    id: GO_TESTING_PROVIDER_ID,
+  label: "Go testing 标准库",
+  supports: (file) => toPosixPath(file).endsWith("_test.go"),
   collect: async (file: string, parser: ParserService): Promise<TestProviderResult> => {
     const functions = await Effect.runPromise(parser.query(file, testFunctionPattern));
     const calls = await Effect.runPromise(parser.query(file, receiverCallPattern));

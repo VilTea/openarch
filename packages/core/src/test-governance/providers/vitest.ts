@@ -2,8 +2,10 @@
 import { Effect } from "effect";
 import type { QueryCapture, QueryMatch, ParserService } from "../../port/ParserService";
 import type { TestCaseMetric, TestFindingInput } from "../../domain/testGovernance";
-import type { TestFrameworkProvider, TestProviderResult } from "../provider";
+import type { TestFrameworkProvider, TestProviderContext, TestProviderResult } from "../provider";
 import { capturesInTestBody, controlFlowInTestBody } from "../controlFlow";
+import { assertionWrapperScope, namedFunctionsFrom } from "../assertionScope";
+import { toPosixPath } from "../../infra/paths";
 
 const directTestPattern = `
 (call_expression
@@ -21,6 +23,11 @@ const memberTestPattern = `
     (string) @name
     (arrow_function body: (statement_block) @body))) @call
 `;
+const namedFunctionPattern = `[
+  (function_declaration name: (identifier) @name body: (statement_block) @body) @fn
+  (variable_declarator name: (identifier) @name value: (arrow_function) @body) @fn
+]`;
+
 const identifierCallPattern = `(call_expression function: (identifier) @callee) @call`;
 const memberCallPattern = `(call_expression function: (member_expression object: (identifier) @object property: (property_identifier) @method)) @call`;
 const namedImportPattern = `(import_statement (import_clause (named_imports (import_specifier name: (identifier) @symbol))) source: (string) @source)`;
@@ -76,9 +83,10 @@ const findMemberCalls = (matches: readonly QueryMatch[], objects: readonly strin
 export const VITEST_PROVIDER_ID = "typescript-vitest";
 
 export const vitestProvider: TestFrameworkProvider = {
-  id: VITEST_PROVIDER_ID,
-  supports: (file) => /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file.replace(/\\/g, "/")) || file.includes("/__tests__/"),
-  collect: async (file: string, parser: ParserService): Promise<TestProviderResult> => {
+    id: VITEST_PROVIDER_ID,
+  label: "Vitest（TypeScript/JavaScript）",
+  supports: (file) => /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(toPosixPath(file)) || toPosixPath(file).includes("/__tests__/"),
+  collect: async (file: string, parser: ParserService, context?: TestProviderContext): Promise<TestProviderResult> => {
     // ParserService 的 WASM parser 是共享实例；顺序 query 避免首次初始化及 tree 访问竞态。
     const direct = await Effect.runPromise(parser.query(file, directTestPattern));
     const member = await Effect.runPromise(parser.query(file, memberTestPattern));
@@ -86,12 +94,29 @@ export const vitestProvider: TestFrameworkProvider = {
     const memberCalls = await Effect.runPromise(parser.query(file, memberCallPattern));
     const controlFlow = await Effect.runPromise(parser.query(file, controlFlowPattern));
     const nestedFunctions = await Effect.runPromise(parser.query(file, nestedFunctionPattern));
+    const namedFunctions = await Effect.runPromise(parser.query(file, namedFunctionPattern));
     const namedImports = await Effect.runPromise(parser.query(file, namedImportPattern));
     const candidates = [...collectCandidates(direct, false), ...collectCandidates(member, true)]
       .filter((candidate, index, all) => all.findIndex((other) => other.startLine === candidate.startLine && other.name === candidate.name) === index)
       .sort((a, b) => a.startLine - b.startLine);
-    const assertionLines = calls.flatMap((match) => capture(match, "callee")?.text === "expect" && capture(match, "call")?.startLine !== undefined
-      ? [capture(match, "call")!.startLine!] : []);
+    // 语法级断言作用域（校准 2026-08-12）：直接 expect/assert + 同文件内
+    // 定义且体内含断言的函数（断言包装 helper，不依赖命名前缀）。
+    const directAssertionLines = calls.flatMap((match) => {
+      const callee = capture(match, "callee")?.text;
+      const line = capture(match, "call")?.startLine;
+      return callee !== undefined && line !== undefined && (callee === "expect" || callee === "assert") ? [line] : [];
+    });
+    const scope = assertionWrapperScope(namedFunctionsFrom(namedFunctions.map((match) => ({
+      name: capture(match, "name")?.text,
+      bodyStart: capture(match, "body")?.startLine,
+      bodyEnd: capture(match, "body")?.endLine,
+    }))), directAssertionLines);
+    const assertionLines = calls.flatMap((match) => {
+      const callee = capture(match, "callee")?.text;
+      const line = capture(match, "call")?.startLine;
+      return callee !== undefined && line !== undefined
+        && (scope.isAssertionCall(callee) || context?.isCrossFileWrapperCall(callee) === true) ? [line] : [];
+    });
     const mockLines = findMemberCalls(memberCalls, ["vi", "jest"], ["mock", "spyOn", "fn"]);
     const imports = namedImports.flatMap((match) => {
       const source = capture(match, "source");

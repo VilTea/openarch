@@ -22,7 +22,8 @@ const projectContextFor = (startDir: string): PythonProjectContext | null => {
     if (parent === current) break;
     current = parent;
   }
-  projectContextCache.set(startDir, null);
+  // 不缓存 null（2026-08-12 修复，与 JavaModuleResolver 对齐）：项目标记可能在首次
+  // 解析后出现，缓存 null 会让新增 pyproject.toml 的项目永久解析失败。
   return null;
 };
 

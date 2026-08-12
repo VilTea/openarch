@@ -2,6 +2,7 @@ import type { FileKind } from "./testGovernance";
 import type { ChangeKind } from "./weights";
 import { buildCoordinationCandidates, buildExtensionSurfaceAnalysis } from "./evolutionCoordination";
 import { buildCochangeSetAnalysis, collectEvolutionHistory } from "./evolutionHistory";
+import { toPosixPath } from "../infra/paths";
 
 export interface EvolutionChangeSet {
   readonly id: string;
@@ -163,7 +164,7 @@ export const analyzeEvolutionSignals = (
   changeSets: readonly EvolutionChangeSet[],
   facts: readonly EvolutionFileFact[],
 ): EvolutionSignalReport => {
-  const factByPath = new Map(facts.map((fact) => [fact.path.replace(/\\/g, "/"), fact]));
+  const factByPath = new Map(facts.map((fact) => [toPosixPath(fact.path), fact]));
   const history = collectEvolutionHistory(changeSets, factByPath);
   const coordinationCandidates = buildCoordinationCandidates(history, factByPath);
   return {

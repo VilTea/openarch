@@ -23,6 +23,8 @@ beforeAll(() => {
     "  @Test @Disabled void disabled() { assertEquals(1, 1); }",
     "  @Test void noAssertion() { Runnable nested = () -> { assertEquals(1, 1); }; nested.run(); }",
     "  @Test void hamcrest() { assertThat(1 + 1, equalTo(2)); }",
+    "  void validateUserCreated(User u) { assertNotNull(u); assertEquals(\"active\", u.status); }",
+    "  @Test void customHelper() { validateUserCreated(user); }",
     "}",
   ].join("\n"));
 });
@@ -36,10 +38,23 @@ describe("junitProvider", () => {
       expect.objectContaining({ name: "disabled", statuses: ["ignored"] }),
       expect.objectContaining({ name: "noAssertion", assertionCount: 0 }),
       expect.objectContaining({ name: "hamcrest", assertionCount: 1 }),
+      // P3（2026-08-12 体验反馈）：同文件内体内含断言的包装方法（非前缀命名）不再误扫
+      expect.objectContaining({ name: "customHelper", assertionCount: 1 }),
     ]));
     expect(result.findings).toEqual(expect.arrayContaining([
       expect.objectContaining({ ruleId: "java-junit.disabled-test", testName: "disabled", confidence: "high" }),
       expect.objectContaining({ ruleId: "java-junit.missing-known-assertion", testName: "noAssertion", confidence: "low" }),
     ]));
+  });
+
+  it("counts cross-file helper calls as assertions via provider context", async () => {
+    const result = await Effect.runPromise(Effect.gen(function* () {
+      const parser = yield* ParserService;
+      return yield* Effect.promise(() => junitProvider.collect(file, parser, {
+        isCrossFileWrapperCall: (callee) => callee === "validateUserCreated",
+      }));
+    }).pipe(Effect.provide(TreeSitterParserLive)));
+    // noAssertion 方法体内没有调用包装 helper → 仍为 0
+    expect(result.tests.find((test) => test.name === "noAssertion")?.assertionCount).toBe(0);
   });
 });

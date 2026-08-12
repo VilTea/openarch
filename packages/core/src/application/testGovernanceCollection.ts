@@ -4,6 +4,7 @@ import type { CollectedTestFacts } from "../domain/testFacts";
 import type { TestModuleAssociation } from "../domain/testAssociations";
 import type { TestProviderCoverageInput } from "../domain/testProviderCoverage";
 import { resolveTestModuleAssociations } from "./testAssociationResolver";
+import { resolveCrossFileAssertionScope } from "../test-governance/assertionContext";
 import type { TestFrameworkProvider } from "../test-governance/provider";
 import type { ParserService } from "../port/ParserService";
 import type { IndexEntry, StorageService } from "../port/StorageService";
@@ -43,6 +44,8 @@ export const collectProviderFacts = (
     providers.map((provider) => [provider.id, { providerId: provider.id, candidateTestFiles: [], unbaselinedTestFiles: [], providerHandledTestFiles: [], failedTestFiles: [] }]),
   );
   const exportedSymbolsByPath = new Map<string, import("../domain/ast").FileAst["exportedSymbols"]>();
+  // 跨文件断言包装缓存：同一 helper 文件被多个测试 import 只 parse 一次（command-scoped）。
+  const crossFileWrapperCache = new Map<string, ReadonlySet<string>>();
 
   for (const [path, entry] of testEntries) {
     const provider = providers.find((candidate) => candidate.supports(path));
@@ -53,14 +56,22 @@ export const collectProviderFacts = (
     const providerCoverage = providerCoverageInputs.get(provider.id)!;
     providerCoverage.candidateTestFiles.push(path);
     try {
-      const collected = yield* Effect.promise(() => provider.collect(path, parser));
+      // 跨文件断言包装（2026-08-12 调研落地）：先解析测试文件 AST 拿到 import
+      // 目标，再定向惰性解析 helper 模块；collect 传 context 聚合包装名。
+      const parsedBeforeCollect = yield* Effect.either(parser.parse(path));
+      const crossFileScope = parsedBeforeCollect._tag === "Right"
+        ? yield* Effect.promise(() => resolveCrossFileAssertionScope(parser, parsedBeforeCollect.right.imports, productionPaths, crossFileWrapperCache))
+        : { wrapperNamesByFile: new Map(), isWrapperCall: () => false };
+      const collected = yield* Effect.promise(() => provider.collect(path, parser, {
+        isCrossFileWrapperCall: crossFileScope.isWrapperCall,
+      }));
       providerHandledTestFiles.push(path);
       providerCoverage.providerHandledTestFiles.push(path);
       const providerFindings = collected.findings.map((finding) => ({ ...finding, source: provider.id }));
       findings.push(...providerFindings);
       testCaseSpans.push(...(collected.testCaseSpans ?? []).map((span) => ({ ...span, file: path, providerId: provider.id })));
       collectedFacts.push({ providerId: provider.id, tests: collected.tests });
-      const parsed = yield* Effect.either(parser.parse(path));
+      const parsed = parsedBeforeCollect;
       const moduleAssociations = parsed._tag === "Right"
         ? yield* resolveTestModuleAssociations(parser, parsed.right, productionPaths, collected.symbolCallEvidence ?? [], exportedSymbolsByPath)
         : undefined;

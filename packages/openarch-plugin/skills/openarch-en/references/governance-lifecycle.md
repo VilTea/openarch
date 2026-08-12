@@ -8,9 +8,33 @@ Read this page before initialization, persistence, hooks, semantic evidence, Doc
 
 `openarch context` is read-only project-fact discovery. It does not refresh the baseline, create evidence, select a workflow, or authorize policy change.
 
-`governance.persistence` in `.openarch/config.yml` is the sole authority. `tracked` commits team-reviewable runtime artifacts; `local` manages only OpenArch's block in `.git/info/exclude`. Hooks validate evidence and policy in both modes, while only `tracked` auto-stages runtime artifacts.
+`governance.persistence` in `.openarch/config.yml` is the sole authority. `tracked` stages only decision artifacts (config.yml, anti-patterns/test-governance rules, calibration samples, implicit-deps declarations) changed by the hook; runtime artifacts (baseline/history/audit/pending/scan-status/document-store.json) are never auto-staged — they are idempotently rebuilt by `openarch scan`. `local` manages only OpenArch's block in `.git/info/exclude`. Hooks validate evidence and policy in both modes.
 
 `presentation.locale` selects default CLI presentation and the Skill tree installed by `init --agent` (`zh` or `en`). `--lang` and `OPENARCH_LANG` change CLI presentation for one invocation only; they do not change the Skill, metrics, policy, gate, or JSON contract. Install a Skill only with explicit `init --agent <known>` or `--skill-dir <project-relative-directory>`; never guess an Agent directory or write a user-global directory.
+
+## Structural-policy configuration practice
+
+`structural_policies` rule entries take a **`condition` (CEL expression subset)**, not `n`; `mode` decides adjudication: `enforce` evaluates rules and produces WARN/BLOCK, `observe` only covers a population without evaluating rules (a first calibration "trial" uses `enforce` + `warn`, never an automatic BLOCK). `scope.include/exclude` use minimatch; a single file can be a literal path:
+
+```yaml
+structural_policies:
+  - id: ts-core
+    mode: enforce
+    languages: [typescript]
+    scope:
+      include: ["src/**"]
+    rules_warn:
+      - name: max-func-branch
+        condition: "max_func_branch > 12"
+```
+
+**Every production file must match exactly one profile** (zero or multiple matches are both `UNAVAILABLE`; no borrowing from a neighboring language or default threshold); multi-language/multi-service projects must declare every population explicitly. Thresholds are calibrated against **this project's baseline P95**, not portable defaults; `review`'s P95/Top-3 are calibration inputs.
+
+**Run `openarch scan --rebuild` after configuration changes**: incremental scan short-circuits on per-file content `SHA-256`, so `structural_policies`/`file_kinds`/`analysisScope` changes do not trigger recomputation — if the gate still reports `policy_calibration_missing` or uses the old scope after a config edit, run `scan --rebuild` before investigating other causes. Profile id/scope changes also invalidate old calibration and need a rebuild.
+
+`--docs-scope` takes **`<scopeId>=<relative-path>`** (e.g. `example-project=agent`): the scopeId precedes `=`, the path within the document store follows it; a bare value fails validation.
+
+`init` does not auto-detect TypeScript/JavaScript (they have no project indicator files); `languages: []` means "no supported language yet", so `scan` completes 0 files. TS/JS projects must set `languages: [typescript]` manually and re-`scan`.
 
 ## Baseline, Evidence, And Hook
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { isAnalyzableProjectFile, listProjectSourceFiles, readProjectLanguageState, readProjectLanguages, sourceSnapshotSha256 } from "../src/projectFiles";
+import { isAnalyzableProjectFile, listProjectSourceFiles, readProjectLanguageState, readProjectLanguages, sourceSnapshotSha256, configSnapshotSha256 } from "../src/projectFiles";
 import { withTemporaryDirectory } from "./support/temporaryDirectory";
 
 describe("projectFiles", () => {
@@ -26,6 +26,19 @@ describe("projectFiles", () => {
 
     expect(readProjectLanguages(cwd)).toEqual(["python"]);
     expect(listProjectSourceFiles({ cwd })).toEqual([join(cwd, "main.py")]);
+  }));
+
+  it("configSnapshotSha256 反映 config.yml 内容变化", () => withTemporaryDirectory("project-files", (cwd) => {
+    const cfg = join(cwd, "config.yml");
+    writeFileSync(cfg, "languages: [javascript]\n");
+    const first = configSnapshotSha256(cfg);
+    expect(first).toBeTruthy();
+    writeFileSync(cfg, "languages: [javascript]\nstructural_policies:\n  - id: demo\n");
+    expect(configSnapshotSha256(cfg)).not.toBe(first);
+  }));
+
+  it("configSnapshotSha256 对缺失文件返回 undefined", () => withTemporaryDirectory("project-files", (cwd) => {
+    expect(configSnapshotSha256(join(cwd, "missing.yml"))).toBeUndefined();
   }));
 
   it("未知项目保持空作用域，而不是回退到 TypeScript", () => withTemporaryDirectory("project-files", (cwd) => {

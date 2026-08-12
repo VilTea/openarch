@@ -1,4 +1,4 @@
-import { CommandHandler } from "../runtime";
+import { CommandHandler, isAnalyzableSourceFile } from "../runtime";
 import { auditCommand } from "./audit";
 import { diffCommand } from "./diff";
 import { gateCommand } from "./gate";
@@ -47,8 +47,16 @@ export const checkCommand: CommandHandler = async (args, context) => {
     if (worktree && worktreePaths.length === 0) {
       console.log(message(context.locale, "check.worktreeEmpty"));
     }
-    const impact = worktree && worktreePaths.length > 0
-      ? await diffCommand([...diffArgs, ...worktreePaths], context)
+    // 工作树有变更但其中没有可分析文件时，明确提示（体验反馈 2026-08-12：
+    // 不能静默落到"用法错误"，也不能让"无变更"与"无可分析"混淆）。
+    const worktreeAnalyzable = worktree
+      ? worktreePaths.filter((path) => isAnalyzableSourceFile(path, context.cwd, "change-evidence"))
+      : [];
+    if (worktree && worktreePaths.length > 0 && worktreeAnalyzable.length === 0) {
+      console.log(message(context.locale, "check.worktreeNoAnalyzable", { count: String(worktreePaths.length) }));
+    }
+    const impact = worktree && worktreeAnalyzable.length > 0
+      ? await diffCommand([...diffArgs, ...worktreeAnalyzable], context)
       : staged || manualPaths
         ? await diffCommand(diffArgs, context)
         : 0;
