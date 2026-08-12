@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OpenArch · 源码哲学实践分析报告</title>
+<style>
+  /* ── Design tokens (validated palette · dataviz skill) ─────────────────── */
+  /* categorical dark slots PASS validator on #1a1a19; status colors carry icon+label */
+  :root[data-theme="dark"] {
+    --page:        #0d0d0d;
+    --surface-1:   #1a1a19;
+    --surface-2:   #20201e;
+    --ink-1:       #ffffff;
+    --ink-2:       #c3c2b7;
+    --ink-3:       #898781;
+    --gridline:    #2c2c2a;
+    --baseline:    #383835;
+    --hairline:    rgba(255,255,255,0.10);
+    --series-1:    #3987e5;  /* blue — slot 1 */
+    --series-2:    #d95926;  /* orange */
+    --series-3:    #199e70;  /* aqua */
+    --good:        #0ca30c;
+    --warning:     #fab219;
+    --serious:     #ec835a;
+    --critical:    #d03b3b;
+    --on-warning:  #1a1a19;  /* warning fill is L=0.81 → dark text */
+    --glow:        rgba(57,135,229,0.35);
+    --particle:    rgba(57,135,229,0.55);
+    --link:        rgba(255,255,255,0.10);
+  }
+  :root[data-theme="light"] {
+    --page:        #f9f9f7;
+    --surface-1:   #fcfcfb;
+    --surface-2:   #f3f2ee;
+    --ink-1:       #0b0b0b;
+    --ink-2:       #52514e;
+    --ink-3:       #898781;
+    --gridline:    #e1e0d9;
+    --baseline:    #c3c2b7;
+    --hairline:    rgba(11,11,11,0.10);
+    --series-1:    #2a78d6;
+    --series-2:    #eb6834;
+    --series-3:    #1baf7a;
+    --good:        #0ca30c;
+    --warning:     #b47a00;  /* darker step for light-surface text legibility */
+    --serious:     #c25a2e;
+    --critical:    #d03b3b;
+    --on-warning:  #1a1a19;
+    --glow:        rgba(42,120,214,0.22);
+    --particle:    rgba(42,120,214,0.40);
+    --link:        rgba(11,11,11,0.08);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--page);
+    color: var(--ink-2);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    transition: background .4s ease, color .4s ease;
+  }
+
+  /* ── Background canvas ────────────────────────────────────────────────── */
+  #bg {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  }
+  .wrap { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+
+  /* ── Theme toggle ─────────────────────────────────────────────────────── */
+  .toolbar {
+    position: fixed; top: 18px; right: 22px; z-index: 50;
+    display: flex; gap: 8px; align-items: center;
+  }
+  .toolbar button {
+    background: var(--surface-1); color: var(--ink-2);
+    border: 1px solid var(--hairline); border-radius: 999px;
+    padding: 8px 14px; font-size: 0.8rem; cursor: pointer;
+    backdrop-filter: blur(8px); transition: all .2s ease;
+    font-family: inherit;
+  }
+  .toolbar button:hover { color: var(--ink-1); border-color: var(--series-1); }
+
+  /* ── Hero ─────────────────────────────────────────────────────────────── */
+  header.hero {
+    min-height: 92vh; display: flex; flex-direction: column;
+    justify-content: center; padding: 120px 0 60px;
+  }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 0.74rem; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--series-1); font-weight: 600; margin-bottom: 22px;
+  }
+  .eyebrow::before {
+    content: ""; width: 28px; height: 1px; background: var(--series-1);
+  }
+  h1.title {
+    font-size: clamp(2.4rem, 6vw, 4.4rem); line-height: 1.04; font-weight: 800;
+    color: var(--ink-1); letter-spacing: -0.02em; max-width: 16ch;
+  }
+  h1.title .accent {
+    background: linear-gradient(110deg, var(--series-1), var(--series-3));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .lede {
+    margin-top: 26px; font-size: clamp(1.02rem, 1.6vw, 1.22rem);
+    color: var(--ink-2); max-width: 62ch;
+  }
+  .hero-meta {
+    margin-top: 42px; display: flex; flex-wrap: wrap; gap: 12px 26px;
+    font-size: 0.85rem; color: var(--ink-3);
+  }
+  .hero-meta b { color: var(--ink-2); font-weight: 600; }
+  .hero-quote {
+    margin-top: 38px; padding: 18px 22px; border-left: 2px solid var(--series-1);
+    background: var(--surface-1); border-radius: 0 10px 10px 0; max-width: 64ch;
+    color: var(--ink-2); font-style: italic;
+  }
+  .hero-quote cite { display: block; margin-top: 6px; font-style: normal; font-size: 0.8rem; color: var(--ink-3); }
+
+  /* ── Sections ─────────────────────────────────────────────────────────── */
+  section { padding: 64px 0; border-top: 1px solid var(--hairline); }
+  .sec-head { margin-bottom: 36px; }
+  .sec-num {
+    font-size: 0.78rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--series-1); font-weight: 600;
+  }
+  h2 { font-size: clamp(1.5rem, 3vw, 2.1rem); color: var(--ink-1); font-weight: 700; margin-top: 8px; letter-spacing: -0.01em; }
+  .sec-sub { color: var(--ink-3); margin-top: 10px; max-width: 68ch; font-size: 0.96rem; }
+
+  /* ── TL;DR card ───────────────────────────────────────────────────────── */
+  .tldr {
+    background: linear-gradient(150deg, var(--surface-1), var(--surface-2));
+    border: 1px solid var(--hairline); border-radius: 16px;
+    padding: 34px 36px; position: relative; overflow: hidden;
+  }
+  .tldr::after {
+    content: ""; position: absolute; top: -60px; right: -60px;
+    width: 220px; height: 220px; border-radius: 50%;
+    background: radial-gradient(circle, var(--glow), transparent 70%);
+  }
+  .tldr p { font-size: 1.12rem; color: var(--ink-1); line-height: 1.7; position: relative; }
+  .tldr .pill {
+    display: inline-block; font-size: 0.74rem; padding: 3px 10px; border-radius: 999px;
+    background: rgba(12,163,12,0.14); color: var(--good); border: 1px solid rgba(12,163,12,0.3);
+    margin-right: 8px; font-weight: 600; letter-spacing: 0.02em; vertical-align: middle;
+  }
+
+  /* ── KPI / stat tiles ─────────────────────────────────────────────────── */
+  .kpi-row {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px;
+  }
+  .stat {
+    background: var(--surface-1); border: 1px solid var(--hairline);
+    border-radius: 12px; padding: 22px 20px; transition: transform .25s ease, border-color .25s ease;
+  }
+  .stat:hover { transform: translateY(-3px); border-color: var(--series-1); }
+  .stat .v {
+    font-size: 2.5rem; font-weight: 800; color: var(--ink-1); line-height: 1;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+  }
+  .stat .v .u { font-size: 1.1rem; color: var(--ink-3); font-weight: 600; margin-left: 2px; }
+  .stat .l { margin-top: 10px; font-size: 0.84rem; color: var(--ink-3); }
+  .stat .bar-track { height: 4px; background: var(--gridline); border-radius: 2px; margin-top: 14px; overflow: hidden; }
+  .stat .bar-fill { height: 100%; background: var(--series-1); border-radius: 2px; width: 0; transition: width 1.4s cubic-bezier(.2,.8,.2,1); }
+
+  /* ── Philosophy grid ──────────────────────────────────────────────────── */
+  .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .phil-card {
+    background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 12px;
+    padding: 24px; position: relative; transition: border-color .25s ease;
+  }
+  .phil-card:hover { border-color: var(--series-1); }
+  .phil-card .pn {
+    font-size: 0.74rem; font-weight: 700; color: var(--series-1); letter-spacing: 0.1em;
+  }
+  .phil-card h3 { color: var(--ink-1); font-size: 1.08rem; margin: 8px 0 10px; font-weight: 700; }
+  .phil-card p { font-size: 0.9rem; color: var(--ink-2); }
+
+  /* ── Score chart (canvas) ─────────────────────────────────────────────── */
+  .chart-card {
+    background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 14px;
+    padding: 28px 24px 18px;
+  }
+  .chart-legend {
+    display: flex; gap: 18px; flex-wrap: wrap; font-size: 0.8rem; color: var(--ink-3);
+    margin-bottom: 16px; align-items: center;
+  }
+  .chart-legend .key { display: inline-flex; align-items: center; gap: 7px; }
+  .chart-legend .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  #scoreChart { width: 100%; height: 420px; display: block; }
+  #scoreTip {
+    position: absolute; pointer-events: none; opacity: 0; transition: opacity .15s ease;
+    background: var(--surface-2); border: 1px solid var(--series-1); color: var(--ink-1);
+    padding: 8px 12px; border-radius: 8px; font-size: 0.82rem; max-width: 260px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.4); z-index: 20;
+  }
+
+  /* ── Checkup cards ────────────────────────────────────────────────────── */
+  .check-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+  .chk {
+    background: var(--surface-1); border: 1px solid var(--hairline); border-left: 3px solid var(--ink-3);
+    border-radius: 10px; padding: 20px 22px; transition: transform .2s ease;
+  }
+  .chk:hover { transform: translateY(-2px); }
+  .chk.pass { border-left-color: var(--good); }
+  .chk.warn { border-left-color: var(--warning); }
+  .chk.minor { border-left-color: var(--series-3); }
+  .chk-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .chk-icon {
+    width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center;
+    font-size: 0.8rem; font-weight: 800; flex-shrink: 0;
+  }
+  .chk.pass .chk-icon { background: rgba(12,163,12,0.16); color: var(--good); }
+  .chk.warn .chk-icon { background: rgba(250,178,25,0.16); color: var(--warning); }
+  .chk.minor .chk-icon { background: rgba(25,158,112,0.16); color: var(--series-3); }
+  .chk h4 { color: var(--ink-1); font-size: 0.98rem; font-weight: 600; }
+  .chk .tag { margin-left: auto; font-size: 0.68rem; padding: 2px 8px; border-radius: 999px; color: var(--ink-3); border: 1px solid var(--hairline); }
+  .chk p { font-size: 0.875rem; color: var(--ink-2); margin-top: 4px; }
+  .chk .ev { margin-top: 10px; font-size: 0.76rem; color: var(--ink-3); font-family: ui-monospace, "SF Mono", Consolas, monospace; word-break: break-word; }
+
+  /* ── Fail-closed defense line ─────────────────────────────────────────── */
+  #guardRail { width: 100%; height: 70px; display: block; }
+  .guard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: 10px; margin-top: 24px; }
+  .guard {
+    background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 9px;
+    padding: 14px 16px; display: flex; gap: 12px; align-items: flex-start;
+    transition: border-color .2s ease, background .2s ease;
+  }
+  .guard:hover { border-color: var(--good); background: var(--surface-2); }
+  .guard .gn {
+    width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0;
+    background: rgba(12,163,12,0.14); color: var(--good);
+    display: grid; place-items: center; font-size: 0.78rem; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .guard .gb h5 { color: var(--ink-1); font-size: 0.86rem; font-weight: 600; }
+  .guard .gb code { color: var(--series-1); font-family: ui-monospace, monospace; font-size: 0.74rem; }
+  .guard .gb p { font-size: 0.8rem; color: var(--ink-3); margin-top: 2px; }
+
+  /* ── Tension (diverging) ──────────────────────────────────────────────── */
+  .tension {
+    background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 14px;
+    padding: 26px 28px; margin-bottom: 16px;
+  }
+  .tension h3 { color: var(--ink-1); font-size: 1.15rem; display: flex; align-items: center; gap: 10px; }
+  .tension .sev {
+    font-size: 0.7rem; padding: 3px 10px; border-radius: 999px; font-weight: 600;
+    background: rgba(250,178,25,0.16); color: var(--warning); border: 1px solid rgba(250,178,25,0.3);
+  }
+  .diverge {
+    margin: 20px 0 8px; display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: center;
+  }
+  .diverge .pole { padding: 14px 16px; border-radius: 10px; font-size: 0.86rem; }
+  .diverge .claim { background: rgba(57,135,229,0.10); border: 1px solid rgba(57,135,229,0.3); color: var(--ink-1); }
+  .diverge .reality { background: rgba(208,59,59,0.10); border: 1px solid rgba(208,59,59,0.3); color: var(--ink-1); }
+  .diverge .pole small { display: block; font-size: 0.7rem; color: var(--ink-3); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .diverge .mid { color: var(--ink-3); font-size: 0.74rem; text-align: center; font-weight: 600; }
+  .tension p.body { font-size: 0.9rem; color: var(--ink-2); margin-top: 12px; }
+  .tension .verdict-line { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--hairline); font-size: 0.84rem; color: var(--ink-3); }
+  .tension .verdict-line b { color: var(--ink-2); }
+
+  /* ── Verdict table ────────────────────────────────────────────────────── */
+  .vtable { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  .vtable th, .vtable td { text-align: left; padding: 13px 14px; border-bottom: 1px solid var(--hairline); }
+  .vtable th { color: var(--ink-3); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }
+  .vtable td { color: var(--ink-2); }
+  .vtable td.dim { color: var(--ink-1); font-weight: 600; }
+  .vtable td .badge {
+    display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.74rem; font-weight: 600;
+  }
+  .b-vhigh { background: rgba(12,163,12,0.16); color: var(--good); }
+  .b-high  { background: rgba(57,135,229,0.16); color: var(--series-1); }
+  .b-mid   { background: rgba(250,178,25,0.16); color: var(--warning); }
+  .vtable-wrap { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 12px; overflow: hidden; }
+
+  /* ── Footer ───────────────────────────────────────────────────────────── */
+  footer { padding: 50px 0 70px; border-top: 1px solid var(--hairline); }
+  footer .note {
+    background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 12px;
+    padding: 20px 24px; font-size: 0.82rem; color: var(--ink-3); line-height: 1.7;
+  }
+  footer .note b { color: var(--ink-2); }
+  footer .note code { color: var(--series-1); font-family: ui-monospace, monospace; }
+  .copy { margin-top: 26px; font-size: 0.78rem; color: var(--ink-3); }
+
+  @media (max-width: 720px) {
+    .toolbar { top: 12px; right: 12px; }
+    .diverge { grid-template-columns: 1fr; }
+    .diverge .mid { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+
+<div class="toolbar">
+  <button id="themeBtn" aria-label="切换主题">🌙 深色</button>
+</div>
+
+<div class="wrap">
+
+  <!-- ───────────────────────── HERO ───────────────────────── -->
+  <header class="hero">
+    <span class="eyebrow">源码哲学实践分析 · Source Audit</span>
+    <h1 class="title">OpenArch 是否<span class="accent">践行了</span>它自己的哲学？</h1>
+    <p class="lede">
+      一份基于源码逐行核对的评估报告。用 OpenArch 自己的标准审视 OpenArch 自己的源码——
+      信息论度量、fail-closed 门禁、确定性、测试治理、以及最关键的：用它自己治理它自己。
+    </p>
+    <div class="hero-meta">
+      <span><b>对象</b> · openarch@0.1.0（core 20,327 行 TS）</span>
+      <span><b>方法</b> · 源码核对 + openarch context/review 自审</span>
+      <span><b>结论</b> · 言行高度一致，2 处可挑剔张力</span>
+    </div>
+    <div class="hero-quote">
+      "没有调查，没有发言权。"<cite>—— OpenArch SKILL.md 引《反对本本主义》，也是本报告遵循的方法</cite>
+    </div>
+  </header>
+
+  <!-- ───────────────────────── TL;DR ───────────────────────── -->
+  <section id="tldr">
+    <div class="sec-head"><span class="sec-num">概览</span></div>
+    <div class="tldr">
+      <p>
+        <span class="pill">言行一致</span>
+        这是我见过的少数把哲学主张<strong style="color:var(--ink-1)">真的编码进源码与自身配置</strong>的治理框架。
+        在与自身立场强相关的点上——fail-closed、确定性、分层、测试治理、用自己治理自己——它做到了"较真"的程度：
+        <strong style="color:var(--ink-1)">11 道 fail-closed 守卫</strong>、用自己的工具审查自己的源码、
+        把自己超阈值的几个大文件<strong style="color:var(--ink-1)">如实暴露</strong>出来而非掩饰。
+        可挑剔的张力集中在两处：度量权重的可审计性不足，以及它把自己几个超阈的大文件列为技术债却选择不强制消除——
+        而后者，恰恰也是它哲学的一部分。
+      </p>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── KPI ─────────────────────────── -->
+  <section id="stats">
+    <div class="sec-head">
+      <span class="sec-num">01 · 自审实测</span>
+      <h2>用 openarch 跑自己，得到的关键事实</h2>
+      <p class="sec-sub">以下数字来自 <code style="color:var(--series-1)">openarch context</code> 与 <code style="color:var(--series-1)">openarch review</code> 对本仓库的真实裁决，不是估算。</p>
+    </div>
+    <div class="kpi-row" id="kpiRow"></div>
+  </section>
+
+  <!-- ───────────────────────── PHILOSOPHY ──────────────────── -->
+  <section id="philosophy">
+    <div class="sec-head">
+      <span class="sec-num">02 · 它的哲学</span>
+      <h2>六条核心主张</h2>
+      <p class="sec-sub">提炼自 README 与 SKILL.md。后面的核对就是逐一验证源码是否兑现。</p>
+    </div>
+    <div class="grid-3" id="philGrid"></div>
+  </section>
+
+  <!-- ───────────────────────── SCORE CHART ─────────────────── -->
+  <section id="scores">
+    <div class="sec-head">
+      <span class="sec-num">03 · 实践程度</span>
+      <h2>八维度评分</h2>
+      <p class="sec-sub">本项目在八个维度上的实践强度，由高到低排列。悬停可见每项依据。</p>
+    </div>
+    <div class="chart-card" style="position:relative">
+      <div class="chart-legend">
+        <span class="key"><span class="dot" style="background:var(--series-1)"></span>实践强度（0–100）</span>
+        <span class="key"><span class="dot" style="background:var(--good)"></span>达标线（≥85 = 高）</span>
+        <span style="margin-left:auto">悬停查看依据 →</span>
+      </div>
+      <canvas id="scoreChart"></canvas>
+      <div id="scoreTip"></div>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── CHECKUP ─────────────────────── -->
+  <section id="checkup">
+    <div class="sec-head">
+      <span class="sec-num">04 · 逐条核对</span>
+      <h2>哲学主张 → 源码证据</h2>
+      <p class="sec-sub">每条配可追溯的 file:line。✅ 兑现 · ⚠️ 张力 · ◆ 小点。</p>
+    </div>
+    <div class="check-grid" id="checkGrid"></div>
+  </section>
+
+  <!-- ───────────────────────── FAIL-CLOSED ─────────────────── -->
+  <section id="failclosed">
+    <div class="sec-head">
+      <span class="sec-num">05 · Fail-closed 防线</span>
+      <h2>11 道守卫 + 1 兜底</h2>
+      <p class="sec-sub">
+        一次子调查曾把 <code style="color:var(--series-1)">gate.ts</code> 的"默认 PASS"误判为 fail-closed 缺陷。
+        实际上：gate.ts 是规则求值器（规则未触发=PASS 语义正确），真正负责 fail-closed 的是上层 gateApp——
+        它在进入求值<b style="color:var(--ink-1)">之前</b>就拦下了这些情况，全部返回 <code style="color:var(--series-1)">UNAVAILABLE (exit 3)</code>。
+      </p>
+    </div>
+    <div class="chart-card" style="padding:14px 0 4px">
+      <canvas id="guardRail"></canvas>
+    </div>
+    <div class="guard-grid" id="guardGrid"></div>
+  </section>
+
+  <!-- ───────────────────────── TENSIONS ────────────────────── -->
+  <section id="tensions">
+    <div class="sec-head">
+      <span class="sec-num">06 · 诚实的张力</span>
+      <h2>两处可挑剔点（diverging）</h2>
+      <p class="sec-sub">用"主张 ↔ 实现"的分歧视角呈现。这两点不是"言行不一"，更像是哲学在自身代码上的诚实留白。</p>
+    </div>
+
+    <div class="tension">
+      <h3>张力 1 · 度量权重缺推导依据 <span class="sev">中</span></h3>
+      <div class="diverge">
+        <div class="pole claim"><small>哲学主张</small>零硬编码 + 可审计：每个判定都应可追溯、可校验</div>
+        <div class="mid">↔</div>
+        <div class="pole reality"><small>实际实现</small>LAMBDA_AST 等权重只标"design §7.2"，无推导公式或校准实验</div>
+      </div>
+      <p class="body">
+        <b style="color:var(--ink-1)">厘清一个概念</b>：这不违反"零硬编码<b>阈值</b>"（threshold 由 P95 校准，成立）——
+        LAMBDA_AST 是模型 <b>weight</b>，属主观建模。但哲学要求"可审计"，而"权重来自某设计文档某节"只是可追溯、不是可校验。
+        这是<b>哲学内部的小不一致</b>：它对项目代码要求的校准严格度，高于它对自己核心公式的严格度。
+      </p>
+      <div class="verdict-line"><b>证据</b> · <code style="color:var(--series-1)">domain/weights.ts</code> LAMBDA_AST 表 · <code style="color:var(--series-1)">domain/crlState.ts</code> 六维权重 · <code style="color:var(--series-1)">domain/confidence.ts:21</code></div>
+    </div>
+
+    <div class="tension">
+      <h3>张力 2 · 自己的指标超了自己的 WARN 阈值，却 PASS <span class="sev">低</span></h3>
+      <div class="diverge">
+        <div class="pole claim"><small>哲学主张</small>enforce 门禁：超阈即 WARN/BLOCK</small></div>
+        <div class="mid">↔</div>
+        <div class="pole reality"><small>实际实现</small>diff.ts=0.656 &gt; application 阈值 0.65，但 review 报 PASS</small></div>
+      </div>
+      <p class="body">
+        这<b>不算 bug</b>：<code style="color:var(--series-1)">review</code> 标题就叫"治理复盘（仅报告）"，裁决交给 <code style="color:var(--series-1)">check --staged</code>。
+        但它暴露一个真实选择：项目把这几个大文件作为<b style="color:var(--ink-1)">显式技术债标注，而非强制消除</b>——
+        既符合红军哲学（"腐化会回流，不追求一次全绿"），也可被批评为"自己定的规矩自己破例"。至少它没有藏。
+      </p>
+      <div class="verdict-line"><b>证据</b> · <code style="color:var(--series-1)">cli/src/commands/diff.ts</code> crl_local=0.656 · <code style="color:var(--series-1)">.openarch/config.yml</code> application 阈值 0.65 · review 输出"架构门禁: PASS"</div>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── VERDICT ─────────────────────── -->
+  <section id="verdict">
+    <div class="sec-head">
+      <span class="sec-num">07 · 总评</span>
+      <h2>维度裁定</h2>
+    </div>
+    <div class="vtable-wrap">
+      <table class="vtable">
+        <thead><tr><th>维度</th><th>实践程度</th><th>说明</th></tr></thead>
+        <tbody id="verdictBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── FOOTER ──────────────────────── -->
+  <footer>
+    <p class="copy">OpenArch 源码哲学实践分析报告 · 基于源码逐行核对与 openarch context/review 自审生成</p>
+  </footer>
+
+</div>
+
+<script>
+/* ════════════════════════ DATA ════════════════════════ */
+const KPI = [
+  { v: 535,  u: '', l: '基线扫描文件', p: 100 },
+  { v: 14,   u: '条', l: '已声明架构规则', p: 78 },
+  { v: 11,   u: '道', l: 'fail-closed 守卫', p: 92 },
+  { v: 168,  u: '', l: '测试文件（全处理）', p: 100 },
+  { v: 320,  u: '', l: '门禁评估生产文件', p: 88 },
+  { v: 0,    u: '', l: '反模式 finding（自审）', p: 100 },
+];
+
+const PHIL = [
+  { n: '01', t: '腐化是熵，不是 bug', d: '防线必须"廉价可重建"，不追求一次全绿。是战壕，不是一次建好的墙。' },
+  { n: '02', t: '信息论底座', d: '对数压缩避免极端值主导；状态=基线 / 变化=信号；保留不确定性。' },
+  { n: '03', t: '零硬编码阈值', d: '判定阈值由项目自身 P95 分布校准，而非通用假设。' },
+  { n: '04', t: '本地·确定·可审计', d: '门禁里没有 LLM，靠 tree-sitter / 编译器 / LSP 本地符号级分析。' },
+  { n: '05', t: 'Fail-closed', d: '证据缺失/模糊 → PARTIAL / UNAVAILABLE，绝不假装 clean。' },
+  { n: '06', t: 'Skill 是真 playbook', d: '同一套方法论跨 5 个 Agent 平台，agent 真正会读、能就地重建。' },
+];
+
+const SCORES = [
+  { dim: 'Dogfood 自治理',        score: 97, grade: '极高', note: 'config.yml 用 OpenArch 治理 OpenArch：自报 authority 边界、自检生产代码必须纳入 gate、自带校准日期。最强一致性证据。' },
+  { dim: 'Fail-closed 门禁',      score: 96, grade: '很高', note: 'gateApp 在求值前拦 11 道守卫，连"配置不完备"（多语言无策略/策略歧义/无 sealed 校准）都 UNAVAILABLE。' },
+  { dim: '确定性·本地·无 LLM',    score: 94, grade: '高',   note: '手写 CEL 子集求值器 + tree-sitter，gate 路径零 LLM/HTTP/随机/时间判断，完全可复现。' },
+  { dim: '测试治理·反 TEST_BLOAT', score: 92, grade: '高',   note: 'MinHash + LSH band 工业级实现；自身 168 个测试无 skip/only、无巨型测试、断言完整。' },
+  { dim: '分层架构',              score: 90, grade: '高',   note: 'domain/application/port/adapter 六边形；config 给各层赋 I_push 权重（domain 1.3 / parser 0.8），把架构判断编码成可校准因子。' },
+  { dim: '信息论度量',            score: 88, grade: '高',   note: 'log₂(inDegree+1) reach 压缩、P95 线性插值归一化（非 max，避免 outlier 主导）、crl_local ∈ [0,1]。' },
+  { dim: '零硬编码阈值',          score: 85, grade: '高',   note: 'threshold 由 policy 级 P95 校准驱动（typescript-js / go-coordination 分别校准）；每条规则带校准日期与理由。' },
+  { dim: '度量权重可审计性',      score: 62, grade: '中',   note: 'LAMBDA_AST / 六维权重只标 design §7.2，无推导或校准实验——可追溯但不可校验（张力 1）。' },
+];
+
+const CHECKS = [
+  { type:'pass', icon:'✓', tag:'兑现', h:'信息论度量——真做了，且贯彻',
+    p:'对数压缩 + P95 归一化贯穿。reach 用 log₂(inDegree+1) 防 log(0)；P95 注释直言"避免 outlier 主导归一化分母"。',
+    ev:'domain/i-push.ts:21 · domain/p95.ts:6-13 · domain/crlState.ts:64 (safeDiv 上限 1)' },
+  { type:'pass', icon:'✓', tag:'兑现', h:'零硬编码"阈值"——成立',
+    p:'判定阈值由 P95 校准驱动；语言级校准通过 policy 维度实现（TS/JS 与 Go 各自 P95），非裸 language。最初子调查误判"未落地"，因没看到 gateApp 的 policy→P95 路由。',
+    ev:'application/governance/gateApp.ts:163-167 · .openarch/config.yml:59-61' },
+  { type:'pass', icon:'✓', tag:'兑现', h:'确定性门禁——无 LLM、本地、可审计',
+    p:'裁决是纯函数；规则引擎是手写 CEL 子集求值器（tokenizer + 递归下降 + 查表比较），零外部依赖。整个 gate 路径无任何 LLM/网络/随机/时间判断。',
+    ev:'application/governance/gate.ts:59-73 · adapter/rule/CelAdapter.ts' },
+  { type:'pass', icon:'✓', tag:'兑现', h:'Fail-closed——比一般工具更严格',
+    p:'gate.ts 是规则求值器（规则未触发=PASS 语义正确）；上层 gateApp 在求值前拦 11 道守卫，全部 UNAVAILABLE (exit 3)。连配置不完备都 fail-closed。',
+    ev:'application/governance/gateApp.ts:113,117,120,133,141,168,189' },
+  { type:'pass', icon:'✓', tag:'兑现', h:'测试治理 + 反 TEST_BLOAT——工业级，自身达标',
+    p:'focused_test / unapproved_skip / missing_assertion 全是确定性 AST 查询；TEST_BLOAT 是真 MinHash + LSH band（块窗口 8、阈值 0.6）。自身 168 测试无 skip、无巨型、断言完整。',
+    ev:'test-governance/providers/vitest.ts · application/testBloatMetrics.ts:65-107' },
+  { type:'pass', icon:'✓', tag:'兑现', h:'用自己治理自己（Dogfood）——全场最佳',
+    p:'config.yml 本质是"用 OpenArch 治理 OpenArch"：声明自己的 authority 边界（staged-script-execution 禁 node:fs）、强制把 CLI 入口与 Go service 纳入 gate。review 诚实地列出自己 Top-3 高负担文件，没藏。',
+    ev:'.openarch/config.yml · staged-analysis/staticImports.ts ("The sole projection") · openarch review 实测' },
+  { type:'pass', icon:'✓', tag:'兑现', h:'分层架构——端口/适配器，且编码进配置',
+    p:'domain/application/port/adapter 六边形；config 给各层赋 I_push 权重并注明理由（domain 纯函数变更更危险 / parser 天然复杂）。',
+    ev:'.openarch/config.yml:43-57 · packages/core/src/{domain,application,port,adapter}' },
+  { type:'warn', icon:'!', tag:'张力', h:'度量权重缺乏推导依据',
+    p:'LAMBDA_AST（100/80/60/…）、六维权重、confidence 的 0.3 只标"design §7.2"章节号，无推导或校准。是模型 weight 非 threshold，不违反"零阈值"，但未达"可审计"自检标准。',
+    ev:'domain/weights.ts · domain/crlState.ts:25-27 · domain/confidence.ts:20-21' },
+  { type:'warn', icon:'!', tag:'张力', h:'自己的指标超了自己的 WARN 阈值，却 PASS',
+    p:'review 显示 diff.ts=0.656 / discover.ts=0.644 / scan.ts=0.633，application 层阈值为 0.65。diff.ts 超阈但 review=PASS。因 review 是"仅报告"模式，裁决交 check --staged——是设计选择（标注而非消除），非 bug。',
+    ev:'cli/src/commands/diff.ts · .openarch/config.yml:82 (application crl_local>0.65)' },
+  { type:'minor', icon:'◆', tag:'小点', h:'Verdict 枚举术语粒度',
+    p:'GateVerdict 只有 PASS/WARN/BLOCK，UNAVAILABLE 在 gateApp 层加，缺独立 PARTIAL（细分成了 11 个 reason 字符串）。功能够用，与 SKILL.md 把 PARTIAL/UNAVAILABLE 并列为"事实边界"的措辞略有出入。吹毛求疵级别。',
+    ev:'application/governance/gate.ts:19 · gateApp.ts:42' },
+];
+
+const GUARDS = [
+  ['languages_empty',              '语言列表为空',         'gateApp.ts:113'],
+  ['missing_baseline_index',       '基线索引缺失',         'gateApp.ts:117'],
+  ['baseline_scope_incompatible',  '基线 scope 不兼容',    'gateApp.ts:120'],
+  ['metric_contract_incompatible', '指标合同版本不符',     'gateApp.ts:120'],
+  ['unsupported_gate_metric',      '规则引用不支持的 metric', 'gateApp.ts:122'],
+  ['missing_max_function_branch',  'maxFuncBranch 缺失',   'gateApp.ts:133'],
+  ['missing_metric_language',      'language 缺失',        'gateApp.ts:136'],
+  ['unconfigured_language_policy', '多语言无显式策略',     'gateApp.ts:141'],
+  ['unconfigured_language_policy', '有文件无策略匹配',     'gateApp.ts:144'],
+  ['ambiguous_structural_policy',  '策略歧义（多匹配）',   'gateApp.ts:148'],
+  ['policy_calibration_missing',   '策略无 sealed 校准',   'gateApp.ts:168'],
+  ['execution_failed',             '执行期错误（catchAll 兜底）', 'gateApp.ts:189'],
+];
+
+const VERDICT = [
+  ['信息论（对数/P95/不确定性）', 'vhigh', '高',   '贯彻，机制正确；语言级 P95 经 policy 维度实现'],
+  ['零硬编码阈值',                'high',  '高',   'threshold 由 P95 校准；weight 是另一回事（张力 1）'],
+  ['确定性 / 本地 / 无 LLM',       'vhigh', '很高', '全本地 CEL + tree-sitter，零外部依赖'],
+  ['Fail-closed',                 'vhigh', '很高', '11 道守卫，含配置完备性'],
+  ['测试治理',                    'vhigh', '高',   '工业级 MinHash，自身测试达标'],
+  ['Dogfood（治理自己）',          'vhigh', '极高', '最强一致性证据'],
+  ['分层架构',                    'high',  '高',   '六边形 + 层权重编码'],
+  ['度量权重可审计性',            'mid',   '中',   '有来源标注、缺校准依据（张力 1）'],
+];
+
+/* ════════════════════════ RENDER HTML ════════════════════════ */
+const $ = (s) => document.querySelector(s);
+
+// KPI
+$('#kpiRow').innerHTML = KPI.map(k => `
+  <div class="stat">
+    <div class="v" data-count="${k.v}">${k.v}<span class="u">${k.u}</span></div>
+    <div class="l">${k.l}</div>
+    <div class="bar-track"><div class="bar-fill" data-p="${k.p}"></div></div>
+  </div>`).join('');
+
+// Philosophy
+$('#philGrid').innerHTML = PHIL.map(p => `
+  <div class="phil-card">
+    <div class="pn">${p.n}</div>
+    <h3>${p.t}</h3>
+    <p>${p.d}</p>
+  </div>`).join('');
+
+// Checkup
+$('#checkGrid').innerHTML = CHECKS.map(c => `
+  <div class="chk ${c.type}">
+    <div class="chk-head">
+      <div class="chk-icon">${c.icon}</div>
+      <h4>${c.h}</h4>
+      <span class="tag">${c.tag}</span>
+    </div>
+    <p>${c.p}</p>
+    <div class="ev">${c.ev}</div>
+  </div>`).join('');
+
+// Guards
+$('#guardGrid').innerHTML = GUARDS.map((g, i) => `
+  <div class="guard">
+    <div class="gn">${String(i+1).padStart(2,'0')}</div>
+    <div class="gb">
+      <h5>${g[1]} <code>${g[0]}</code></h5>
+      <p>${g[2]}</p>
+    </div>
+  </div>`).join('');
+
+// Verdict table
+$('#verdictBody').innerHTML = VERDICT.map(v => {
+  const cls = v[1]==='vhigh'?'b-vhigh':v[1]==='high'?'b-high':'b-mid';
+  const label = v[1]==='vhigh'?'很高 · 90+':v[1]==='high'?'高 · 85+':'中 · 待校准';
+  return `<tr><td class="dim">${v[0]}</td><td><span class="badge ${cls}">${label}</span></td><td>${v[3]}</td></tr>`;
+}).join('');
+
+/* ════════════════════════ THEME ════════════════════════ */
+const themeBtn = $('#themeBtn');
+let theme = 'dark';
+themeBtn.addEventListener('click', () => {
+  theme = theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+  themeBtn.textContent = theme === 'dark' ? '🌙 深色' : '☀️ 浅色';
+  initBg();          // re-tint particles
+  drawScoreChart();  // re-paint with new tokens
+  drawGuardRail();
+});
+
+const token = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/* ════════════════════════ BACKGROUND PARTICLES ════════════════════════ */
+let bgCanvas, bgCtx, particles = [], W, H, raf;
+const mouse = { x: -9999, y: -9999 };
+function initBg() {
+  bgCanvas = $('#bg'); bgCtx = bgCanvas.getContext('2d');
+  resize(); buildParticles();
+  if (!raf) raf = requestAnimationFrame(loop);
+}
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  bgCanvas.width = W * dpr; bgCanvas.height = H * dpr;
+  bgCanvas.style.width = W + 'px'; bgCanvas.style.height = H + 'px';
+  bgCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function buildParticles() {
+  const count = Math.min(80, Math.floor(W * H / 16000));
+  particles = Array.from({ length: count }, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    vx: (Math.random() - 0.5) * 0.28, vy: (Math.random() - 0.5) * 0.28,
+    r: Math.random() * 1.6 + 0.6,
+  }));
+}
+function loop() {
+  bgCtx.clearRect(0, 0, W, H);
+  const pc = token('--particle'); const link = token('--link');
+  const maxDist = 130;
+  for (const p of particles) {
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < 0 || p.x > W) p.vx *= -1;
+    if (p.y < 0 || p.y > H) p.vy *= -1;
+    const dx = p.x - mouse.x, dy = p.y - mouse.y, md = Math.hypot(dx, dy);
+    if (md < 160) { p.x += dx / md * 0.4; p.y += dy / md * 0.4; }
+    bgCtx.beginPath(); bgCtx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    bgCtx.fillStyle = pc; bgCtx.fill();
+  }
+  for (let i = 0; i < particles.length; i++) {
+    for (let j = i + 1; j < particles.length; j++) {
+      const a = particles[i], b = particles[j];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d < maxDist) {
+        bgCtx.beginPath(); bgCtx.moveTo(a.x, a.y); bgCtx.lineTo(b.x, b.y);
+        bgCtx.strokeStyle = link; bgCtx.globalAlpha = (1 - d / maxDist) * 0.7;
+        bgCtx.lineWidth = 1; bgCtx.stroke(); bgCtx.globalAlpha = 1;
+      }
+    }
+  }
+  raf = requestAnimationFrame(loop);
+}
+window.addEventListener('resize', () => { resize(); buildParticles(); });
+window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; });
+window.addEventListener('mouseout', () => { mouse.x = -9999; mouse.y = -9999; });
+
+/* ════════════════════════ SCORE BAR CHART ════════════════════════ */
+let scoreCtx, scoreW, scoreH, scoreRects = [], chartProgress = 0, scoreRaf;
+const tip = $('#scoreTip');
+function setupScoreCanvas() {
+  const c = $('#scoreChart'); scoreCtx = c.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = c.clientWidth, h = 420;
+  c.width = w * dpr; c.height = h * dpr; c.style.height = h + 'px';
+  scoreCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  scoreW = w; scoreH = h;
+}
+function drawScoreChart() {
+  setupScoreCanvas();
+  const ctx = scoreCtx; ctx.clearRect(0, 0, scoreW, scoreH);
+  const ink1 = token('--ink-1'), ink2 = token('--ink-2'), ink3 = token('--ink-3');
+  const s1 = token('--series-1'), good = token('--good'), warning = token('--warning');
+  const grid = token('--gridline'), base = token('--baseline');
+
+  const labelW = 188, valueW = 60, padL = labelW, padR = valueW + 14;
+  const chartX = padL, chartW = scoreW - padL - padR;
+  const n = SCORES.length, rowH = scoreH / n;
+  const barH = Math.min(22, rowH - 18);
+
+  scoreRects = [];
+  SCORES.forEach((s, i) => {
+    const cy = i * rowH + rowH / 2;
+    const by = cy - barH / 2;
+    // label
+    ctx.fillStyle = ink1; ctx.font = "600 13px system-ui"; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(s.dim, 8, cy);
+    // grade dot
+    const gradeColor = s.score >= 85 ? good : warning;
+    ctx.beginPath(); ctx.arc(labelW - 10, cy, 3.2, 0, Math.PI * 2); ctx.fillStyle = gradeColor; ctx.fill();
+    // baseline track
+    ctx.fillStyle = grid; ctx.fillRect(chartX, by, chartW, barH);
+    // animated fill
+    const targetW = (s.score / 100) * chartW;
+    const w = targetW * chartProgress;
+    const grad = ctx.createLinearGradient(chartX, 0, chartX + chartW, 0);
+    grad.addColorStop(0, s1); grad.addColorStop(1, gradeColor);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    roundRect(ctx, chartX, by, Math.max(0.001, w), barH, 4, 4, 0, 0); ctx.fill();
+    // threshold tick @ 85
+    const tx = chartX + (85 / 100) * chartW;
+    ctx.strokeStyle = base; ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(tx, by - 4); ctx.lineTo(tx, by + barH + 4); ctx.stroke(); ctx.setLineDash([]);
+    // value
+    ctx.fillStyle = ink2; ctx.font = "700 14px system-ui"; ctx.textAlign = 'left';
+    ctx.fillText(String(s.score), chartX + chartW + 12, cy);
+    scoreRects.push({ x: 0, y: i * rowH, w: scoreW, h: rowH, s });
+  });
+}
+function roundRect(ctx, x, y, w, h, tl, tr, br, bl) {
+  ctx.moveTo(x + tl, y);
+  ctx.lineTo(x + w - tr, y); ctx.arcTo(x + w, y, x + w, y + tr, tr);
+  ctx.lineTo(x + w, y + h - br); ctx.arcTo(x + w, y + h, x + w - br, y + h, br);
+  ctx.lineTo(x + bl, y + h); ctx.arcTo(x, y + h, x, y + h - bl, bl);
+  ctx.lineTo(x, y + tl); ctx.arcTo(x, y, x + tl, y, tl);
+}
+function animateScore() {
+  chartProgress = 0;
+  const start = performance.now(), dur = 1400;
+  function step(t) {
+    const k = Math.min(1, (t - start) / dur);
+    chartProgress = 1 - Math.pow(1 - k, 3); // easeOutCubic
+    drawScoreChart();
+    if (k < 1) scoreRaf = requestAnimationFrame(step);
+  }
+  scoreRaf = requestAnimationFrame(step);
+}
+$('#scoreChart').addEventListener('mousemove', (e) => {
+  const rect = e.currentTarget.getBoundingClientRect();
+  const my = e.clientY - rect.top;
+  const hit = scoreRects.find(r => my >= r.y && my <= r.y + r.h);
+  if (hit) {
+    tip.innerHTML = `<b style="color:var(--ink-1)">${hit.s.dim}</b> · ${hit.s.grade} (${hit.s.score})<br/><span style="color:var(--ink-3)">${hit.s.note}</span>`;
+    tip.style.opacity = 1;
+    tip.style.left = (e.clientX - rect.left + 16) + 'px';
+    tip.style.top = (my + 16) + 'px';
+  } else tip.style.opacity = 0;
+});
+$('#scoreChart').addEventListener('mouseleave', () => tip.style.opacity = 0);
+
+/* ════════════════════════ GUARD RAIL ════════════════════════ */
+let guardProgress = 0;
+function drawGuardRail() {
+  const c = $('#guardRail'); const ctx = c.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = c.clientWidth, h = 70;
+  c.width = w * dpr; c.height = h * dpr; c.style.height = h + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  const good = token('--good'), link = token('--link'), ink3 = token('--ink-3'), s1 = token('--series-1');
+  const n = GUARDS.length, padX = 30, gap = (w - padX * 2) / (n - 1), y = h / 2;
+  // line
+  ctx.strokeStyle = link; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(padX, y); ctx.lineTo(w - padX, y); ctx.stroke();
+  // nodes
+  for (let i = 0; i < n; i++) {
+    const x = padX + gap * i;
+    const lit = i / (n - 1) <= guardProgress;
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2);
+    ctx.fillStyle = lit ? good : token('--surface-2'); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = lit ? good : ink3; ctx.stroke();
+    if (lit) {
+      ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2);
+      ctx.strokeStyle = good; ctx.globalAlpha = 0.25; ctx.lineWidth = 2; ctx.stroke(); ctx.globalAlpha = 1;
+      // shield check
+      ctx.fillStyle = token('--on-warning') === '#1a1a19' ? '#fff' : '#fff';
+      ctx.font = "800 10px system-ui"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('✓', x, y + 0.5);
+    }
+  }
+}
+function animateGuard() {
+  guardProgress = 0;
+  const start = performance.now(), dur = 1600;
+  function step(t) {
+    const k = Math.min(1, (t - start) / dur);
+    guardProgress = 1 - Math.pow(1 - k, 2);
+    drawGuardRail();
+    if (k < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+/* ════════════════════════ COUNT-UP + TRIGGER ════════════════════════ */
+function countUp(el) {
+  const target = +el.dataset.count;
+  if (target === 0) return;
+  const u = el.querySelector('.u')?.outerHTML || '';
+  const start = performance.now(), dur = 1100;
+  function step(t) {
+    const k = Math.min(1, (t - start) / dur);
+    const v = Math.round(target * (1 - Math.pow(1 - k, 3)));
+    el.innerHTML = v + u;
+    if (k < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+const io = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (!e.isIntersecting) return;
+    if (e.target.id === 'stats') {
+      document.querySelectorAll('.stat .v').forEach(countUp);
+      document.querySelectorAll('.bar-fill').forEach(b => b.style.width = b.dataset.p + '%');
+      io.unobserve(e.target);
+    } else if (e.target.id === 'scores') {
+      animateScore(); io.unobserve(e.target);
+    } else if (e.target.id === 'failclosed') {
+      animateGuard(); io.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.25 });
+['stats', 'scores', 'failclosed'].forEach(id => { const el = document.getElementById(id); if (el) io.observe(el); });
+
+window.addEventListener('resize', () => { drawScoreChart(); drawGuardRail(); });
+
+/* boot */
+initBg();
+drawScoreChart();
+drawGuardRail();
+</script>
+</body>
+</html>

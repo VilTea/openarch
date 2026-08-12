@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OpenArch · 使用手册 — 让你的 AI 团队装上反腐败防线</title>
+<style>
+  /* ── Design tokens (same validated palette as the audit report) ──────── */
+  :root[data-theme="dark"] {
+    --page: #0d0d0d; --surface-1: #1a1a19; --surface-2: #20201e;
+    --ink-1: #ffffff; --ink-2: #c3c2b7; --ink-3: #898781;
+    --gridline: #2c2c2a; --baseline: #383835; --hairline: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+    --on-warning: #1a1a19; --glow: rgba(57,135,229,0.35);
+    --particle: rgba(57,135,229,0.55); --link: rgba(255,255,255,0.10);
+    --code-bg: #131312;
+  }
+  :root[data-theme="light"] {
+    --page: #f9f9f7; --surface-1: #fcfcfb; --surface-2: #f3f2ee;
+    --ink-1: #0b0b0b; --ink-2: #52514e; --ink-3: #898781;
+    --gridline: #e1e0d9; --baseline: #c3c2b7; --hairline: rgba(11,11,11,0.10);
+    --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
+    --good: #0ca30c; --warning: #b47a00; --serious: #c25a2e; --critical: #d03b3b;
+    --on-warning: #1a1a19; --glow: rgba(42,120,214,0.22);
+    --particle: rgba(42,120,214,0.40); --link: rgba(11,11,11,0.08);
+    --code-bg: #ecebe6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--page); color: var(--ink-2); line-height: 1.65;
+    -webkit-font-smoothing: antialiased; overflow-x: hidden;
+    transition: background .4s ease, color .4s ease;
+  }
+  #bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  .wrap { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+
+  /* toolbar */
+  .toolbar { position: fixed; top: 18px; right: 22px; z-index: 50; display: flex; gap: 8px; }
+  .toolbar a, .toolbar button {
+    background: var(--surface-1); color: var(--ink-2); border: 1px solid var(--hairline);
+    border-radius: 999px; padding: 8px 14px; font-size: 0.8rem; cursor: pointer;
+    backdrop-filter: blur(8px); transition: all .2s ease; font-family: inherit; text-decoration: none;
+  }
+  .toolbar a:hover, .toolbar button:hover { color: var(--ink-1); border-color: var(--series-1); }
+
+  /* hero */
+  header.hero { min-height: 90vh; display: flex; flex-direction: column; justify-content: center; padding: 120px 0 60px; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 0.74rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--series-1); font-weight: 600; margin-bottom: 22px; }
+  .eyebrow::before { content: ""; width: 28px; height: 1px; background: var(--series-1); }
+  h1.title { font-size: clamp(2.3rem, 5.6vw, 4.1rem); line-height: 1.05; font-weight: 800; color: var(--ink-1); letter-spacing: -0.02em; max-width: 18ch; }
+  h1.title .accent { background: linear-gradient(110deg, var(--series-1), var(--series-3)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lede { margin-top: 26px; font-size: clamp(1.02rem, 1.6vw, 1.22rem); color: var(--ink-2); max-width: 64ch; }
+  .hero-cta { margin-top: 36px; display: flex; flex-wrap: wrap; gap: 12px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 13px 22px; border-radius: 10px; font-weight: 600; font-size: 0.95rem; text-decoration: none; transition: all .2s ease; }
+  .btn.primary { background: var(--series-1); color: #fff; }
+  .btn.primary:hover { transform: translateY(-2px); box-shadow: 0 10px 30px var(--glow); }
+  .btn.ghost { background: var(--surface-1); color: var(--ink-1); border: 1px solid var(--hairline); }
+  .btn.ghost:hover { border-color: var(--series-1); }
+  .hero-meta { margin-top: 42px; display: flex; flex-wrap: wrap; gap: 12px 26px; font-size: 0.85rem; color: var(--ink-3); }
+  .hero-meta b { color: var(--ink-2); font-weight: 600; }
+
+  /* sections */
+  section { padding: 64px 0; border-top: 1px solid var(--hairline); }
+  .sec-head { margin-bottom: 36px; }
+  .sec-num { font-size: 0.78rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--series-1); font-weight: 600; }
+  h2 { font-size: clamp(1.5rem, 3vw, 2.1rem); color: var(--ink-1); font-weight: 700; margin-top: 8px; letter-spacing: -0.01em; }
+  .sec-sub { color: var(--ink-3); margin-top: 10px; max-width: 70ch; font-size: 0.96rem; }
+
+  /* code block */
+  pre.code {
+    background: var(--code-bg); border: 1px solid var(--hairline); border-left: 3px solid var(--series-1);
+    border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 12px 0;
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+    font-size: 0.84rem; color: var(--ink-1); line-height: 1.7;
+  }
+  pre.code .c { color: var(--ink-3); } /* comment */
+  pre.code .p { color: var(--series-1); } /* prompt/cmd */
+  code.inline { font-family: ui-monospace, monospace; font-size: 0.84em; color: var(--series-1); background: var(--surface-2); padding: 1px 6px; border-radius: 4px; }
+
+  /* TL;DR */
+  .tldr { background: linear-gradient(150deg, var(--surface-1), var(--surface-2)); border: 1px solid var(--hairline); border-radius: 16px; padding: 32px 34px; position: relative; overflow: hidden; }
+  .tldr::after { content: ""; position: absolute; top: -60px; right: -60px; width: 220px; height: 220px; border-radius: 50%; background: radial-gradient(circle, var(--glow), transparent 70%); }
+  .tldr p { font-size: 1.1rem; color: var(--ink-1); line-height: 1.7; position: relative; }
+  .tldr .pill { display: inline-block; font-size: 0.74rem; padding: 3px 10px; border-radius: 999px; background: rgba(12,163,12,0.14); color: var(--good); border: 1px solid rgba(12,163,12,0.3); margin-right: 8px; font-weight: 600; vertical-align: middle; }
+
+  /* agent-first callout */
+  .agent-first { background: linear-gradient(135deg, rgba(57,135,229,0.13), rgba(25,158,112,0.10)); border: 1px solid rgba(57,135,229,0.38); border-radius: 14px; padding: 24px 28px; margin-bottom: 32px; position: relative; overflow: hidden; }
+  .agent-first::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: linear-gradient(var(--series-1), var(--series-3)); }
+  .agent-first .af-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .agent-first .af-badge { font-size: 0.7rem; padding: 4px 11px; border-radius: 999px; background: var(--series-3); color: #fff; font-weight: 700; letter-spacing: 0.05em; }
+  .agent-first h3 { color: var(--ink-1); font-size: 1.18rem; font-weight: 700; }
+  .agent-first p { color: var(--ink-2); font-size: 0.92rem; }
+  .agent-first .af-note { margin-top: 12px; font-size: 0.8rem; color: var(--ink-3); }
+
+  /* value cards (before -> after) */
+  .val-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+  .val { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 14px; padding: 22px 24px; }
+  .val .vh { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .val .vicon { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-size: 1.05rem; background: rgba(57,135,229,0.14); color: var(--series-1); flex-shrink: 0; }
+  .val h3 { color: var(--ink-1); font-size: 1.02rem; font-weight: 700; }
+  .ba { display: grid; grid-template-columns: 1fr 22px 1fr; gap: 10px; align-items: stretch; }
+  .ba .pole { padding: 11px 13px; border-radius: 8px; font-size: 0.84rem; line-height: 1.55; }
+  .ba .before { background: rgba(208,59,59,0.08); border: 1px solid rgba(208,59,59,0.22); color: var(--ink-2); }
+  .ba .after { background: rgba(12,163,12,0.09); border: 1px solid rgba(12,163,12,0.25); color: var(--ink-1); }
+  .ba .pole small { display: block; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; font-weight: 700; }
+  .ba .before small { color: var(--critical); } .ba .after small { color: var(--good); }
+  .ba .arrow { display: grid; place-items: center; color: var(--ink-3); font-size: 1rem; }
+
+  /* workflow flow */
+  .flow-card { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 14px; padding: 26px 22px 10px; }
+  #flowCanvas { width: 100%; height: 150px; display: block; }
+  .flow-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 8px; }
+  .flow-steps .fs { padding: 12px 14px; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--hairline); }
+  .flow-steps .fs .fn { font-size: 0.72rem; font-weight: 700; color: var(--series-1); letter-spacing: 0.08em; }
+  .flow-steps .fs h4 { color: var(--ink-1); font-size: 0.9rem; margin: 4px 0; }
+  .flow-steps .fs p { font-size: 0.78rem; color: var(--ink-3); }
+
+  /* install timeline */
+  .timeline { position: relative; padding-left: 44px; }
+  .timeline::before { content: ""; position: absolute; left: 17px; top: 12px; bottom: 12px; width: 2px; background: var(--baseline); }
+  .tstep { position: relative; margin-bottom: 28px; }
+  .tstep:last-child { margin-bottom: 0; }
+  .tstep .node { position: absolute; left: -44px; top: 2px; width: 36px; height: 36px; border-radius: 50%; background: var(--surface-1); border: 2px solid var(--series-1); color: var(--series-1); display: grid; place-items: center; font-weight: 800; font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+  .tstep.done .node { background: var(--series-1); color: #fff; }
+  .tstep .card { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 12px; padding: 20px 22px; }
+  .tstep .card h3 { color: var(--ink-1); font-size: 1.1rem; font-weight: 700; }
+  .tstep .card .desc { color: var(--ink-3); font-size: 0.9rem; margin: 6px 0 12px; }
+  .tstep .card p.txt { color: var(--ink-2); font-size: 0.9rem; margin: 10px 0; }
+
+  /* tabs */
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tabs button { background: var(--surface-2); color: var(--ink-3); border: 1px solid var(--hairline); padding: 8px 16px; border-radius: 8px; cursor: pointer; font-family: inherit; font-size: 0.85rem; font-weight: 600; transition: all .2s ease; }
+  .tabs button.active { background: var(--series-1); color: #fff; border-color: var(--series-1); }
+  .tabs button:disabled { opacity: 0.4; cursor: not-allowed; background: var(--surface-2); color: var(--ink-3); border-color: var(--hairline); }
+  .tabs button:disabled:hover { border-color: var(--hairline); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* harness table */
+  table.harness { width: 100%; border-collapse: collapse; font-size: 0.86rem; margin-top: 8px; }
+  table.harness th, table.harness td { text-align: left; padding: 11px 13px; border-bottom: 1px solid var(--hairline); }
+  table.harness th { color: var(--ink-3); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+  table.harness td { color: var(--ink-2); }
+  table.harness td:first-child { color: var(--ink-1); font-weight: 600; }
+  table.harness code { font-family: ui-monospace, monospace; color: var(--series-1); font-size: 0.82rem; }
+
+  /* command reference */
+  .cmd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+  .cmd { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 10px; padding: 14px 16px; border-left: 3px solid var(--series-3); }
+  .cmd.adv { border-left-color: var(--warning); }
+  .cmd .cname { font-family: ui-monospace, monospace; color: var(--series-1); font-weight: 700; font-size: 0.92rem; }
+  .cmd.adv .cname { color: var(--warning); }
+  .cmd .cdesc { color: var(--ink-3); font-size: 0.8rem; margin-top: 4px; }
+
+  /* agent 3-step */
+  .a3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+  .a3 .a { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 12px; padding: 22px; position: relative; }
+  .a3 .a .num { position: absolute; top: -14px; left: 20px; width: 32px; height: 32px; border-radius: 9px; background: var(--series-1); color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 0.9rem; }
+  .a3 .a h4 { color: var(--ink-1); font-size: 1rem; margin: 10px 0 8px; }
+  .a3 .a p { font-size: 0.86rem; color: var(--ink-2); }
+
+  /* faq */
+  .faq { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 12px; padding: 20px 24px; margin-bottom: 12px; }
+  .faq h3 { color: var(--ink-1); font-size: 1.02rem; display: flex; align-items: center; gap: 8px; }
+  .faq h3 .q { color: var(--series-1); }
+  .faq p { font-size: 0.88rem; color: var(--ink-2); margin-top: 8px; }
+
+  /* KPI */
+  .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 12px; padding: 20px; }
+  .stat .v { font-size: 2.2rem; font-weight: 800; color: var(--ink-1); line-height: 1; font-variant-numeric: tabular-nums; }
+  .stat .v .u { font-size: 1rem; color: var(--ink-3); }
+  .stat .l { margin-top: 8px; font-size: 0.82rem; color: var(--ink-3); }
+
+  footer { padding: 50px 0 70px; border-top: 1px solid var(--hairline); }
+  footer .note { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 12px; padding: 20px 24px; font-size: 0.82rem; color: var(--ink-3); line-height: 1.7; }
+  footer .note b { color: var(--ink-2); }
+  footer .note code { color: var(--series-1); font-family: ui-monospace, monospace; }
+  .copy { margin-top: 26px; font-size: 0.78rem; color: var(--ink-3); }
+
+  @media (max-width: 760px) {
+    .toolbar { top: 12px; right: 12px; }
+    .ba { grid-template-columns: 1fr; } .ba .arrow { transform: rotate(90deg); padding: 4px 0; }
+    .flow-steps { grid-template-columns: 1fr 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+
+<div class="toolbar">
+  <a href="openarch-analysis-report.html">📊 源码审计报告</a>
+  <button id="themeBtn">🌙 深色</button>
+</div>
+
+<div class="wrap">
+
+  <!-- ───────── HERO ───────── -->
+  <header class="hero">
+    <span class="eyebrow">使用手册 · For Humans</span>
+    <h1 class="title">给你的 AI 团队装一条<span class="accent">反腐败</span>防线</h1>
+    <p class="lede">
+      OpenArch 不是又一个 linter。它承认代码腐化是熵、不可避免——所以给你的每个 AI Agent
+      一套<strong style="color:var(--ink-1)">能就地重建</strong>的本地治理防线：信息论度量、符号级变更冲击、fail-closed 门禁，
+      以及一份 Agent 真正会读的行动手册（Skill）。本地、确定、可审计，门禁里没有 LLM。
+    </p>
+    <div class="hero-cta">
+      <a class="btn primary" href="#agent-first">最省事 · 让 Agent 读 INSTALL.md</a>
+      <a class="btn ghost" href="#workflow">看日常工作流</a>
+      <a class="btn ghost" href="https://github.com/VilTea/openarch" target="_blank" rel="noopener">GitHub 仓库 ↓</a>
+    </div>
+    <div class="hero-meta">
+      <span><b>支持</b> · Claude / Codex / Cursor / OpenCode / Reasonix</span>
+      <span><b>语言</b> · TypeScript · Python · Rust · Java · Go</span>
+      <span><b>形态</b> · 单文件二进制，零 node_modules</span>
+    </div>
+  </header>
+
+  <!-- ───────── TL;DR ───────── -->
+  <section>
+    <div class="sec-head"><span class="sec-num">一句话</span></div>
+    <div class="tldr">
+      <p>
+        <span class="pill">为什么是它</span>
+        传统质量门是一次性建好的<strong style="color:var(--ink-1)">墙</strong>——规则老化、Agent 学会绕过、下次重踩同一个坑。
+        OpenArch 是一条<strong style="color:var(--ink-1)">战壕</strong>：阈值随你的项目 P95 自校准，防线由 Agent 读着 playbook 就地重建，
+        每次改动用符号级证据照亮真实冲击，缺证据就 <code class="inline">UNAVAILABLE</code> 绝不假装通过。
+        <strong style="color:var(--ink-1)">门禁里没有 LLM</strong>——你的代码不出楼，裁决本地可复现。
+      </p>
+    </div>
+  </section>
+
+  <!-- ───────── WORKFLOW ───────── -->
+  <section id="workflow">
+    <div class="sec-head">
+      <span class="sec-num">01 · 日常长什么样</span>
+      <h2>30 秒看懂工作流</h2>
+      <p class="sec-sub">装好之后，你和 Agent 的日常就多这四步。"状态是基线，变化是信号"——先建事实，再以变更取证。</p>
+    </div>
+    <div class="flow-card">
+      <canvas id="flowCanvas"></canvas>
+      <div class="flow-steps">
+        <div class="fs"><div class="fn">每次开工</div><h4>context</h4><p>只读建立项目事实：基线、策略、治理可用性。判断下一步。</p></div>
+        <div class="fs"><div class="fn">首次 / 存量盘点</div><h4>scan → review</h4><p>建基线；看 Top-3 局部负担文件与结构候选。</p></div>
+        <div class="fs"><div class="fn">改代码中</div><h4>check --worktree</h4><p>以工作树取证：I_push 冲击、WARN、反模式 finding。</p></div>
+        <div class="fs"><div class="fn">提交前</div><h4>check --staged</h4><p>以 Git index 同一快照取证，信号归零再提交。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────── INSTALL ───────── -->
+  <section id="install">
+    <div class="sec-head">
+      <span class="sec-num">02 · 安装（重点）</span>
+      <h2>三步让 Agent 装上并用起来</h2>
+      <p class="sec-sub">从拿到 CLI 到 Agent 在项目里跑起来。目前只提供可复现的源码构建路径（npm 仓库发行暂缓，已在选项中置灰）；初始化与验证两步通用。</p>
+    </div>
+
+    <div class="agent-first" id="agent-first">
+      <div class="af-head">
+        <span class="af-badge">最省事 · 推荐</span>
+        <h3>更高效的路径：让 Agent 读 INSTALL.md</h3>
+      </div>
+      <p>与其照着下面三步手动敲，更高效的做法是把仓库的 <code class="inline">INSTALL.md</code> 直接交给你的 Agent——它会自己读文档、执行构建与 <code class="inline">init</code>、验证 Skill，人类只需在关键决策点（个人 / 团队模式、工具链路径）确认。仓库地址：<a href="https://github.com/VilTea/openarch" target="_blank" rel="noopener" style="color:var(--series-1)">github.com/VilTea/openarch</a></p>
+<pre class="code"><span class="c"># 对你的 Agent 说：</span>
+读 https://github.com/VilTea/openarch 仓库里的 INSTALL.md，
+把 OpenArch 装到当前项目（openarch init --agent claude，若你用的是 codex / cursor / opencode / reasonix 请替换），装完跑 openarch context 验证。</pre>
+      <p class="af-note">这契合 OpenArch 自身哲学——<code class="inline">INSTALL §3.1</code> 本就写着 "Agent: read this"，Skill 也是 Agent 真正会读的 playbook。下面的手动三步留给想自己掌控每一步的人。</p>
+    </div>
+
+    <div class="timeline">
+
+      <!-- STEP 1 -->
+      <div class="tstep">
+        <div class="node">1</div>
+        <div class="card">
+          <h3>获得 openarch CLI</h3>
+          <p class="desc">一条持久命令，所有本地项目和 Agent 会话共享。</p>
+          <div class="tabs">
+            <button class="tab-btn active" data-tab="src">源码构建（推荐 · 可复现）</button>
+            <button class="tab-btn" data-tab="npm" disabled title="npm 仓库发行暂缓，暂不可用">npm 安装 · 暂未开放</button>
+            <button class="tab-btn" data-tab="offline" disabled title="暂随 npm 发行一并开放">离线 / 内网 · 暂未开放</button>
+          </div>
+
+          <div class="tab-panel active" data-panel="src">
+            <p class="txt">前置：Node.js 20+、<code class="inline">pnpm</code> 9.x（<code class="inline">corepack enable</code>）、<a href="https://bun.sh" style="color:var(--series-1)">bun</a>、Git。先从 <a href="https://github.com/VilTea/openarch" target="_blank" rel="noopener" style="color:var(--series-1)">GitHub</a> 克隆源码：</p>
+<pre class="code"><span class="c"># 克隆源码</span>
+<span class="p">$</span> git clone https://github.com/VilTea/openarch
+<span class="p">$</span> cd openarch
+<span class="p">$</span> corepack enable
+<span class="p">$</span> pnpm install
+<span class="p">$</span> pnpm release:binary      <span class="c"># bun build --compile → 单文件二进制（含 TS 编译器 API，无需 node_modules）</span></pre>
+            <p class="txt">产物在 <code class="inline">artifacts/binary/openarch-&lt;平台&gt;-&lt;架构&gt;/</code>：<code class="inline">openarch(.exe)</code> + <code class="inline">resources/</code>（tree-sitter WASM 语法、脚本资产、Skill）。脚本会在临时项目里先探测（<code class="inline">--help</code>、各语言 scan、Skill 安装）再落盘。</p>
+<pre class="code"><span class="c"># 构建并原子安装到 %LOCALAPPDATA%\OpenArch\bin，写入用户 PATH</span>
+<span class="p">$</span> pnpm release:local-command
+<span class="p">$</span> openarch --version       <span class="c"># 新开终端验证</span></pre>
+          </div>
+
+          <div class="tab-panel" data-panel="npm">
+            <p class="txt">在受治理项目里把 CLI 作为开发依赖：</p>
+<pre class="code"><span class="p">$</span> npm install --save-dev @openarch/cli
+<span class="p">$</span> npx openarch init --agent codex</pre>
+            <p class="txt">可选：装一份<strong style="color:var(--ink-1)">用户级</strong> Skill（跨项目，不含项目作用域）：</p>
+<pre class="code"><span class="p">$</span> npm install --global @openarch/plugin
+<span class="p">$</span> openarch-agent-install --target codex --locale en</pre>
+            <p class="txt">用户级安装故意不带项目作用域；每个项目仍用 <code class="inline">openarch init --agent &lt;target&gt;</code>。</p>
+          </div>
+
+          <div class="tab-panel" data-panel="offline">
+            <p class="txt">无网络或内网：本地打 tarball，装进受治理项目，再跑同样的 CLI 初始化：</p>
+<pre class="code"><span class="p">$</span> pnpm release:local
+<span class="p">$</span> npm install --save-dev /absolute/path/to/openarch-cli-&lt;version&gt;.tgz
+<span class="p">$</span> npx openarch init --agent codex</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 2 -->
+      <div class="tstep">
+        <div class="node">2</div>
+        <div class="card">
+          <h3>初始化受治理项目 + 安装 Skill</h3>
+          <p class="desc">在受治理仓库根目录执行。一条命令同时完成项目初始化与 Agent Skill 装机。</p>
+<pre class="code"><span class="c"># 把 claude 换成你的 Agent：claude | codex | cursor | opencode | reasonix</span>
+<span class="p">$</span> openarch init --agent claude
+<span class="p">$</span> openarch context</pre>
+          <p class="txt"><code class="inline">--agent</code> 决定 Skill 落在哪个 harness 的项目级目录；它读取 <code class="inline">.openarch/config.yml</code> 的 <code class="inline">presentation.locale</code> 安装 <code class="inline">zh</code> 或 <code class="inline">en</code> Skill 树，原子替换旧目录。注意：<code class="inline">--lang</code> 只改本次 CLI 输出，<strong style="color:var(--ink-1)">不会</strong>改变已安装的 Skill。</p>
+          <table class="harness">
+            <thead><tr><th>Harness</th><th>命令</th><th>Skill 位置</th></tr></thead>
+            <tbody>
+              <tr><td>Claude</td><td><code>openarch init --agent claude</code></td><td><code>.claude/skills/openarch/</code></td></tr>
+              <tr><td>Codex</td><td><code>openarch init --agent codex</code></td><td><code>.codex/skills/openarch/</code></td></tr>
+              <tr><td>Cursor</td><td><code>openarch init --agent cursor</code></td><td><code>.cursor/skills/openarch/</code></td></tr>
+              <tr><td>OpenCode</td><td><code>openarch init --agent opencode</code></td><td><code>.opencode/skills/openarch/</code></td></tr>
+              <tr><td>Reasonix</td><td><code>openarch init --agent reasonix</code></td><td><code>.reasonix/skills/openarch/</code></td></tr>
+              <tr><td>其它兼容 Agent</td><td><code>openarch init --skill-dir .my-agent/skills</code></td><td>自定项目相对目录</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- STEP 3 -->
+      <div class="tstep">
+        <div class="node">3</div>
+        <div class="card">
+          <h3>验证、Hook 与模式</h3>
+          <p class="desc">按需装 pre-commit hook、选择个人/团队持久化模式、配置外部工具链。</p>
+<pre class="code"><span class="c"># 代码仓 pre-commit hook：封存语义证据 + 执行已配置门禁</span>
+<span class="p">$</span> openarch init --install-hook
+
+<span class="c"># 个人项目：运行产物不进 Git（只写 .git/info/exclude）</span>
+<span class="p">$</span> openarch init --mode personal --install-hook
+
+<span class="c"># 团队审查模式：产物 tracked，可经 scan 重建</span>
+<span class="p">$</span> openarch init --mode team --install-hook
+
+<span class="c"># 外部工具链（编译器/LSP）是机器事实，绝不进项目依赖</span>
+<span class="p">$</span> openarch toolchains              <span class="c"># 查看所需工具</span>
+<span class="p">$</span> openarch init --toolchains user  <span class="c"># 用户级；project 则写 .openarch/toolchains.local.yml（入本地 exclude）</span></pre>
+          <p class="txt">CI 可用 <code class="inline">OPENARCH_&lt;TOOL_ID&gt;_PATH</code> 环境变量覆盖两个文件。Skill 在发现不可用时会按语言读取对应配置说明。</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ───────── AGENT 3-STEP ───────── -->
+  <section id="agent">
+    <div class="sec-head">
+      <span class="sec-num">03 · Agent 必读</span>
+      <h2>Skill 装机三步（Agent: read this）</h2>
+      <p class="sec-sub">CLI 装好后，Agent 自己把 OpenArch Skill 装进工作环境。这三步直接抄自 INSTALL §3.1。</p>
+    </div>
+    <div class="a3">
+      <div class="a"><div class="num">1</div><h4>为自己的 harness 装 Skill</h4><p>执行 <code class="inline">openarch init --agent &lt;你的目标&gt;</code>，Skill 落入你的项目级 skills 目录。升级 OpenArch 后重跑刷新（退役文件被原子清除）。</p></div>
+      <div class="a"><div class="num">2</div><h4>验证 Skill 已就位</h4><p>依赖它之前确认目录存在且含 <code class="inline">SKILL.md</code>：</p><pre class="code" style="margin-top:8px"><span class="p">$</span> ls .claude/skills/openarch/SKILL.md</pre><p style="margin-top:8px">若缺失，重跑对应 <code class="inline">init --agent</code> 并读错误输出。</p></div>
+      <div class="a"><div class="num">3</div><h4>工作中遵循 Skill</h4><p>已安装的 Skill 就是行动手册：治理工作前先读它，跑 <code class="inline">openarch context</code> 建立事实，再按路由选 <code class="inline">scan/review/check/rules/docs</code>。<code class="inline">check</code> 输出是<strong style="color:var(--ink-1)">全量信号面</strong>——PASS 也要读 WARN、TEST_BLOAT、反模式 finding；<code class="inline">PARTIAL/UNAVAILABLE</code> 是事实边界，不是 clean。</p></div>
+    </div>
+  </section>
+
+  <!-- ───────── COMMANDS ───────── -->
+  <section id="commands">
+    <div class="sec-head">
+      <span class="sec-num">04 · 命令速查</span>
+      <h2>openarch 命令面</h2>
+      <p class="sec-sub">公开命令 8 个 · 高级命令 4 个。逐命令帮助用 <code class="inline">openarch &lt;command&gt; --help</code>。</p>
+    </div>
+    <div class="kpi-row" style="margin-bottom:24px">
+      <div class="stat"><div class="v">8<span class="u"> + 4</span></div><div class="l">公开 + 高级命令</div></div>
+      <div class="stat"><div class="v">5<span class="u"> 种</span></div><div class="l">符号级语言</div></div>
+      <div class="stat"><div class="v">18<span class="u"> 条</span></div><div class="l">内置规则</div></div>
+      <div class="stat"><div class="v">0<span class="u"> LLM</span></div><div class="l">门禁确定性</div></div>
+    </div>
+    <div class="cmd-grid">
+      <div class="cmd"><div class="cname">init</div><div class="cdesc">初始化受治理项目 · 装 Skill · hook · 模式 · 工具链</div></div>
+      <div class="cmd"><div class="cname">context</div><div class="cdesc">只读项目事实：基线、策略、治理可用性</div></div>
+      <div class="cmd"><div class="cname">scan</div><div class="cdesc">建立/更新状态基线（CRL、结构、TEST_BLOAT）</div></div>
+      <div class="cmd"><div class="cname">review</div><div class="cdesc">存量复盘：Top-3 局部负担、结构候选（仅报告）</div></div>
+      <div class="cmd"><div class="cname">check</div><div class="cdesc">变更冲击门禁：--worktree / --staged，含 --semantic</div></div>
+      <div class="cmd"><div class="cname">rules</div><div class="cdesc">项目规则：facts → skeleton → 脚本 → scan</div></div>
+      <div class="cmd"><div class="cname">docs</div><div class="cdesc">协作文档库：能力资产、经验 record</div></div>
+      <div class="cmd"><div class="cname">toolchains</div><div class="cdesc">查看/配置外部编译器与语言服务器</div></div>
+      <div class="cmd adv"><div class="cname">coordination</div><div class="cdesc">可选远程：Task / 租约 / 语义锁（默认 UNAVAILABLE）</div></div>
+      <div class="cmd adv"><div class="cname">lsp</div><div class="cdesc">LSP 预热与 daemon（jdtls 转发等）</div></div>
+      <div class="cmd adv"><div class="cname">calibration</div><div class="cdesc">P95 校准 epoch 管理</div></div>
+      <div class="cmd adv"><div class="cname">anti-patterns</div><div class="cdesc">反模式引擎直接访问</div></div>
+    </div>
+  </section>
+
+  <!-- ───────── FAQ ───────── -->
+  <section id="faq">
+    <div class="sec-head">
+      <span class="sec-num">05 · 边角与取舍</span>
+      <h2>常见疑问</h2>
+    </div>
+    <div class="faq">
+      <h3><span class="q">Q.</span> 个人项目和团队项目有什么区别？</h3>
+      <p><code class="inline">governance.persistence</code> 是运行产物是否进 Git 的唯一权威。新项目默认 <code class="inline">tracked</code>（团队）。<code class="inline">--mode personal</code> 写 <code class="inline">local</code>，只在 <code class="inline">.git/info/exclude</code> 管理 OpenArch 的 <code class="inline">.openarch/</code> 区块——hook 仍封存证据、执行门禁，但不暂存生成的 baseline/history/审计产物。本地状态随时可用 <code class="inline">openarch scan</code> 重建。</p>
+    </div>
+    <div class="faq">
+      <h3><span class="q">Q.</span> 外部工具链（pyright / rust-analyzer / jdtls）要装吗？</h3>
+      <p>它们是<strong style="color:var(--ink-1)">机器事实</strong>，不是项目依赖——绝不写进 manifest/lockfile。TypeScript 用内置编译器 provider（精确），其余语言按需配置：<code class="inline">openarch toolchains</code> 查看，<code class="inline">openarch init --toolchains user|project</code> 填绝对路径。工具链不可用时符号级证据 fail-closed（不降级兑底）。</p>
+    </div>
+    <div class="faq">
+      <h3><span class="q">Q.</span> 协调服务是必须的吗？</h3>
+      <p>不是。<strong style="color:var(--ink-1">本地 OpenArch 默认独立工作</strong>。只有用户显式执行 <code class="inline">openarch init --coordination-url &lt;https://...&gt;</code> 后，远程 Task/会议/语义锁才可用——否则这些操作是 <code class="inline">UNAVAILABLE</code>，本地治理照常。地址绝不从 Git remote、目录或环境变量推导。</p>
+    </div>
+    <div class="faq">
+      <h3><span class="q">Q.</span> 升级 OpenArch 后怎么刷新 Skill？</h3>
+      <p>重跑 <code class="inline">openarch init --agent &lt;target&gt;</code>。它会原子替换整个旧 OpenArch Skill 目录，清除退役文件。已安装的 Skill、runtime/plugin 镜像对接入项目是<strong style="color:var(--ink-1)">只读输入</strong>，发现过期或不匹配时上报上游，不在接入项目内修改。</p>
+    </div>
+  </section>
+
+  <!-- ───────── FOOTER ───────── -->
+  <footer>
+    <div class="note">
+      <b>关于本手册</b><br/>
+      所有命令均取自仓库 <code>INSTALL.md</code> / <code>INSTALL.zh-CN.md</code> / <code>packages/openarch-plugin/README.md</code>，未做臆测。
+      <br/><br/>
+      <b>源码仓库</b> · <a href="https://github.com/VilTea/openarch" target="_blank" rel="noopener" style="color:var(--series-1)">github.com/VilTea/openarch</a> —— 克隆后按本手册安装，或直接把 <code>INSTALL.md</code> 丢给你的 Agent。
+      <br/><br/>
+      <b>下一步</b> · 在受治理仓库根目录执行 <code>openarch init --agent &lt;你的 harness&gt;</code>（claude / codex / cursor / opencode / reasonix），然后 <code>openarch context</code>。Agent 会自己读 Skill，按路由工作。
+    </div>
+    <p class="copy">OpenArch 使用手册 · 面向人类用户 · 基于 INSTALL 文档生成</p>
+  </footer>
+
+</div>
+
+<script>
+/* ═══════ THEME ═══════ */
+const themeBtn = document.getElementById('themeBtn');
+let theme = 'dark';
+themeBtn.addEventListener('click', () => {
+  theme = theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+  themeBtn.textContent = theme === 'dark' ? '🌙 深色' : '☀️ 浅色';
+  initBg(); drawFlow();
+});
+const token = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* ═══════ TABS ═══════ */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    btn.parentElement.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    btn.parentElement.parentElement.querySelectorAll('.tab-panel').forEach(p => {
+      p.classList.toggle('active', p.dataset.panel === tab);
+    });
+  });
+});
+
+/* ═══════ BACKGROUND PARTICLES ═══════ */
+let bgCanvas, bgCtx, particles = [], W, H, raf;
+const mouse = { x: -9999, y: -9999 };
+function initBg() {
+  bgCanvas = document.getElementById('bg'); bgCtx = bgCanvas.getContext('2d');
+  resize(); build();
+  if (!raf) raf = requestAnimationFrame(loop);
+}
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  bgCanvas.width = W * dpr; bgCanvas.height = H * dpr;
+  bgCanvas.style.width = W + 'px'; bgCanvas.style.height = H + 'px';
+  bgCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function build() {
+  const count = Math.min(80, Math.floor(W * H / 16000));
+  particles = Array.from({ length: count }, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    vx: (Math.random() - 0.5) * 0.28, vy: (Math.random() - 0.5) * 0.28,
+    r: Math.random() * 1.6 + 0.6,
+  }));
+}
+function loop() {
+  bgCtx.clearRect(0, 0, W, H);
+  const pc = token('--particle'), link = token('--link'), maxDist = 130;
+  for (const p of particles) {
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < 0 || p.x > W) p.vx *= -1;
+    if (p.y < 0 || p.y > H) p.vy *= -1;
+    const dx = p.x - mouse.x, dy = p.y - mouse.y, md = Math.hypot(dx, dy);
+    if (md < 160) { p.x += dx / md * 0.4; p.y += dy / md * 0.4; }
+    bgCtx.beginPath(); bgCtx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    bgCtx.fillStyle = pc; bgCtx.fill();
+  }
+  for (let i = 0; i < particles.length; i++) {
+    for (let j = i + 1; j < particles.length; j++) {
+      const a = particles[i], b = particles[j], d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d < maxDist) {
+        bgCtx.beginPath(); bgCtx.moveTo(a.x, a.y); bgCtx.lineTo(b.x, b.y);
+        bgCtx.strokeStyle = link; bgCtx.globalAlpha = (1 - d / maxDist) * 0.7;
+        bgCtx.lineWidth = 1; bgCtx.stroke(); bgCtx.globalAlpha = 1;
+      }
+    }
+  }
+  raf = requestAnimationFrame(loop);
+}
+window.addEventListener('resize', () => { resize(); build(); drawFlow(); });
+window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; });
+window.addEventListener('mouseout', () => { mouse.x = -9999; mouse.y = -9999; });
+
+/* ═══════ FLOW DIAGRAM ═══════ */
+function drawFlow() {
+  const c = document.getElementById('flowCanvas'); if (!c) return;
+  const ctx = c.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = c.clientWidth, h = 150;
+  c.width = w * dpr; c.height = h * dpr; c.style.height = h + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  const s1 = token('--series-1'), s3 = token('--series-3'), ink3 = token('--ink-3');
+  const ink1 = token('--ink-1'), grid = token('--gridline');
+  const n = 4, padX = 60, gap = (w - padX * 2) / (n - 1), y = h / 2;
+  // connectors
+  ctx.strokeStyle = grid; ctx.lineWidth = 2;
+  for (let i = 0; i < n - 1; i++) {
+    const x1 = padX + gap * i + 26, x2 = padX + gap * (i + 1) - 26;
+    ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2 - 8, y); ctx.stroke();
+    // arrowhead
+    ctx.beginPath(); ctx.moveTo(x2, y); ctx.lineTo(x2 - 8, y - 5); ctx.lineTo(x2 - 8, y + 5); ctx.closePath();
+    ctx.fillStyle = grid; ctx.fill();
+  }
+  const labels = ['context', 'scan → review', 'check --worktree', 'check --staged'];
+  labels.forEach((lb, i) => {
+    const x = padX + gap * i;
+    // node circle
+    ctx.beginPath(); ctx.arc(x, y, 26, 0, Math.PI * 2);
+    ctx.fillStyle = token('--surface-2'); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = i === 0 ? s3 : s1; ctx.stroke();
+    // number
+    ctx.fillStyle = i === 0 ? s3 : s1; ctx.font = "800 16px system-ui";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(i + 1), x, y + 1);
+    // label below
+    ctx.fillStyle = ink1; ctx.font = "600 12px system-ui";
+    ctx.fillText(lb, x, y + 46);
+    // tag above
+    ctx.fillStyle = ink3; ctx.font = "10px system-ui";
+    ctx.fillText(['START', 'BASELINE', 'DURING', 'COMMIT'][i], x, y - 42);
+  });
+}
+
+/* boot */
+initBg();
+drawFlow();
+</script>
+</body>
+</html>
