@@ -22,6 +22,8 @@ Python 已校准静态根模块、相对模块与单根隐式命名空间包映�
 
 Tree-sitter 静态语法分析始终是 `I_push`、声明级 diff 和结构图的可用兜底。它依据可解析源码和静态 import 计算结构传播上界，不能证明精确的符号消费者。需要非 TypeScript 语言的符号引用、直接消费者证据或后续语义事实时，先运行 `openarch toolchains`，按对应语言页在用户级或 checkout-local 工具链配置中提供 LSP，再对**未暂存工作树**运行 `openarch check --worktree --semantic --report`。
 
+Java 的符号级证据常依赖 jdtls 转发 daemon：`openarch toolchains` 显示 `jdtls` 不可用但 `javac` 可用时，`--semantic` 仍会 fail-closed 不输出 C_push。需要 Java 符号证据的项目先运行 `openarch lsp start` 预热 jdtls（常驻方式见 `docs/lsp-daemon-hooks.md`），再运行 `openarch check --worktree --semantic --report`；首次冷启动索引可能需要数十秒，daemon 热后显著加快。
+
 该报告逐语言显示当前路径：`STATIC parser fallback` 表示未请求或 LSP 不可用，`LSP`/`COMPILER` 则显示 provider、声明 coverage、引用 coverage、`scope` 和风险。`scope=repository` 才可能形成完整总体；`scope=demand` 只为当前变更选择声明，双 coverage 必为 `PARTIAL`。声明族说明可比较的事实粒度，后续结论只能消费各语言共同且已校准的族。直接引用会独立进入验证计划，帮助 Agent 核查具体消费者；当前仍不改变 `I_push`、CRL、D_MR、baseline 或 gate。`PARTIAL` 保留已证明事实但不能作为零引用或完整消费者结论。`--staged --semantic` 被拒绝，因为 LSP 读取工作树而非 Git index；先在工作树取证、确认并暂存后，再运行静态 `check --staged` 封存同一快照。
 
 ### 读取语义结果

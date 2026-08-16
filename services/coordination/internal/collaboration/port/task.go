@@ -10,7 +10,9 @@ import (
 // lifecycle records. It cannot rewrite a proposal or return a hidden task DB.
 type TaskStore interface {
 	ReadProposal(context.Context, domain.TaskRef) (domain.TaskProposalRecord, bool, error)
+	ListProposals(context.Context) ([]domain.TaskProposalRecord, error)
 	ListLifecycle(context.Context, domain.TaskRef) ([]domain.TaskLifecycleEvent, error)
+	ListLifecycleStreams(context.Context) (map[domain.TaskRef][]domain.TaskLifecycleEvent, error)
 	AppendLifecycle(context.Context, domain.TaskLifecycleEvent) error
 }
 

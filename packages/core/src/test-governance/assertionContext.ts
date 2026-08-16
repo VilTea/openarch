@@ -15,6 +15,7 @@
 
 import { Effect } from "effect";
 import type { QueryCapture, QueryMatch, ParserService } from "../port/ParserService";
+import { absolutePathKey } from "../infra/paths";
 
 /** 提取文件内"导出函数 → 体内含精确断言"的包装集合。 */
 export interface CrossFileAssertionScope {
@@ -114,9 +115,12 @@ const wrapperNamesFrom = (
 const capture = (match: QueryMatch, name: string): QueryCapture | undefined =>
   match.captures.find((item) => item.name === name);
 
-/** 按目标文件扩展名推断跨文件提取语言。 */
-const languageForPath = (path: string): CrossFileLanguage =>
-  path.endsWith(".java") ? "java" : path.endsWith(".py") ? "python" : "ts";
+/** 按目标文件扩展名推断跨文件提取语言；不支持的语法保持无跨文件包装结论。 */
+const languageForPath = (path: string): CrossFileLanguage | undefined =>
+  path.endsWith(".java") ? "java"
+    : path.endsWith(".py") ? "python"
+      : /\.(?:ts|tsx|js|jsx|mjs|cjs|vue)$/i.test(path) ? "ts"
+        : undefined;
 
 /** 构建跨文件作用域：对测试文件全部 import 目标惰性解析，聚合断言包装名。
  *  传入跨文件缓存（同一 helper 被多个测试 import 时只 parse 一次）。 */
@@ -130,14 +134,18 @@ export const resolveCrossFileAssertionScope = (
   const requestedTargets = new Set<string>();
   for (const ref of testAstImports) {
     if (ref.resolvedPath === null) continue;
-    const normalized = ref.resolvedPath.replace(/\\/g, "/");
+    // 生产路径集合以绝对路径 key 存储；resolvedPath 也统一为同一 key 再比较，
+    // 否则相对/绝对路径混用会让生产模块过滤恒为 false。
+    const normalized = absolutePathKey(ref.resolvedPath);
     if (productionPaths.has(normalized)) continue; // 生产模块不是断言 helper
+    if (!languageForPath(normalized)) continue; // Go/Rust 等无跨文件语法，保持漏报方向安全
     requestedTargets.add(normalized);
   }
   const promises = [...requestedTargets].map(async (target) => {
     let names = cache.get(target);
     if (names === undefined) {
-      names = await collectWrapperExports(parser, target, languageForPath(target));
+      const language = languageForPath(target);
+      names = language === undefined ? new Set<string>() : await collectWrapperExports(parser, target, language);
       cache.set(target, names);
     }
     byFile.set(target, names);

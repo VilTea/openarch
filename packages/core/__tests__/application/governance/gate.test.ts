@@ -139,14 +139,22 @@ describe("gatePerFile CRL_state signals", () => {
 });
 
 describe("gate metric boundaries", () => {
-  it("rejects legacy and report-only branch fields as gate conditions", () => {
+  it("rejects retired, report-only, unregistered, and change-magnitude fields as gate conditions", () => {
     const unsupported = unsupportedMetricRules([
       { name: "legacy aggregate", level: "warn", condition: "branch_count > 8" },
       { name: "file total", level: "warn", condition: "weighted_branch_total > 8" },
       { name: "top level", level: "warn", condition: "top_level_branch > 8" },
       { name: "function", level: "warn", condition: "max_func_branch > 8" },
+      // 变更量是路由证据，不是可裁决门禁（校准 2026-08-15，§7.2.1）
+      { name: "single push", level: "warn", condition: "i_push > 10" },
+      { name: "unregistered", level: "warn", condition: "cyclomatic_complexity > 10" },
+      { name: "retired composite", level: "warn", condition: "crl_state > 0.5" },
+      // classifier 只允许与 gate 指标组合使用
+      { name: "classifier-only", level: "warn", condition: 'path_class == "domain" && crl_local > 0.5' },
     ]);
-    expect(unsupported.map((rule) => rule.name)).toEqual(["legacy aggregate", "file total", "top level"]);
+    expect(unsupported.map((rule) => rule.name)).toEqual([
+      "legacy aggregate", "file total", "top level", "single push", "unregistered", "retired composite",
+    ]);
   });
 
   it("does not let an out-of-scope language baseline entry enter gate", () => {
@@ -194,6 +202,7 @@ describe("gate failure diagnostics", () => {
         meta: {
           scanAt: new Date().toISOString(), nFiles: 1, nProductionFiles: 1, languages: ["typescript"],
           analysisScope: { fingerprint: scope.fingerprint, complete: true }, metricContractVersion: METRIC_CONTRACT_VERSION,
+          snapshotSha256: "a".repeat(64),
           p95: { branch: 1, nesting: 1, loc: 1, alpha: 1, oneMinusConnectedness: 1, externalPassthrough: 1 },
         },
       }));
@@ -233,6 +242,7 @@ describe("gate failure diagnostics", () => {
       writeFileSync(join(root, "baseline", "_index.json"), JSON.stringify({ version: "5.2", meta: {
         scanAt: new Date().toISOString(), nFiles: 2, nProductionFiles: 2, languages: ["python"],
         analysisScope: { fingerprint: scope.fingerprint, complete: true }, metricContractVersion: METRIC_CONTRACT_VERSION,
+        snapshotSha256: "b".repeat(64),
         policyCalibrations: { "alpha-python": profile },
       }}));
       for (const entry of [

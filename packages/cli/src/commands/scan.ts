@@ -42,6 +42,10 @@ export const scanCommand: CommandHandler = async (args, context) => {
       }
     }))].filter((path) => isAnalyzableSourceFile(path, context.cwd))
     : [...defaultScanPaths(context.cwd)];
+  if (rawPatterns.length > 0 && paths.length === 0) {
+    console.error("scan 指定路径没有匹配到任何可分析文件；检查 glob/路径后再试。");
+    return 3;
+  }
 
   const implicitDeps = await readImplicitDeps();
   const projectLanguages = readProjectLanguages(projectCwd);
@@ -70,11 +74,13 @@ export const scanCommand: CommandHandler = async (args, context) => {
     }
     if (configChanged) console.error("⚠ 检测到 .openarch/config.yml 变更，自动退化全量重建（增量 scan 不感知配置变化）");
   }
+  const incrementalScan = !rebuild && !configChanged && rawPatterns.length === 0;
   const result = await Effect.runPromise(scan(paths, implicitDeps, {
     analysisScope: scope,
     completeScope: rawPatterns.length === 0,
-    incremental: !rebuild && !configChanged && rawPatterns.length === 0,
-    ...(rawPatterns.length === 0 ? { sourceSnapshotSha256: sourceSnapshotSha256(paths, projectCwd) } : {}),
+    incremental: incrementalScan,
+    // 全量/rebuild 时无需整仓 hash 一遍再 parse 一遍（性能：避免重复读盘）。
+    ...(incrementalScan ? { sourceSnapshotSha256: sourceSnapshotSha256(paths, projectCwd) } : {}),
     ...(rawPatterns.length === 0 ? { configSnapshotSha256: configSnapshotSha256(resolve(projectCwd, ".openarch", "config.yml")) } : {}),
     calibrationWeights: gateConfig.crlStateWeights,
     structuralPolicies: gateConfig.structuralPolicies,
@@ -93,6 +99,9 @@ export const scanCommand: CommandHandler = async (args, context) => {
         ? "；已建立初始门禁校准 epoch"
         : "";
     console.log(`✓ scan 完成：${result.right.nFiles} 文件${suffix}`);
+    if ("baselineRecovered" in result.right && result.right.baselineRecovered) {
+      console.error("⚠ 旧 baseline generation 不可读（快照身份与分片不一致）；本次已从源码重建结构事实，测试治理事实需重跑 `openarch test` 恢复。");
+    }
     if (report) {
       console.log("## 当前结构复盘（scan 后快照）");
       console.log("- 这是当前结构的 report-only 概览；改动前后的 D_MR 请在 scan 前运行 openarch check --staged --report。");

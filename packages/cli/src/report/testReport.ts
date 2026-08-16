@@ -1,5 +1,5 @@
 import { renderAlignedTable, renderFormulaLine } from "./table";
-import type { TestFinding, TestGovernanceCoverage, TestGovernanceReport } from "@openarch/core";
+import { MACHINE_CONTRACT_VERSIONS, type TestFinding, type TestGovernanceCoverage, type TestGovernanceReport } from "@openarch/core";
 
 export const renderTestCoverage = (coverage: TestGovernanceCoverage): readonly string[] => {
   const lines = [
@@ -8,6 +8,14 @@ export const renderTestCoverage = (coverage: TestGovernanceCoverage): readonly s
   ];
   if (coverage.reasons.length > 0) lines.push(`- 覆盖限制: ${coverage.reasons.join(", ")}`);
   return lines;
+};
+
+const renderSuggestedAdapters = (report: TestGovernanceReport): readonly string[] => {
+  const suggestion = report.collection.suggestedAdapters;
+  if (!suggestion) return [];
+  const providers = suggestion.providers.join(", ") || "无";
+  const runners = suggestion.runners.join(", ") || "无";
+  return [`- 适配器建议（基于检测语言，请确认实际框架后写入 config.yml 的 test_governance）: providers=[${providers}] runners=[${runners}]`];
 };
 
 const renderProviderSummaries = (report: TestGovernanceReport): readonly string[] => report.collection.providerSummaries.map((summary) => {
@@ -127,11 +135,156 @@ const renderTestReviewFindings = (report: TestGovernanceReport, verbose: boolean
   ];
 };
 
+/** test --json 的稳定机器契约（schema 版本化；只投影决策与边界事实，不做维护负担或质量评分）。 */
+export interface TestGovernanceJsonContract {
+  readonly schema: typeof MACHINE_CONTRACT_VERSIONS.testGovernanceJson;  readonly verdict: "PASS" | "WARN" | "BLOCK";
+  readonly decision: {
+    readonly verdict: "PASS" | "WARN" | "BLOCK";
+    readonly findingCount: number;
+    readonly triggered: readonly { readonly level: "block" | "warn"; readonly kind: string; readonly file: string; readonly testName?: string }[];
+    readonly exemptedCount: number;
+    readonly errors: readonly string[];
+  };
+  readonly collection: {
+    readonly coverage: {
+      readonly status: string;
+      readonly reasons: readonly string[];
+      readonly testFiles: number;
+      readonly unbaselinedTestFiles: number;
+      readonly providerHandledTestFiles: number;
+      readonly unrecognizedTestFiles: number;
+      readonly failedTestFiles: number;
+    };
+    readonly providers: readonly {
+      readonly providerId: string;
+      readonly status: string;
+      readonly reasons: readonly string[];
+      readonly candidates: number;
+      readonly handled: number;
+      readonly missingBaseline: number;
+      readonly failed: number;
+    }[];
+    readonly testFiles: number;
+    readonly providersRun: readonly string[];
+    readonly summaries: readonly {
+      readonly providerId: string;
+      readonly testFiles: number;
+      readonly testCases: number;
+      readonly p95?: {
+        readonly loc: number;
+        readonly assertionCount: number;
+        readonly mockCount: number;
+        readonly testBodyControlFlow?: number;
+      };
+    }[];
+    readonly testCaseSpans: { readonly availability: string; readonly reason?: string };
+    readonly unrecognizedTestFiles: readonly string[];
+    readonly suggestedAdapters?: { readonly providers: readonly string[]; readonly runners: readonly string[] };
+    readonly staticModuleAssociations: { readonly testFiles: number; readonly modules: number; readonly edges: number; readonly low: number; readonly medium: number };
+    readonly associationUnavailableTestFiles: number;
+  };
+  readonly execution: {
+    readonly runnersRun: readonly string[];
+    readonly executions: readonly { readonly providerId: string; readonly passed: boolean; readonly command: string; readonly detail?: string }[];
+  };
+  readonly scripts: {
+    readonly unavailable: readonly string[];
+    readonly pruning: readonly { readonly rule: string; readonly inputFiles: number; readonly targetFiles: number; readonly candidateFiles: number; readonly records: number }[];
+  };
+  readonly bloat?: {
+    readonly score: number;
+    readonly triggered: boolean;
+    readonly parts: readonly { readonly name: string; readonly value: number; readonly threshold: number; readonly weight: number; readonly contribution: number; readonly triggered: boolean }[];
+  };
+}
+
+export const testGovernanceJsonValue = (report: TestGovernanceReport): TestGovernanceJsonContract => {
+  const associations = report.collection.staticModuleAssociations;
+  const testFiles = new Set(associations.map((entry) => entry.testFile)).size;
+  const modules = new Set(associations.map((entry) => entry.association.targetPath)).size;
+  const low = associations.filter((entry) => entry.association.confidence === "low").length;
+  return {
+    schema: MACHINE_CONTRACT_VERSIONS.testGovernanceJson,
+    verdict: report.decision.verdict,
+    decision: {
+      verdict: report.decision.verdict,
+      findingCount: report.decision.findings.length,
+      triggered: report.decision.triggered.map(({ level, finding }) => ({
+        level,
+        kind: finding.kind,
+        file: finding.file,
+        ...(finding.testName ? { testName: finding.testName } : {}),
+      })),
+      exemptedCount: report.decision.exempted.length,
+      errors: report.decision.errors,
+    },
+    collection: {
+      coverage: {
+        status: report.collection.coverage.status,
+        reasons: report.collection.coverage.reasons,
+        testFiles: report.collection.coverage.testFiles,
+        unbaselinedTestFiles: report.collection.coverage.unbaselinedTestFiles.length,
+        providerHandledTestFiles: report.collection.coverage.providerHandledTestFiles.length,
+        unrecognizedTestFiles: report.collection.coverage.unrecognizedTestFiles.length,
+        failedTestFiles: report.collection.coverage.failedTestFiles.length,
+      },
+      providers: report.collection.providerCoverage.map((coverage) => ({
+        providerId: coverage.providerId,
+        status: coverage.status,
+        reasons: coverage.reasons,
+        candidates: coverage.candidateTestFiles.length,
+        handled: coverage.providerHandledTestFiles.length,
+        missingBaseline: coverage.unbaselinedTestFiles.length,
+        failed: coverage.failedTestFiles.length,
+      })),
+      testFiles: report.collection.testFiles,
+      providersRun: report.collection.providersRun,
+      summaries: report.collection.providerSummaries,
+      testCaseSpans: {
+        availability: report.collection.testCaseSpans.availability,
+        ...(report.collection.testCaseSpans.reason ? { reason: report.collection.testCaseSpans.reason } : {}),
+      },
+      unrecognizedTestFiles: report.collection.unrecognizedTestFiles,
+      ...(report.collection.suggestedAdapters ? { suggestedAdapters: report.collection.suggestedAdapters } : {}),
+      staticModuleAssociations: { testFiles, modules, edges: associations.length, low, medium: associations.length - low },
+      associationUnavailableTestFiles: report.collection.associationUnavailableTestFiles.length,
+    },
+    execution: {
+      runnersRun: report.execution.runnersRun,
+      executions: report.execution.executions.map(({ providerId, execution }) => ({
+        providerId,
+        passed: execution.passed,
+        command: execution.command,
+        ...(execution.detail ? { detail: execution.detail } : {}),
+      })),
+    },
+    scripts: {
+      unavailable: report.scripts.scriptUnavailable,
+      pruning: report.scripts.scriptPruning,
+    },
+    ...(report.bloat ? {
+      bloat: {
+        score: report.bloat.score,
+        triggered: report.bloat.triggered,
+        parts: report.bloat.parts.map((part) => ({
+          name: part.name,
+          value: part.value,
+          threshold: part.threshold,
+          weight: part.weight,
+          contribution: part.contribution,
+          triggered: part.value > part.threshold,
+        })),
+      },
+    } : {}),
+  };
+};
+
 export const renderTestGovernanceReport = (report: TestGovernanceReport, args: readonly string[]): readonly string[] => {
   const verbose = args.includes("--verbose");
   return [
     "## 测试治理报告",
     ...renderTestCoverage(report.collection.coverage),
+    ...renderSuggestedAdapters(report),
     `- 策略裁决: ${report.decision.verdict}（仅基于已收集的 finding）`,
     `- 测试文件: ${report.collection.testFiles}`,
     `- Provider: ${report.collection.providersRun.join(", ") || "无"}`,

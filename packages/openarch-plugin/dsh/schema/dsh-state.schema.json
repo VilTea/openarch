@@ -1,0 +1,535 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openarch.dev/schemas/dsh-state-v1.schema.json",
+  "title": "OpenArch DSH GovernanceState 快照",
+  "$comment": "GET /api/openarch/governance-state（或 harness.handle('openarch/governance-state')）返回的有界状态快照。未初始化项目只含 root/initialized/collectedAt；所有可空节表示 fail-closed 的缺失事实。",
+  "type": "object",
+  "oneOf": [
+    {
+      "required": ["root", "initialized", "collectedAt"],
+      "properties": {
+        "root": {
+          "type": "string"
+        },
+        "initialized": {
+          "const": false
+        },
+        "collectedAt": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "required": ["root", "initialized", "collectedAt", "cli", "baseline", "scanStatus", "config", "history", "top", "distribution"],
+      "properties": {
+        "root": {
+          "type": "string"
+        },
+        "initialized": {
+          "const": true
+        },
+        "collectedAt": {
+          "type": "string"
+        },
+        "cli": {
+          "$ref": "#/$defs/cli"
+        },
+        "baseline": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/baseline" }
+          ]
+        },
+        "scanStatus": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/scanStatus" }
+          ]
+        },
+        "config": {
+          "$ref": "#/$defs/config"
+        },
+        "history": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/historyEntry"
+          }
+        },
+        "top": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/topEntry"
+          }
+        },
+        "distribution": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/distribution" }
+          ]
+        },
+        "testGovernance": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/testGovernance" }
+          ]
+        },
+        "contractCatalog": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/contractCatalog" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  ],
+  "$defs": {
+    "cli": {
+      "type": "object",
+      "oneOf": [
+        {
+          "required": ["ok", "context"],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "context": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "required": ["ok", "error"],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "baseline": {
+      "type": "object",
+      "$comment": "v5.3 基线投影。metricContractVersion 不认识时 fail-closed：只返回 metricContractVersion/snapshotSha256/unsupported:true，其余字段缺失（故不设 required）。policyCalibrations 为 per-policy sealed 校准（与 calibrationForSubject 口径一致），全局 calibration 仅作概览。",
+      "properties": {
+        "metricContractVersion": {
+          "type": ["string", "null"]
+        },
+        "snapshotSha256": {
+          "type": ["string", "null"]
+        },
+        "unsupported": {
+          "type": "boolean"
+        },
+        "scanAt": {
+          "type": ["string", "null"]
+        },
+        "nFiles": {
+          "$ref": "#/$defs/nullableNonNegativeInteger"
+        },
+        "nProductionFiles": {
+          "$ref": "#/$defs/nullableNonNegativeInteger"
+        },
+        "nTestFiles": {
+          "$ref": "#/$defs/nullableNonNegativeInteger"
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "analysisScope": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["complete"],
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "calibration": {
+          "type": "object",
+          "required": ["current", "previous", "gate"],
+          "properties": {
+            "current": {
+              "$ref": "#/$defs/nullableP95"
+            },
+            "previous": {
+              "$ref": "#/$defs/nullableP95"
+            },
+            "gate": {
+              "$ref": "#/$defs/nullableP95"
+            }
+          },
+          "additionalProperties": false
+        },
+        "policyCalibrations": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/policyCalibration"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "scanStatus": {
+      "type": "object",
+      "required": ["status", "phase", "completed", "total", "updatedAt", "reason"],
+      "properties": {
+        "status": {
+          "type": ["string", "null"]
+        },
+        "phase": {
+          "type": ["string", "null"]
+        },
+        "completed": {
+          "$ref": "#/$defs/nullableNonNegativeInteger"
+        },
+        "total": {
+          "$ref": "#/$defs/nullableNonNegativeInteger"
+        },
+        "updatedAt": {
+          "type": ["string", "null"]
+        },
+        "reason": {
+          "type": ["string", "null"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "config": {
+      "type": "object",
+      "required": ["locale", "languages"],
+      "properties": {
+        "locale": {
+          "enum": ["zh", "en"]
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "historyEntry": {
+      "type": "object",
+      "required": ["entryId", "timestamp", "files", "sumAbsDeltaI", "maxDeltaI", "maxDeltaFile", "deterioration", "improvement"],
+      "properties": {
+        "entryId": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": ["string", "null"]
+        },
+        "files": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sumAbsDeltaI": {
+          "type": "number"
+        },
+        "maxDeltaI": {
+          "type": "number"
+        },
+        "maxDeltaFile": {
+          "type": ["string", "null"]
+        },
+        "deterioration": {
+          "type": "number"
+        },
+        "improvement": {
+          "type": "number"
+        },
+        "scale": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["severityBudget", "intensity"],
+              "properties": {
+                "severityBudget": {
+                  "type": ["number", "null"]
+                },
+                "intensity": {
+                  "type": ["number", "null"]
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "topEntry": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "language": {
+          "type": ["string", "null"]
+        },
+        "fileKind": {
+          "type": ["string", "null"]
+        },
+        "branchCount": {
+          "type": "number"
+        },
+        "nestingDepth": {
+          "type": ["number", "null"]
+        },
+        "loc": {
+          "type": ["number", "null"]
+        },
+        "maxFuncBranch": {
+          "type": ["number", "null"]
+        },
+        "alphaStruct": {
+          "type": "number"
+        },
+        "inDegree": {
+          "type": ["number", "null"]
+        },
+        "outDegree": {
+          "type": ["number", "null"]
+        },
+        "connectedness": {
+          "type": "number"
+        },
+        "declarationLoc": {
+          "type": ["number", "null"]
+        },
+        "externalPassthroughCalls": {
+          "type": ["number", "null"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "distribution": {
+      "type": "object",
+      "required": ["branchCount", "loc", "sampled", "total"],
+      "properties": {
+        "branchCount": {
+          "$ref": "#/$defs/nullableHistogram"
+        },
+        "loc": {
+          "$ref": "#/$defs/nullableHistogram"
+        },
+        "sampled": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "histogram": {
+      "type": "object",
+      "required": ["min", "max", "mean", "count", "buckets"],
+      "properties": {
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "mean": {
+          "type": "number"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "buckets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["from", "to", "count"],
+            "properties": {
+              "from": {
+                "type": "number"
+              },
+              "to": {
+                "type": "number"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "nullableHistogram": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/histogram" }
+      ]
+    },
+    "p95": {
+      "type": "object",
+      "$comment": "v5.3 六项 P95：新增 oneMinusConnectedness 与 externalPassthrough（α/局部负担统一口径输入）。",
+      "required": ["branch", "nesting", "loc", "alpha", "oneMinusConnectedness", "externalPassthrough"],
+      "properties": {
+        "branch": {
+          "type": ["number", "null"]
+        },
+        "nesting": {
+          "type": ["number", "null"]
+        },
+        "loc": {
+          "type": ["number", "null"]
+        },
+        "alpha": {
+          "type": ["number", "null"]
+        },
+        "oneMinusConnectedness": {
+          "type": ["number", "null"]
+        },
+        "externalPassthrough": {
+          "type": ["number", "null"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "policyCalibration": {
+      "type": "object",
+      "required": ["current", "previous", "gate"],
+      "properties": {
+        "current": {
+          "$ref": "#/$defs/nullableP95"
+        },
+        "previous": {
+          "$ref": "#/$defs/nullableP95"
+        },
+        "gate": {
+          "$ref": "#/$defs/nullableP95"
+        }
+      },
+      "additionalProperties": false
+    },
+    "testGovernance": {
+      "type": "object",
+      "$comment": "openarch_test 最近一次 test-governance-json-v1 的有界投影；未运行时为 null。只读观察面，不进入任何 gate；上游契约漂移以 schema 字段自识别。",
+      "required": ["schema", "verdict", "decision", "coverage", "providers", "summaries"],
+      "properties": {
+        "schema": {
+          "type": ["string", "null"]
+        },
+        "verdict": {
+          "type": ["string", "null"]
+        },
+        "decision": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "summaries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "suggestedAdapters": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "object", "additionalProperties": true }
+          ]
+        },
+        "bloat": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "object", "additionalProperties": true }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "contractCatalog": {
+      "type": "object",
+      "$comment": "openarch contract --json（contract-catalog-json-v1）的有界投影：各机器契约当前版本与 openarch 版本；旧二进制无此命令/解析失败时为 null（fail-closed）。",
+      "required": ["schema", "openarchVersion", "contracts"],
+      "properties": {
+        "schema": {
+          "type": "string"
+        },
+        "openarchVersion": {
+          "type": ["string", "null"]
+        },
+        "contracts": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "required": ["id", "version", "status"],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "status": {
+                "enum": ["current", "deprecated"]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "nullableP95": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/p95" }
+      ]
+    },
+    "nullableNonNegativeInteger": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "integer",
+          "minimum": 0
+        }
+      ]
+    }
+  }
+}

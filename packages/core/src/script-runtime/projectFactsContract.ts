@@ -20,48 +20,106 @@ export const PROJECT_FACTS_VERSION = "project-facts-v2" as const;
 export type ScriptFactCapability = string;
 export type FactAvailability = "available" | "partial" | "unavailable";
 
-export interface ScriptFactCapabilityDescription {
+export const FACT_DOMAINS = [
+  "classification",
+  "structure",
+  "authority",
+  "test",
+  "semantic",
+  "change",
+  "ast",
+] as const;
+
+export type FactDomain = (typeof FACT_DOMAINS)[number];
+export type FactStatus = "current" | "experimental" | "deprecated";
+export type FactProducer = "runtime" | "parser" | "provider" | "change-set" | "engine";
+export type ScriptFactKind = "requires" | "ast";
+
+/** 事实自描述（rules facts 的唯一 authority）：含义/用途/输出/生命周期都在这里。 */
+export interface ScriptFactDescriptor {
   readonly id: ScriptFactCapability;
+  readonly kind: ScriptFactKind;
+  readonly domain: FactDomain;
+  readonly status: FactStatus;
+  readonly producer: FactProducer;
   readonly summaryId: `scriptFact.${string}`;
-  readonly unavailableActionId: `scriptFact.${string}`;
+  readonly usageId: `scriptFact.${string}`;
+  readonly unavailableActionId?: `scriptFact.${string}`;
+  /** 稳定输出形状（供脚本作者按需消费，不替代类型定义）。 */
+  readonly outputs: readonly string[];
+  /** 引擎内置消费者（非项目脚本）；与已安装脚本消费者合并后仍为零才视为 UNUSED。 */
+  readonly builtinConsumers?: readonly string[];
+  /** 零脚本消费者事实的生命周期理由/退役条件；没有理由就不能从 CI 提示中豁免。 */
+  readonly lifecycle?: string;
+  /** 曾用事实 id；仍被引擎与消费统计接受，归一化到本 id。 */
+  readonly aliases?: readonly string[];
+}
+
+export interface ScriptFactCapabilityDescription extends ScriptFactDescriptor {
+  readonly kind: "requires";
 }
 
 /** Public, runtime-owned catalogue for CLI guidance and project script authors. */
 export const SCRIPT_FACT_CAPABILITIES: readonly ScriptFactCapabilityDescription[] = [
   {
-    id: "file-classification.v1",
+    id: "file-classification.v1", kind: "requires" as const,
+    domain: "classification", status: "current", producer: "runtime",
     summaryId: "scriptFact.fileClassification.summary",
+    usageId: "scriptFact.fileClassification.usage",
     unavailableActionId: "scriptFact.fileClassification.unavailable",
+    outputs: ["facts.fileClassification.value[]: path, repositoryPath, language?, fileKind, pathClass"],
   },
   {
-    id: "structure-metrics.v1",
+    id: "structure-metrics.v1", kind: "requires" as const,
+    domain: "structure", status: "current", producer: "runtime",
     summaryId: "scriptFact.structureMetrics.summary",
+    usageId: "scriptFact.structureMetrics.usage",
     unavailableActionId: "scriptFact.structureMetrics.unavailable",
+    outputs: ["facts.structureMetrics.value[]: path, repositoryPath, branchCount, weightedBranchTotal?, topLevelWeightedBranch?, maxFuncBranch?, nestingDepth, loc?, externalPassthroughCalls?, inDegree, outDegree, alphaStruct, imports?, connectedness?"],
+    lifecycle: "扩展能力；OpenArch 自身项目脚本当前不消费（策略 gate 直接读 baseline）。作为接入项目脚本 API 保留；2026-10-01 前无外部校准消费者则评估退役。",
   },
   {
-    id: "authorities.v1",
+    id: "authorities.v1", kind: "requires" as const,
+    domain: "authority", status: "current", producer: "runtime",
     summaryId: "scriptFact.authorities.summary",
+    usageId: "scriptFact.authorities.usage",
     unavailableActionId: "scriptFact.authorities.unavailable",
+    outputs: ["facts.authorities.value[]: id, owner, publicEntry?, protectedPaths?, protectedFiles?, prohibitedImports?"],
   },
   {
-    id: "test-case-spans.v1",
+    id: "test-case-spans.v1", kind: "requires" as const,
+    domain: "test", status: "current", producer: "provider",
     summaryId: "scriptFact.testCaseSpans.summary",
+    usageId: "scriptFact.testCaseSpans.usage",
     unavailableActionId: "scriptFact.testCaseSpans.unavailable",
+    outputs: ["facts.testCaseSpans.value[]: provider 确认的测试体范围/名称/状态"],
   },
   {
-    id: "invocation-bindings.v1",
+    id: "invocation-bindings.v1", kind: "requires" as const,
+    domain: "semantic", status: "experimental", producer: "provider",
     summaryId: "scriptFact.invocationBindings.summary",
+    usageId: "scriptFact.invocationBindings.usage",
     unavailableActionId: "scriptFact.invocationBindings.unavailable",
+    outputs: ["facts.invocationBindings.value[]: parser 确认的 receiver / alias binding"],
+    lifecycle: "实验能力；等待真实项目脚本消费者。2026-09-30 前无消费者则从事实目录退役。",
   },
   {
-    id: "semantic-relations.v1",
+    id: "semantic-relations.v1", kind: "requires" as const,
+    domain: "semantic", status: "current", producer: "provider",
     summaryId: "scriptFact.semanticRelations.summary",
+    usageId: "scriptFact.semanticRelations.usage",
     unavailableActionId: "scriptFact.semanticRelations.unavailable",
+    outputs: ["facts.semanticRelations.value: { reports, relations }"],
+    lifecycle: "扩展能力；仅接入项目脚本 requires 时按需收集。OpenArch 自身无内置脚本消费者；2026-10-01 前无外部校准消费者则降级为 experimental。",
   },
   {
-    id: "change-surface.v1",
+    id: "change-surface.v1", kind: "requires" as const,
+    domain: "change", status: "current", producer: "change-set",
     summaryId: "scriptFact.changeSurface.summary",
+    usageId: "scriptFact.changeSurface.usage",
     unavailableActionId: "scriptFact.changeSurface.unavailable",
+    outputs: ["facts.changeSurface.value: { schemaVersion, languages, changedSymbols, changes }"],
+    builtinConsumers: ["engine:staged-analysis"],
   },
 ];
 

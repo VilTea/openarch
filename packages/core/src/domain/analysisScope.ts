@@ -1,8 +1,7 @@
 import { extensionsForLanguages } from "../languageSupport";
 import type { FileKindRule } from "./testGovernance";
 import { toPosixPath } from "../infra/paths";
-
-const EXCLUDED_SEGMENTS = ["/node_modules/", "/.git/", "/.openarch/", "/dist/", "/coverage/", "/vendor/"] as const;
+import { SCAN_EXCLUDED_SEGMENTS } from "../infra/scanExclusions";
 
 export interface AnalysisScope {
   readonly languages: readonly string[];
@@ -21,5 +20,5 @@ export const createAnalysisScope = (languages: readonly string[], fileKindRules:
 export const isPathInAnalysisScope = (path: string, scope: AnalysisScope): boolean => {
   const normalized = toPosixPath(path).toLowerCase();
   return scope.extensions.some((extension) => normalized.endsWith(extension))
-    && !EXCLUDED_SEGMENTS.some((segment) => normalized.includes(segment));
+    && !SCAN_EXCLUDED_SEGMENTS.some((segment) => normalized.includes(segment));
 };

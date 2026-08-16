@@ -74,7 +74,7 @@ When automatic semantic evidence is unavailable for production code, investigate
 |---|---|
 | `I_push`, CRL, `D_MR`, `P95`, calibration, or `WARN` interpretation | [metrics-and-evidence.md](./references/metrics-and-evidence.md) |
 | initialization, hooks, personal/team persistence, evidence, DocumentStore, or records | [governance-lifecycle.md](./references/governance-lifecycle.md), then [record-guide.md](./record-guide.md) when needed |
-| authoring, changing, or calibrating a project script or authority | [script-authoring.md](./references/script-authoring.md) |
+| authoring, changing, or calibrating a project script or authority; inspecting fact capability/consumers, AST facts, and script observations | [script-authoring.md](./references/script-authoring.md) |
 | default assets, anti-pattern/security/test findings, or policy promotion | [project-defenses.md](./references/project-defenses.md) |
 | Agent routing, summary contract, user choices, subagents, or stopping conditions | [agent-workflow.md](./references/agent-workflow.md) |
 | multi-repository work, Task/Debt, or `review --evolution` | [collaboration-and-evolution.md](./references/collaboration-and-evolution.md) |
@@ -83,4 +83,4 @@ When automatic semantic evidence is unavailable for production code, investigate
 
 ## Completion
 
-Run language checks, tests, and OpenArch verification proportional to the change. When `quality_rules` are configured, run `openarch rules scan --check`; for document or experience changes, run similarity checks in the actual DocumentStore. Do not delete pending evidence or baseline fragments to manufacture a clean commit: investigate identity, reachability, and reconciliation first.
+Run language checks, tests, and OpenArch verification proportional to the change. When `quality_rules` are configured, run `openarch rules scan --check`; use `openarch rules check --unused` to surface zero-consumer fact catalog health (WARN hint). For document or experience changes, run similarity checks in the actual DocumentStore. Do not delete pending evidence or baseline fragments to manufacture a clean commit: investigate identity, reachability, and reconciliation first.

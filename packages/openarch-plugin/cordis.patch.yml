@@ -1,0 +1,28 @@
+# The @openarch/plugin DSH bundle patch: applied as ONE insert into every
+# DSH profile that installs this package via `dsh plugin add` (the plugin
+# manager reconciles packages declaring `dsh.bundle.patch` into the
+# profile's layer stack).
+#
+# Rows (all host-plane registries; the dashboard row doubles as the client
+# bundle — the web client scanner resolves this package's
+# `exports["./client"]` into the boot graph):
+#
+# - openarch-dashboard  browser UI (composer dock + shell.overlay panel);
+#   on the host plane it resolves its own client module, which is a
+#   harmless no-op (no `slots` service there).
+# - openarch-signals   systemPrompt order-90 governance brief.
+# - openarch-tools     openarch_context/check/review/scan/test/contract
+#   tools + the `GET /api/openarch/governance-state` client data route.
+#
+# Machine-local config (e.g. the governed workspace `cwd`) belongs to the
+# profile's own cordis.patch.yml, which overrides these rows by id.
+
+- insert:
+    - id: openarch-dashboard
+      name: '@openarch/plugin'
+
+    - id: openarch-signals
+      name: '@openarch/plugin/host-signals'
+
+    - id: openarch-tools
+      name: '@openarch/plugin/host-tools'

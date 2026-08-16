@@ -20,12 +20,19 @@ const run = (args, cwd = root, options = {}) => {
 };
 
 const tarball = (fragment) => {
-  const match = readdirSync(releaseDir).find((name) => name.endsWith(".tgz") && name.includes(fragment));
+  const match = readdirSync(releaseDir)
+    .filter((name) => name.endsWith(".tgz") && name.includes(fragment))
+    .sort()
+    .at(-1);
   if (!match) throw new Error(`local release did not produce a ${fragment} tarball`);
   return join(releaseDir, match);
 };
 
 mkdirSync(releaseDir, { recursive: true });
+// 清理旧的同包 tarball：避免 readdir 拿到过期版本做安装验证。
+for (const name of readdirSync(releaseDir)) {
+  if (name.endsWith(".tgz")) rmSync(join(releaseDir, name), { force: true });
+}
 run(["lint"]);
 run(["test"]);
 for (const packageDir of ["packages/core", "packages/cli", "packages/openarch-plugin"]) {

@@ -178,4 +178,17 @@ describe("analyzeSemanticChanges", () => {
       reason: "changed top-level syntax has no semantic classifier",
     });
   });
+
+  it("classifies supported declarations in an added file despite unclassified top-level boilerplate", () => {
+    const after = ast({
+      semanticSurface: {
+        unsupportedTopLevel: ["package_declaration:package fixture"],
+        declarations: [{ id: "ToolSupport", kind: "class", isPublic: true, signature: "class ToolSupport" }],
+      },
+    });
+    expect(analyzeSemanticChanges(undefined, after)).toEqual({
+      availability: "available",
+      changes: [{ anchor: "ToolSupport", kind: "class_add_remove" }],
+    });
+  });
 });

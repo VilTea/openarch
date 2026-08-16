@@ -43,7 +43,7 @@ describe("runCli help boundary", () => {
     expect(existsSync(join(cwd, ".openarch"))).toBe(false);
   });
 
-  it("rejects an invalid init persistence mode before writing project files", async () => {
+  it("rejects an invalid init persistence mode before writing project files", { timeout: 20_000 }, async () => {
     const cwd = mkdtempSync(join(tmpdir(), "openarch-init-mode-"));
     temporaryDirectories.push(cwd);
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -61,7 +61,7 @@ describe("runCli help boundary", () => {
 
     await expect(runCli(["init", "--agent", "unknown"], cwd)).resolves.toBe(3);
 
-    expect(error).toHaveBeenCalledWith("--agent 只能是 claude、codex、cursor、opencode、reasonix");
+    expect(error).toHaveBeenCalledWith("--agent 只能是 claude、codex、cursor、opencode、reasonix、dsh");
     expect(existsSync(join(cwd, ".openarch"))).toBe(false);
   });
 

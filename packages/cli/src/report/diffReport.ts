@@ -78,7 +78,15 @@ const renderSurfaceSignals = (locale: Locale, surface: ChangeSurfaceEntry, delta
   if (deltaI > 0 && cPush > deltaI * 2) {
     return [message(locale, "diff.changeSurfaceSignalSymbolHeavy", { file: surface.file, cPush: cPush.toFixed(1), iPush: deltaI.toFixed(1) })];
   }
-  if (deltaI > 0 && cPush < deltaI * 0.5) {
+  // 符号级已确认零消费者（静态上界为空，或全部锚点均确认无消费者）时，
+  // file-heavy 只是「热点文件改内部实现」的已知假阳性，不再输出该信号
+  // （体验反馈 2026-08-14 P2-7）。unconfirmed 锚点仍保留信号：0 消费者只是
+  // 符号级未确认，不能当作结论。LSP/符号证据不可用时不会产出 surface
+  // （见 changeSurface.ts 的 unavailableLanguages），因此这里 C_push=0
+  // 只能来自 static-bound-empty 或 symbol 证据的明确计算；即便如此，
+  // unconfirmed 缺失也按未确认处理（fail-closed），只有显式 false 才抑制。
+  const confirmedZeroConsumers = cPush === 0 && surface.result.contributions.every((contribution) => contribution.consumers.length > 0 || contribution.unconfirmed === false);
+  if (deltaI > 0 && cPush < deltaI * 0.5 && !confirmedZeroConsumers) {
     return [message(locale, "diff.changeSurfaceSignalFileHeavy", { file: surface.file, iPush: deltaI.toFixed(1), cPush: cPush.toFixed(1) })];
   }
   return [];
@@ -172,8 +180,30 @@ export interface DiffReportView {
   readonly detail?: boolean;
 }
 
+const renderImpactScale = (locale: Locale, report: DiffReport): readonly string[] => {
+  const { severityBudget, intensity, impactScale } = report.summary;
+  const lines: string[] = [];
+  if (severityBudget !== undefined) {
+    lines.push(message(locale, "diff.impactIntensity", {
+      intensity: (intensity ?? (severityBudget > 0 ? report.summary.iPush / severityBudget : 0)).toFixed(2),
+      budget: severityBudget.toFixed(1),
+    }));
+  }
+  if (impactScale) {
+    lines.push(message(locale, "diff.impactRelative", {
+      percentile: impactScale.percentile.toFixed(1),
+      bucket: impactScale.bucket,
+      entries: String(impactScale.sampleEntries),
+    }));
+  } else if (severityBudget !== undefined) {
+    lines.push(message(locale, "diff.impactRelativeMissing"));
+  }
+  return lines;
+};
+
 const renderCore = (report: DiffReport, locale: Locale): readonly string[] => [
   message(locale, "diff.heading", { impact: report.summary.iPush.toFixed(1), diagnosis: renderSummary(locale, report), files: report.summary.deltas.length }),
+  ...renderImpactScale(locale, report),
   ...report.summary.deltas
     .filter((delta) => delta.deltaI !== 0)
     .map((delta) => message(locale, "diff.delta", { file: delta.file, impact: delta.deltaI.toFixed(1), alpha: delta.alphaStruct.toFixed(3) })),

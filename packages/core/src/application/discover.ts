@@ -11,7 +11,7 @@ import { globSync } from "../infra/glob";
 import { implicitDepsRulesDir, toPosixPath } from "../infra/paths";
 import { executeRule } from "../implicit-deps/engine";
 import { readImplicitDepsYml, mergeBySource, writeImplicitDepsYml } from "../implicit-deps/merge";
-import type { DiscoveredEdge, StoredEdge } from "../implicit-deps/types";
+import type { DiscoveredEdge, DiscoveredObservation, StoredEdge } from "../implicit-deps/types";
 import { loadScriptFacts } from "./scriptFacts";
 import { requestedScriptCapabilities } from "../script-runtime/scriptRequirements";
 import { withGovernanceWriteLock } from "./governance/writeLock";
@@ -42,13 +42,18 @@ export interface DiscoverReport {
   readonly edgesRemoved: number;
   readonly totalEdges: number;
   readonly errors: readonly string[];
-  readonly pruning: readonly {
-    readonly source: string;
-    readonly inputFiles: number;
-    readonly targetFiles: number;
-    readonly candidateFiles: number;
-    readonly records: number;
-  }[];
+  /** 脚本执行与观测的有名分区（report-surface 预算内）。 */
+  readonly evidence: {
+    /** 规则的 report-only 观测（未解析键/动态键/说明）；不落边、不进 gate。 */
+    readonly observations: readonly (DiscoveredObservation & { readonly source: string })[];
+    readonly pruning: readonly {
+      readonly source: string;
+      readonly inputFiles: number;
+      readonly targetFiles: number;
+      readonly candidateFiles: number;
+      readonly records: number;
+    }[];
+  };
 }
 
 const edgeKey = (edge: Pick<DiscoveredEdge, "from" | "to" | "via" | "type">): string =>
@@ -229,26 +234,28 @@ const discoverUnlocked = (input: DiscoverInput, parser: ParserService) => Effect
     const rulePaths = input.rules && input.rules.length > 0 ? [...input.rules] : defaultRules();
 
     if (rulePaths.length === 0) {
-      return { rulesRun: 0, edgesFound: 0, edgesAdded: 0, edgesRemoved: 0, totalEdges: readImplicitDepsYml().length, errors: ["无规则 mjs（放入 .openarch/implicit-deps/rules/ 或 --rule 指定）"], pruning: [] };
+      return { rulesRun: 0, edgesFound: 0, edgesAdded: 0, edgesRemoved: 0, totalEdges: readImplicitDepsYml().length, errors: ["无规则 mjs（放入 .openarch/implicit-deps/rules/ 或 --rule 指定）"], evidence: { observations: [], pruning: [] } };
     }
     if (files.length === 0) {
-      return { rulesRun: 0, edgesFound: 0, edgesAdded: 0, edgesRemoved: 0, totalEdges: readImplicitDepsYml().length, errors: [changeContext?.changeSurface?.availability === "unavailable" ? `变更模式无变更文件: ${changeContext.changeSurface.reason}` : "无目标文件"], pruning: [] };
+      return { rulesRun: 0, edgesFound: 0, edgesAdded: 0, edgesRemoved: 0, totalEdges: readImplicitDepsYml().length, errors: [changeContext?.changeSurface?.availability === "unavailable" ? `变更模式无变更文件: ${changeContext.changeSurface.reason}` : "无目标文件"], evidence: { observations: [], pruning: [] } };
     }
 
     const errors: string[] = [];
+    const observations: (DiscoveredObservation & { readonly source: string })[] = [];
     const requestedCapabilities = yield* Effect.promise(() => requestedScriptCapabilities(rulePaths));
     const facts = yield* loadScriptFacts({ files, requestedCapabilities, ...(changeContext?.changeSurface ? { changeSurface: changeContext.changeSurface } : {}) });
     let existing: StoredEdge[] = readImplicitDepsYml();
     let edgesFound = 0;
     let edgesAdded = 0;
     let edgesRemoved = 0;
-    const pruning: DiscoverReport["pruning"][number][] = [];
+    const pruning: DiscoverReport["evidence"]["pruning"][number][] = [];
 
     for (const rulePath of rulePaths) {
       const source = rulePath.replace(/^.*[\\/]/, "");   // 文件名作 source（如 ts-eventbus.mjs）
-      const { edges, error, unavailable, stages } = yield* Effect.promise(() => executeRule(rulePath, files, parser, undefined, { facts, allFiles }));
+      const { edges, observations: ruleObservations, error, unavailable, stages } = yield* Effect.promise(() => executeRule(rulePath, files, parser, undefined, { facts, allFiles }));
       if (error) errors.push(error);
       if (unavailable) errors.push(`${source}: ${unavailable}`);
+      observations.push(...ruleObservations.map((observation) => ({ ...observation, source })));
       if (stages) {
         pruning.push({
           source,
@@ -280,7 +287,7 @@ const discoverUnlocked = (input: DiscoverInput, parser: ParserService) => Effect
         edgesRemoved: 0,
         totalEdges: existing.length,
         errors,
-        pruning,
+        evidence: { observations, pruning },
       } as DiscoverReport;
     }
     yield* Effect.promise(() => writeImplicitDepsYml(existing));
@@ -292,7 +299,7 @@ const discoverUnlocked = (input: DiscoverInput, parser: ParserService) => Effect
       edgesAdded,
       edgesRemoved,
       errors,
-      pruning,
+      evidence: { observations, pruning },
     } as DiscoverReport;
   });
 

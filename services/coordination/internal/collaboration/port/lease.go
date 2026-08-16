@@ -13,4 +13,7 @@ type LeaseStore interface {
 	Renew(context.Context, domain.LeaseRenewal) (domain.Lease, error)
 	Release(context.Context, domain.LeaseCredential) error
 	Get(context.Context, domain.LeaseKey) (domain.Lease, bool, error)
+	// List returns currently held (unexpired) leases. It is a live,
+	// expiring read model, never a durable fact source.
+	List(context.Context) ([]domain.Lease, error)
 }

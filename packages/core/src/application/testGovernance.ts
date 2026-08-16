@@ -9,15 +9,15 @@ import { assessTestGovernanceCoverage, type TestGovernanceCoverage } from "../do
 import { assessTestProviderCoverage, type TestProviderCoverage } from "../domain/testProviderCoverage";
 import { summarizeTestFacts, type TestProviderSummary } from "../domain/testFacts";
 import type { TestModuleAssociation } from "../domain/testAssociations";
-import { projectRoot, toAbsolute, toPosixPath } from "../infra/paths";
+import { projectRoot, toAbsolute } from "../infra/paths";
 import { collectProviderFacts } from "./testGovernanceCollection";
 import { executeTestFindingScript } from "../test-governance/engine";
 import type { ProjectTestExecution } from "../test-governance/runner";
 import { loadScriptFacts } from "./scriptFacts";
 import { requestedScriptCapabilities } from "../script-runtime/scriptRequirements";
-import { discoverProjectTestFiles, loadTestGovernanceConfiguration, selectTestGovernanceAdapters, testGovernanceRulePaths } from "./testGovernanceSetup";
+import { discoverProjectTestFiles, loadTestGovernanceConfiguration, selectTestGovernanceAdapters, suggestTestGovernanceAdapters, testGovernanceRulePaths, type TestGovernanceAdapterSuggestion } from "./testGovernanceSetup";
+import { readProjectLanguages } from "../projectFiles";
 import { currentFileMetrics } from "./currentMetrics";
-import { withGovernanceWriteLock } from "./governance/writeLock";
 import { testBloatMetrics, type TestBloatMetrics } from "./testBloatMetrics";
 
 
@@ -41,6 +41,8 @@ export interface TestGovernanceCollectionEvidence {
   readonly staticModuleAssociations: readonly { readonly testFile: string; readonly association: TestModuleAssociation }[];
   readonly associationUnavailableTestFiles: readonly string[];
   readonly unrecognizedTestFiles: readonly string[];
+  /** 无启用 provider 时按检测语言给出的候选适配器；只建议，不自动启用。 */
+  readonly suggestedAdapters?: TestGovernanceAdapterSuggestion;
 }
 
 /** Framework execution is intentionally separate from AST-derived quality facts. */
@@ -73,7 +75,7 @@ export interface TestGovernanceOptions {
   readonly rules?: readonly string[];
   /** Embedded callers may supply the current project test set instead of reading the filesystem. */
   readonly discoveredTestFiles?: readonly string[];
-  /** `read` reports freshly collected facts without mutating the baseline. */
+  /** @deprecated 校准 2026-08-15：testMetrics 持久化已退役，测试治理恒为只读采集；保留字段只为旧调用兼容。 */
   readonly persistence?: "read" | "write";
   /** 计算测试膨胀指标（遍历测试文件做语法查询 + 块级 minhash——默认关闭避免常规调用成本）。 */
   readonly includeBloat?: boolean;
@@ -100,7 +102,6 @@ export const testGovernance = (options: TestGovernanceOptions = {}) =>
   Effect.gen(function* () {
     const parser = yield* ParserService;
     const storage = yield* StorageService;
-    const persist = options.persistence !== "read";
     const run = () => Effect.gen(function* () {
     const configured = loadTestGovernanceConfiguration();
     const policy = options.policy ?? configured.policy;
@@ -117,15 +118,22 @@ export const testGovernance = (options: TestGovernanceOptions = {}) =>
     );
 
     const entries = yield* currentFileMetrics(storage);
+    // Canonical baseline entries remain the only durable test-file population
+    // for missing-baseline detection. testMetrics 持久化已退役（校准 2026-08-15）：
+    // 测试治理恒为只读采集，不再把 provider 事实写回 canonical 分片。
+    const canonicalEntries = storage.listCurrentFileMetrics
+      ? yield* storage.listAllFileMetrics()
+      : entries;
     const testEntries = entries.filter(([, entry]) => participatesInPopulation(entry.fileKind, "test-governance"));
+    const canonicalTestEntries = canonicalEntries.filter(([, entry]) => participatesInPopulation(entry.fileKind, "test-governance"));
     const discoveredTestFiles = [...new Set((options.discoveredTestFiles ?? discoverProjectTestFiles()).map(toAbsolute))].sort();
-    const baselineTestFiles = new Set(testEntries.map(([path]) => toAbsolute(path)));
+    const baselineTestFiles = new Set(canonicalTestEntries.map(([path]) => toAbsolute(path)));
     const unbaselinedTestFiles = discoveredTestFiles.filter((path) => !baselineTestFiles.has(path));
     const productionPaths = new Set(entries
       .filter(([, entry]) => participatesInPopulation(entry.fileKind, "production-governance"))
-      .map(([path]) => toPosixPath(path)));
+      .map(([path]) => toAbsolute(path)));
     const files = testEntries.map(([path]) => path);
-    const collection = yield* collectProviderFacts(parser, storage, testEntries, selectedProviders, productionPaths, { persist });
+    const collection = yield* collectProviderFacts(parser, testEntries, selectedProviders, productionPaths);
     const findings: TestFinding[] = [...collection.findings];
     const errors = [...selectionErrors, ...collection.errors, ...executions.filter(({ execution }) => !execution.passed)
       .map(({ providerId, execution }) => `${providerId}: ${execution.command}: ${execution.detail ?? "failed"}`)];
@@ -152,6 +160,9 @@ export const testGovernance = (options: TestGovernanceOptions = {}) =>
     }
     const policyResult = evaluateTestPolicy(findings, policy);
     const verdict = errors.length > 0 ? "BLOCK" : policyResult.verdict;
+    const suggestedAdapters = selectedProviders.length === 0
+      ? suggestTestGovernanceAdapters(readProjectLanguages(projectRoot()))
+      : undefined;
     const coverage = assessTestGovernanceCoverage({
       configured: coverageConfigured,
       activeProviderCount: selectedProviders.length,
@@ -180,13 +191,12 @@ export const testGovernance = (options: TestGovernanceOptions = {}) =>
         providerSummaries: summarizeTestFacts(collection.collectedFacts), testCaseSpans, unrecognizedTestFiles: [...collection.unrecognizedTestFiles].sort(),
         staticModuleAssociations: [...collection.staticModuleAssociations].sort((a, b) => a.testFile.localeCompare(b.testFile) || a.association.targetPath.localeCompare(b.association.targetPath)),
         associationUnavailableTestFiles: [...collection.associationUnavailableTestFiles].sort(),
+        ...(suggestedAdapters ? { suggestedAdapters } : {}),
       },
       execution: { runnersRun: selectedRunners.map((runner) => runner.id), executions },
       scripts: { scriptUnavailable, scriptPruning },
       ...(bloat ? { bloat } : {}),
     } as TestGovernanceReport;
     });
-    return yield* persist
-      ? withGovernanceWriteLock(process.env.OPENARCH_AGENT_ID ?? "test", run)
-      : run();
+    return yield* run();
   });

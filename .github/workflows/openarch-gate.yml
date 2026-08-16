@@ -7,9 +7,10 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'packages/**/*.ts'
-      - 'packages/**/*.tsx'
+      - 'packages/**'
       - '.openarch/**'
+      - 'services/coordination/**'
+      - 'scripts/**'
   workflow_dispatch:
     inputs:
       strict:

@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openarch.dev/schemas/dsh-plugin-v1.schema.json",
+  "title": "OpenArch DSH 插件清单",
+  "$comment": "把 Cordis 模块导出契约（export const name / inject、export function apply(ctx, config)）与注册的工具面固化为可校验的 JSON 描述。execute/render 等函数无法用 JSON 表达，清单只描述数据面；实现仍以 .mjs 模块为准。",
+  "type": "object",
+  "required": ["schemaVersion", "id", "modules"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 400
+    },
+    "kind": {
+      "enum": ["host", "client", "package"]
+    },
+    "modules": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/module"
+      }
+    },
+    "tools": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/tool"
+      }
+    },
+    "promptSections": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/promptSection"
+      }
+    },
+    "slots": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/slot"
+      }
+    },
+    "config": {
+      "$ref": "dsh-config.schema.json"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9._:-]{0,127}$"
+    },
+    "module": {
+      "type": "object",
+      "required": ["id", "kind", "entry"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "kind": {
+          "enum": ["host", "client"]
+        },
+        "entry": {
+          "type": "string",
+          "pattern": "^\\./.*\\.mjs$"
+        },
+        "inject": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "uses": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "config": {
+          "$ref": "dsh-config.schema.json"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 400
+        }
+      },
+      "additionalProperties": false
+    },
+    "tool": {
+      "type": "object",
+      "required": ["name", "description", "parameters"],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/parameter"
+          }
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 3600000
+        },
+        "concurrency": {
+          "enum": ["safe", "exclusive"]
+        },
+        "outputSchema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "cardKind": {
+          "enum": ["generic"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "parameter": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "enum": ["string", "boolean", "integer", "number", "object", "array"]
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "enum": {
+          "type": "array",
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "promptSection": {
+      "type": "object",
+      "required": ["name", "order"],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "order": {
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "slot": {
+      "type": "object",
+      "required": ["slot", "id", "order"],
+      "properties": {
+        "slot": {
+          "enum": ["conversation.composer.dock", "shell.overlay"]
+        },
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "order": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

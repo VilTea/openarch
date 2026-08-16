@@ -1,4 +1,5 @@
 import { CommandHandler, isAnalyzableSourceFile } from "../runtime";
+import { capabilityDriftSignal, evaluateProtectedPaths, loadProtectedPathPolicy } from "@openarch/core";
 import { auditCommand } from "./audit";
 import { diffCommand } from "./diff";
 import { gateCommand } from "./gate";
@@ -8,6 +9,22 @@ import { message } from "../i18n";
 
 const combinedExit = (codes: readonly number[]): number =>
   codes.includes(3) ? 3 : codes.includes(2) ? 2 : codes.includes(1) ? 1 : 0;
+
+/** Change-level protected-path policy from authority_hygiene; invalid policy fails closed. */
+const protectedPathExit = (paths: readonly string[]): { readonly code: number; readonly lines: readonly string[] } => {
+  const policy = loadProtectedPathPolicy();
+  if (policy.errors.length > 0) {
+    return { code: 3, lines: policy.errors.map((error) => `protected_paths 配置错误: ${error}`) };
+  }
+  if (!policy.configured || paths.length === 0) return { code: 0, lines: [] };
+  const result = evaluateProtectedPaths(paths, policy);
+  const lines = [
+    "## protected_paths 裁决",
+    `- Verdict: ${result.verdict}`,
+    ...result.triggered.map(({ path, rule }) => `- [${rule.level.toUpperCase()}] ${path} 命中 ${rule.pattern}: ${rule.reason}`),
+  ];
+  return { code: result.verdict === "BLOCK" ? 2 : result.verdict === "WARN" ? 1 : 0, lines };
+};
 
 /** One change-verification workflow; the delegated commands remain internal implementation details. */
 export const checkCommand: CommandHandler = async (args, context) => {
@@ -25,6 +42,24 @@ export const checkCommand: CommandHandler = async (args, context) => {
   const verbose = args.includes("--verbose");
   const diffArgs = args.filter((arg) => arg !== "--report" && arg !== "--tests" && arg !== "--worktree" && arg !== "--full");
   const manualPaths = diffArgs.some((arg) => !arg.startsWith("--"));
+  const manualChangedPaths = manualPaths ? diffArgs.filter((arg) => !arg.startsWith("--")) : [];
+  const stagedPaths = staged ? gitChangePaths(context.cwd, "staged") : [];
+  const worktreePaths = worktree ? gitChangePaths(context.cwd, "worktree") : [];
+  const protectedChangedPaths = worktree ? worktreePaths : staged ? stagedPaths : manualChangedPaths;
+  const protectedPolicy = protectedPathExit(protectedChangedPaths);
+  for (const line of protectedPolicy.lines) console.log(line);
+  if (protectedPolicy.code === 3) return 3;
+  if (report && protectedChangedPaths.length > 0) {
+    const drift = await capabilityDriftSignal(context.cwd, protectedChangedPaths);
+    if (drift.error) {
+      console.log(message(context.locale, "check.capabilityDriftHeading"));
+      console.log(`- ${drift.error}`);
+    } else if (drift.matched.length > 0) {
+      console.log(message(context.locale, "check.capabilityDriftHeading"));
+      for (const path of drift.matched) console.log(message(context.locale, "check.capabilityDriftEntry", { path }));
+      console.log(message(context.locale, "check.capabilityDriftAction"));
+    }
+  }
   if (report && !staged && !manualPaths && !worktree) {
     console.log(message(context.locale, "check.scopeHeading"));
     console.log(message(context.locale, "check.scopeNoChange"));
@@ -39,11 +74,11 @@ export const checkCommand: CommandHandler = async (args, context) => {
       await gateCommand([...(report ? ["--report"] : [])], context),
       await auditCommand(["--check"], context),
       ...(tests ? [await testCommand(verbose ? ["--verbose"] : [], context)] : []),
+      protectedPolicy.code,
     ];
     return combinedExit(results);
   }
   if (staged || manualPaths || worktree) {
-    const worktreePaths = worktree ? gitChangePaths(context.cwd, "worktree") : [];
     if (worktree && worktreePaths.length === 0) {
       console.log(message(context.locale, "check.worktreeEmpty"));
     }
@@ -63,12 +98,13 @@ export const checkCommand: CommandHandler = async (args, context) => {
     // diff 无可分析文件（如只有 baseline 变更）时不阻断后续测试治理——测试治理是全量
     // 静态分析，不依赖 diff 上下文（心流修复 2026-08-08：--worktree --tests 曾因
     // baseline 变更被 diff 前置卡死，测试治理跑不到）。
-    if (impact !== 0 && impact !== undefined) return impact;
+    if (impact !== 0 && impact !== undefined) return combinedExit([impact, protectedPolicy.code]);
   }
   const results = [
     await gateCommand([...(report ? ["--report"] : []), ...(staged ? ["--candidate"] : [])], context),
     await auditCommand(["--check"], context),
     ...(tests ? [await testCommand(verbose ? ["--verbose"] : [], context)] : []),
+    protectedPolicy.code,
   ];
   return combinedExit(results);
 };

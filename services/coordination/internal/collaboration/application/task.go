@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -164,8 +165,17 @@ func (s TaskService) Claim(ctx context.Context, task domain.TaskRef, proposalSHA
 	if err := s.tasks.AppendLifecycle(ctx, event); err != nil {
 		return TaskSubmitResult{}, err
 	}
-	events = append(events, event)
-	return TaskSubmitResult{Status: domain.TaskStatusOf(events), Created: true}, nil
+	// 追加后再读一次持久化状态：并发 claim 时 authority 层会把同类型事件收敛为
+	// 一条，只有最终 ClaimedBy 与请求者一致才返回成功，避免两个执行者都认为拿到任务。
+	events, err = s.tasks.ListLifecycle(ctx, task)
+	if err != nil {
+		return TaskSubmitResult{}, err
+	}
+	status = domain.TaskStatusOf(events)
+	if status.State != "claimed" || status.ClaimedBy != claimedBy {
+		return TaskSubmitResult{}, domain.ErrTaskAlreadyClaimed
+	}
+	return TaskSubmitResult{Status: status, Created: true}, nil
 }
 
 // Complete records the service-owned completed event for a task claimed by the
@@ -213,8 +223,72 @@ func (s TaskService) Complete(ctx context.Context, task domain.TaskRef, proposal
 	if err := s.tasks.AppendLifecycle(ctx, event); err != nil {
 		return TaskSubmitResult{}, err
 	}
-	events = append(events, event)
-	return TaskSubmitResult{Status: domain.TaskStatusOf(events), Created: true}, nil
+	// 追加后再读一次持久化状态：并发 complete 同样收敛到 authority 的一条记录，
+	// 非 claim 执行者的并发完成请求必须失败。
+	events, err = s.tasks.ListLifecycle(ctx, task)
+	if err != nil {
+		return TaskSubmitResult{}, err
+	}
+	status = domain.TaskStatusOf(events)
+	if status.State != "completed" || status.CompletedBy != completedBy {
+		return TaskSubmitResult{}, domain.ErrTaskNotClaimed
+	}
+	return TaskSubmitResult{Status: status, Created: true}, nil
+}
+
+// List projects the Agent-owned proposals joined with their latest signed
+// lifecycle status. It is a read-only query; lifecycle events stay the only
+// durable authority for state transitions.
+func (s TaskService) List(ctx context.Context, repositoryID string) ([]domain.TaskSummary, error) {
+	filter := strings.TrimSpace(repositoryID)
+	if filter != "" {
+		if err := domain.RepositoryID(filter).Validate(); err != nil {
+			return nil, fmt.Errorf("task list repositoryId: %w", err)
+		}
+	}
+	proposals, err := s.tasks.ListProposals(ctx)
+	if err != nil {
+		return nil, err
+	}
+	streams, err := s.tasks.ListLifecycleStreams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	summaries := make([]domain.TaskSummary, 0, len(proposals))
+	for _, proposal := range proposals {
+		if filter != "" && string(proposal.Proposal.Task.RepositoryID) != filter {
+			continue
+		}
+		status := domain.TaskStatusOf(streams[proposal.Proposal.Task])
+		status.Task = proposal.Proposal.Task
+		if status.ProposalSHA256 == "" {
+			status.ProposalSHA256 = proposal.ContentSHA256
+		}
+		summary := domain.TaskSummary{
+			Task:           proposal.Proposal.Task,
+			Title:          proposal.Proposal.Title,
+			Hypothesis:     proposal.Proposal.Hypothesis,
+			RequestedBy:    proposal.Proposal.RequestedBy,
+			ProposalSHA256: proposal.ContentSHA256,
+			Status:         status,
+		}
+		if err := summary.Validate(); err != nil {
+			return nil, err
+		}
+		summaries = append(summaries, summary)
+	}
+	sort.Slice(summaries, func(i, j int) bool {
+		left := summaries[i].Task
+		right := summaries[j].Task
+		if left.RepositoryID != right.RepositoryID {
+			return left.RepositoryID < right.RepositoryID
+		}
+		if left.ServiceID != right.ServiceID {
+			return left.ServiceID < right.ServiceID
+		}
+		return left.TaskID < right.TaskID
+	})
+	return summaries, nil
 }
 
 // lifecycleFor reads the lifecycle stream and returns the rebuilt status plus

@@ -33,8 +33,8 @@ describe("compatible contract impact", () => {
     const compatible = impactFor("compatible_field_add");
     const implementation = impactFor("function_body");
 
-    // lambda 5 and no completion penalty, versus lambda 10 with gamma_completion=2.
-    expect(compatible.deltaI / implementation.deltaI).toBeCloseTo(0.25, 6);
+    // lambda 5 versus lambda 10; λ_joint 已冻结，不施加 γ_completion 罚因子。
+    expect(compatible.deltaI / implementation.deltaI).toBeCloseTo(0.5, 6);
   });
 
   it("preserves parser-confirmed re-export relations when diff refreshes a baseline entry", () => {
@@ -113,8 +113,8 @@ describe("compatible contract impact", () => {
       fileKind: "test",
       alphaStruct: 0,
       externalPassthroughCalls: 1,
-      testMetrics: { providerId: "typescript-vitest" },
     });
+    expect(impact.writeEntry.testMetrics).toBeUndefined();
     expect(impact.writeEntry.localBurdenFingerprint).toBeUndefined();
     expect(impact.writeEntry.previousLocalBurdenFingerprint).toBeUndefined();
   });

@@ -4,6 +4,7 @@
 //   ESLint  守"可静态证明的架构纪律"（类型契约 / 依赖方向）
 //   TypeScript 守"类型契约"（编译期检查）
 import tsparser from "@typescript-eslint/parser";
+import tsPlugin from "@typescript-eslint/eslint-plugin";
 
 const P95_FIELDS = new Set(["branch", "nesting", "loc", "alpha", "connectedness", "externalPassthrough", "oneMinusConnectedness"]);
 const LANGUAGE_IDS = new Set(["typescript", "javascript", "go"]);
@@ -138,10 +139,11 @@ export default [
     files: ["packages/core/src/**/*.ts", "packages/cli/src/**/*.ts"],
     ignores: ["packages/core/src/languageSupport.ts", "packages/core/src/projectFiles.ts"],
     languageOptions: { parser: tsparser },
-    plugins: { openarch: contractSync },
+    plugins: { openarch: contractSync, "@typescript-eslint": tsPlugin },
     rules: {
       "openarch/no-inline-language-facts": "warn",
       "openarch/no-direct-source-glob": "warn",
+      "@typescript-eslint/no-require-imports": "error",
     },
   },
 

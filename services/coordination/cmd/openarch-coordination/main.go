@@ -4,20 +4,24 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
-	collaborationport "github.com/openarch/openarch/services/coordination/internal/collaboration/port"
 	scopedocsrepo "github.com/openarch/openarch/services/coordination/internal/collaboration/adapter/docsrepo"
+	"github.com/openarch/openarch/services/coordination/internal/collaboration/adapter/events"
 	collaborationhttp "github.com/openarch/openarch/services/coordination/internal/collaboration/adapter/httpapi"
 	"github.com/openarch/openarch/services/coordination/internal/collaboration/adapter/memory"
 	"github.com/openarch/openarch/services/coordination/internal/collaboration/adapter/signing"
 	collaborationapplication "github.com/openarch/openarch/services/coordination/internal/collaboration/application"
+	collaborationport "github.com/openarch/openarch/services/coordination/internal/collaboration/port"
 	"github.com/openarch/openarch/services/coordination/internal/evidence/adapter/docsrepo"
 	"github.com/openarch/openarch/services/coordination/internal/evidence/adapter/httpapi"
 	"github.com/openarch/openarch/services/coordination/internal/evidence/adapter/ndjson"
@@ -30,15 +34,15 @@ func sha256Hex(value string) string {
 }
 
 type config struct {
-	listen         string
-	docsRepo       string
-	gitRemote      string
-	gitBranch      string
-	gitAuthorName  string
-	gitAuthorEmail string
-	taskSigningKey string
+	listen           string
+	docsRepo         string
+	gitRemote        string
+	gitBranch        string
+	gitAuthorName    string
+	gitAuthorEmail   string
+	taskSigningKey   string
 	taskSigningKeyID string
-	projectionPath string
+	projectionPath   string
 }
 
 func main() {
@@ -53,15 +57,15 @@ func main() {
 	projectionPath := flag.String("projection", "", "local rebuildable projection cache path; empty = system temp dir (disposable, rebuildable from Git)")
 	flag.Parse()
 	cfg := config{
-		listen:          *listen,
-		docsRepo:        *docsRepo,
-		gitRemote:       *gitRemote,
-		gitBranch:       *gitBranch,
-		gitAuthorName:   *gitAuthorName,
-		gitAuthorEmail:  *gitAuthorEmail,
-		taskSigningKey:  *taskSigningKey,
+		listen:           *listen,
+		docsRepo:         *docsRepo,
+		gitRemote:        *gitRemote,
+		gitBranch:        *gitBranch,
+		gitAuthorName:    *gitAuthorName,
+		gitAuthorEmail:   *gitAuthorEmail,
+		taskSigningKey:   *taskSigningKey,
 		taskSigningKeyID: *taskSigningKeyID,
-		projectionPath:  *projectionPath,
+		projectionPath:   *projectionPath,
 	}
 	if err := run(cfg); err != nil {
 		log.Fatal(err)
@@ -88,27 +92,70 @@ func run(cfg config) error {
 	log.Printf("OpenArch coordination evidence service listening on %s", cfg.listen)
 	mux := http.NewServeMux()
 	httpapi.Register(mux, service)
-	if err := registerTaskRoutes(mux, cfg, authority, scopeStore); err != nil {
+	publisher := events.NewPublisher()
+	if err := registerTaskRoutes(mux, cfg, authority, scopeStore, publisher); err != nil {
 		return err
 	}
-	registerLeaseRoutes(mux)
-	return http.ListenAndServe(cfg.listen, mux)
+	if err := registerDebtRoutes(mux, authority); err != nil {
+		return err
+	}
+	registerLiveRoutes(mux, publisher)
+	collaborationhttp.RegisterEventRoutes(mux, publisher)
+	return serve(mux, cfg.listen)
 }
 
-// registerLeaseRoutes wires the ephemeral semantic-lease store. Leases are live
-// runtime state (never Git-backed); a restart bumps the coordinator epoch and
-// invalidates every outstanding credential.
-func registerLeaseRoutes(mux *http.ServeMux) {
-	leaseStore, err := memory.New(
-		uint64(time.Now().Unix()), // coordinator epoch: restart invalidates leases
-		time.Second,               // min TTL
-		10*time.Minute,            // max TTL
-		time.Now,
-	)
+// registerLiveRoutes wires the ephemeral live authorities (semantic leases and
+// repository-bound sessions). Both are live runtime state, never Git-backed; a
+// restart bumps the coordinator epoch and invalidates every outstanding
+// credential.
+func registerLiveRoutes(mux *http.ServeMux, publisher *events.Publisher) {
+	epoch := uint64(time.Now().Unix())
+	leaseStore, err := memory.New(epoch, time.Second, 10*time.Minute, time.Now)
 	if err != nil {
 		log.Fatalf("init lease store: %v", err)
 	}
-	collaborationhttp.RegisterLeaseRoutes(mux, leaseStore)
+	collaborationhttp.RegisterLeaseRoutes(mux, leaseStore, publisher)
+
+	sessionStore, err := memory.NewSessionStore(epoch, time.Second, 30*time.Minute, time.Now)
+	if err != nil {
+		log.Fatalf("init session store: %v", err)
+	}
+	collaborationhttp.RegisterSessionRoutes(mux, sessionStore, publisher)
+}
+
+// serve runs the coordination service with bounded HTTP timeouts and graceful
+// shutdown. Slowloris-style requests are bounded at the transport layer; the
+// application handlers keep their own request limits via MaxBytesReader.
+func serve(mux *http.ServeMux, listen string) error {
+	server := &http.Server{
+		Addr:              listen,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      90 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	errCh := make(chan error, 1)
+	go func() {
+		log.Printf("OpenArch coordination service listening on %s", listen)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		log.Printf("coordination service shutting down")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return server.Shutdown(shutdownCtx)
+	}
 }
 
 func openAuthority(cfg config) (*docsrepo.Authority, collaborationport.ScopeStore, error) {
@@ -144,7 +191,21 @@ func openProjection(cfg config) (*ndjson.Store, error) {
 	return ndjson.Open(resolved)
 }
 
-func registerTaskRoutes(mux *http.ServeMux, cfg config, authority *docsrepo.Authority, scopeStore collaborationport.ScopeStore) error {
+func registerDebtRoutes(mux *http.ServeMux, authority *docsrepo.Authority) error {
+	debtStore, err := scopedocsrepo.NewDebtStore(authority.Repository())
+	if err != nil {
+		return err
+	}
+	debtService, err := collaborationapplication.NewDebtService(debtStore)
+	if err != nil {
+		return err
+	}
+	collaborationhttp.RegisterDebtRoutes(mux, debtService)
+	log.Printf("Debt document listing enabled (Agent-owned Git documents)")
+	return nil
+}
+
+func registerTaskRoutes(mux *http.ServeMux, cfg config, authority *docsrepo.Authority, scopeStore collaborationport.ScopeStore, publisher *events.Publisher) error {
 	if cfg.taskSigningKey == "" {
 		log.Printf("Task verification endpoints disabled: --task-signing-key is required")
 		return nil
@@ -161,6 +222,6 @@ func registerTaskRoutes(mux *http.ServeMux, cfg config, authority *docsrepo.Auth
 	if err != nil {
 		return err
 	}
-	collaborationhttp.RegisterTaskRoutes(mux, taskService)
+	collaborationhttp.RegisterTaskRoutes(mux, taskService, publisher)
 	return nil
 }

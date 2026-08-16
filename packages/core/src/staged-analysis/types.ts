@@ -7,6 +7,7 @@ import {
   type ProjectFacts,
   type ScriptAuthorityDeclaration,
   type ScriptFactCapability,
+  type ScriptFactDescriptor,
   type ScriptFileTargets,
 } from "../script-runtime/projectFacts";
 
@@ -42,12 +43,45 @@ export interface StaticImportsAstStage {
   readonly fact: "static-imports.v1";
 }
 
-export type AstStage = QueryAstStage | StaticImportsAstStage;
+/** Engine-owned declarative string-key facts (member-call string literals, local
+ *  string/ternary constants, string arrays, identifier-arg calls). TS/JS v1;
+ *  the language scope is part of the fact id; unsupported languages make the
+ *  rule unavailable instead of guessing. The pre-language-qualified id stays
+ *  accepted as a compatibility alias. */
+export const STRING_KEY_CALLS_FACT = "string-key-calls-ts-js.v1" as const;
+export const STRING_KEY_CALLS_LEGACY_FACT = "string-key-calls.v1" as const;
+export type StringKeyCallsFact = typeof STRING_KEY_CALLS_FACT | typeof STRING_KEY_CALLS_LEGACY_FACT;
+
+export interface StringKeyCallsAstStage {
+  readonly fact: StringKeyCallsFact;
+}
+
+export type AstStage = QueryAstStage | StaticImportsAstStage | StringKeyCallsAstStage;
+
+export interface ScriptAstFactDescription extends ScriptFactDescriptor {
+  readonly kind: "ast";
+}
 
 /** Engine-provided AST facts are selected by stages, not declared in `requires`. */
-export const SCRIPT_AST_FACTS = [{
+export const SCRIPT_AST_FACTS: readonly ScriptAstFactDescription[] = [{
   id: "static-imports.v1",
+  kind: "ast",
+  domain: "ast",
+  status: "current",
+  producer: "parser",
   summaryId: "scriptFact.staticImports.summary",
+  usageId: "scriptFact.staticImports.usage",
+  outputs: ["records[]: _file, source, language"],
+}, {
+  id: "string-key-calls-ts-js.v1",
+  kind: "ast",
+  domain: "ast",
+  status: "current",
+  producer: "engine",
+  summaryId: "scriptFact.stringKeyCalls.summary",
+  usageId: "scriptFact.stringKeyCalls.usage",
+  aliases: ["string-key-calls.v1"],
+  outputs: ["records[]: kind=call|dynamicCall|callArg|local|array; op,key,pkey,arg,name,value"],
 }] as const;
 
 export interface StageRecord {
@@ -63,10 +97,16 @@ export interface StagedAnalysis {
 export const isStaticImportsAstStage = (stage: AstStage): stage is StaticImportsAstStage =>
   "fact" in stage && stage.fact === "static-imports.v1";
 
+const stringKeyCallsStage = (stage: AstStage): stage is StringKeyCallsAstStage =>
+  "fact" in stage && (stage.fact === STRING_KEY_CALLS_FACT || stage.fact === STRING_KEY_CALLS_LEGACY_FACT);
+
+export const isStringKeyCallsAstStage = stringKeyCallsStage;
+
 const isAstStage = (value: unknown): value is AstStage => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const stage = value as Record<string, unknown>;
   if (stage.fact === "static-imports.v1") return Object.keys(stage).every((key) => key === "fact");
+  if (stage.fact === STRING_KEY_CALLS_FACT || stage.fact === STRING_KEY_CALLS_LEGACY_FACT) return Object.keys(stage).every((key) => key === "fact");
   return typeof stage.pattern === "string" && (stage.extract === undefined || typeof stage.extract === "function");
 };
 

@@ -12,6 +12,7 @@ const helper = join(dir, "test-helpers.ts");
 const other = join(dir, "subject.ts");
 const javaHelper = join(dir, "TestHelpers.java");
 const pyHelper = join(dir, "test_helpers.py");
+const goTarget = join(dir, "lease.go");
 
 beforeAll(() => {
   mkdirSync(dir, { recursive: true });
@@ -36,6 +37,7 @@ beforeAll(() => {
     "def render(entity):",
     "    return str(entity)",
   ].join("\n"));
+  writeFileSync(goTarget, "package lease\n\nfunc Acquire() bool { return true }\n");
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -96,6 +98,16 @@ describe("resolveCrossFileAssertionScope", () => {
     expect(scope.isWrapperCall("validateUserCreated")).toBe(true);
     expect(scope.isWrapperCall("validate_created")).toBe(true);
     expect(scope.isWrapperCall("render")).toBe(false);
+  }, 15000);
+
+  it("skips unsupported languages without running cross-language queries", async () => {
+    const parser = await Effect.runPromise(parserIn());
+    const cache = new Map<string, ReadonlySet<string>>();
+    const scope = await resolveCrossFileAssertionScope(parser, [
+      { resolvedPath: goTarget.replace(/\\/g, "/") },
+    ], new Set(), cache);
+    expect(scope.isWrapperCall("Acquire")).toBe(false);
+    expect(cache.size).toBe(0);
   }, 15000);
 
   it("reuses the cache: second scope build does not re-parse the helper", async () => {

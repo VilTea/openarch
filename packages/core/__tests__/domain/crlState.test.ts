@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeCRLState, computeCRLStateBreakdown, type P95Values } from "../../src/domain/crlState";
+import { computeCRLState, computeCRLStateBreakdown, localBurdenInputsOf, type P95Values } from "../../src/domain/crlState";
 
 const p95: P95Values = {
   branch: 10, nesting: 10, loc: 10, alpha: 1,
@@ -31,5 +31,21 @@ describe("CRL_state breakdown", () => {
 
     expect(b.components.disconnectedness).toBe(0);
     expect(b.moduleShape).toBeCloseTo(0.6, 5);
+  });
+
+  it("uses implementation loc and the passthrough fallback through one shared normalizer", () => {
+    const local = localBurdenInputsOf({
+      nestingDepth: 2, loc: 30, declarationLoc: 12,
+      externalPassthroughCalls: undefined, passthroughCalls: 7,
+    });
+    expect(local).toEqual({ maxFuncBranch: 0, nestingDepth: 2, implementationLoc: 18, externalPassthroughCalls: 7 });
+
+    const b = computeCRLStateBreakdown({
+      maxFuncBranch: 5, nestingDepth: 2, loc: 30, declarationLoc: 12, alphaStruct: 0.5,
+      connectedness: 0.6, passthroughCalls: 7,
+    }, p95);
+    // loc 因子按 18/10，external 按 7/10，与 gate/review 同口径
+    expect(b.components.loc).toBeCloseTo(0.15 * 1, 5);
+    expect(b.components.externalPassthrough).toBeCloseTo(0.15 * 0.7, 5);
   });
 });

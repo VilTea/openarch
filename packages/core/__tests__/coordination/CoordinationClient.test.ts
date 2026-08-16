@@ -1,6 +1,6 @@
 // packages/core/__tests__/coordination/CoordinationClient.test.ts
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { CoordinationError, acquireLease, fetchDocsRepoDescriptor, postDocsRepoRefresh, postEvidence, submitTask } from "../../src/coordination/CoordinationClient";
+import { CoordinationError, acquireLease, fetchDocsRepoDescriptor, listLeases, listSessions, listTasks, postDocsRepoRefresh, postEvidence, submitTask } from "../../src/coordination/CoordinationClient";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -42,12 +42,13 @@ describe("fetchDocsRepoDescriptor", () => {
 describe("postDocsRepoRefresh", () => {
   beforeEach(() => mockFetch.mockReset());
 
-  it("sends {repositoryId, branch, headSha} and resolves on 2xx", async () => {
-    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
-    await postDocsRepoRefresh("http://127.0.0.1:8787", { repositoryId: "repo-1", branch: "main", headSha: "a".repeat(40) });
+  it("sends {repositoryId, branch, headSha} and returns the refreshed descriptor", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => okDescriptor });
+    const descriptor = await postDocsRepoRefresh("http://127.0.0.1:8787", { repositoryId: "repo-1", branch: "main", headSha: "a".repeat(40) });
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://127.0.0.1:8787/v1/docs-repo/refresh");
     expect(JSON.parse(String(init.body))).toEqual({ repositoryId: "repo-1", branch: "main", headSha: "a".repeat(40) });
+    expect(descriptor).toEqual(okDescriptorFlat);
   });
 
   it("throws CoordinationError(cause=http_status) on 409", async () => {
@@ -71,6 +72,30 @@ describe("postEvidence / submitTask", () => {
     const result = await submitTask("http://127.0.0.1:8787", { repositoryId: "repo-1", serviceId: "svc-1", taskId: "task-1", branch: "main", headSha: "a".repeat(40) });
     expect(result.created).toBe(true);
     expect((mockFetch.mock.calls[0] as [string])[0]).toBe("http://127.0.0.1:8787/v1/tasks/submit");
+  });
+
+  it("listLeases appends the optional repositoryId filter", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ leases: [] }) });
+    await listLeases("http://127.0.0.1:8787", "repo-a");
+    expect((mockFetch.mock.calls[0] as [string])[0]).toBe("http://127.0.0.1:8787/v1/leases?repositoryId=repo-a");
+  });
+
+  it("listSessions appends the optional repositoryId filter", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ sessions: [] }) });
+    await listSessions("http://127.0.0.1:8787", "repo-a");
+    expect((mockFetch.mock.calls[0] as [string])[0]).toBe("http://127.0.0.1:8787/v1/sessions?repositoryId=repo-a");
+  });
+
+  it("listTasks parses summaries and appends the repositoryId filter", async () => {
+    const summary = {
+      task: { repositoryId: "repo-a", serviceId: "svc-a", taskId: "task-1" },
+      title: "clean refactor", hypothesis: "lower branch", requestedBy: "agent-a",
+      proposalSha256: "a".repeat(64), status: { state: "verified", proposalSha256: "a".repeat(64) },
+    };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ tasks: [summary] }) });
+    const tasks = await listTasks("http://127.0.0.1:8787", "repo-a");
+    expect(tasks).toEqual([summary]);
+    expect((mockFetch.mock.calls[0] as [string])[0]).toBe("http://127.0.0.1:8787/v1/tasks?repositoryId=repo-a");
   });
 });
 

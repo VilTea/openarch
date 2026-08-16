@@ -30,10 +30,32 @@ export interface CRLStateInput {
   readonly maxFuncBranch?: number;
   readonly nestingDepth: number;
   readonly loc?: number;
+  /** 声明行（类型/接口头 + 函数签名）：loc 因子按实现行口径排除（校准 2026-08-08）。 */
+  readonly declarationLoc?: number;
   readonly alphaStruct: number;
   readonly connectedness?: number;
   readonly externalPassthroughCalls?: number;
+  /** 透传调用数回退（旧 parser/存量条目）；normalizeLocalBurdenInputs 统一回退。 */
+  readonly passthroughCalls?: number;
 }
+
+/** crl_local 的四个原始输入，全局唯一定义（gate/review/calibration/D_MR 共用）。
+ *  loc 恒为实现行口径，externalPassthrough 恒为已确认值并回退 passthroughCalls。 */
+export interface LocalBurdenInputs {
+  readonly maxFuncBranch: number;
+  readonly nestingDepth: number;
+  readonly implementationLoc: number;
+  readonly externalPassthroughCalls: number;
+}
+
+export const localBurdenInputsOf = (
+  m: Pick<CRLStateInput, "maxFuncBranch" | "nestingDepth" | "loc" | "declarationLoc" | "externalPassthroughCalls" | "passthroughCalls">,
+): LocalBurdenInputs => ({
+  maxFuncBranch: m.maxFuncBranch ?? 0,
+  nestingDepth: m.nestingDepth,
+  implementationLoc: Math.max(0, (m.loc ?? 0) - (m.declarationLoc ?? 0)),
+  externalPassthroughCalls: m.externalPassthroughCalls ?? m.passthroughCalls ?? 0,
+});
 
 export interface CRLStateComponents {
   readonly branch: number;
@@ -63,11 +85,12 @@ export const computeCRLStateBreakdown = (
 ): CRLStateBreakdown => {
   const safeDiv = (v: number, pval: number) => pval > 0 ? Math.min(1, v / pval) : 0;
   const conn = m.connectedness ?? 1;
+  const local = localBurdenInputsOf(m);
   const components: CRLStateComponents = {
-    branch: w.branch * safeDiv(m.maxFuncBranch ?? 0, p.branch),
-    nesting: w.nesting * safeDiv(m.nestingDepth, p.nesting),
-    loc: w.loc * safeDiv(m.loc ?? 0, p.loc),
-    externalPassthrough: w.externalPassthrough * safeDiv(m.externalPassthroughCalls ?? 0, p.externalPassthrough),
+    branch: w.branch * safeDiv(local.maxFuncBranch, p.branch),
+    nesting: w.nesting * safeDiv(local.nestingDepth, p.nesting),
+    loc: w.loc * safeDiv(local.implementationLoc, p.loc),
+    externalPassthrough: w.externalPassthrough * safeDiv(local.externalPassthroughCalls, p.externalPassthrough),
     alpha: w.alpha * safeDiv(m.alphaStruct, p.alpha),
     disconnectedness: w.connectedness * safeDiv(1 - conn, p.oneMinusConnectedness),
   };

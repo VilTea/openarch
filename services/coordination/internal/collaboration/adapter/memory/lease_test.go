@@ -52,6 +52,40 @@ func TestStoreUsesFencingAndExpiresLeases(t *testing.T) {
 	}
 }
 
+func TestStoreListReturnsOnlyUnexpiredLeases(t *testing.T) {
+	base := time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC)
+	now := base
+	clock := func() time.Time { return now }
+	store, err := memory.New(7, time.Second, time.Minute, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository, _ := domain.NewRepositoryRef("repo-main")
+	short, _ := domain.NewLeaseKey(repository, "services/coordination#short")
+	long, _ := domain.NewLeaseKey(repository, "services/coordination#long")
+	if _, err := store.Acquire(context.Background(), domain.LeaseRequest{Key: short, Owner: "agent-a", TTL: time.Second}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Acquire(context.Background(), domain.LeaseRequest{Key: long, Owner: "agent-b", TTL: time.Minute}); err != nil {
+		t.Fatal(err)
+	}
+	leases, err := store.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leases) != 2 {
+		t.Fatalf("listed %d leases, want 2", len(leases))
+	}
+	now = now.Add(2 * time.Second)
+	leases, err = store.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leases) != 1 || leases[0].Key != long {
+		t.Fatalf("listed %+v after expiry, want only long lease", leases)
+	}
+}
+
 func TestStoreRejectsOutOfBoundsTTLAndInvalidLeaseKey(t *testing.T) {
 	store, err := memory.New(1, time.Second, time.Minute, time.Now)
 	if err != nil {

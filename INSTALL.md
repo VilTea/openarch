@@ -177,13 +177,16 @@ configuration reference when discovery is unavailable.
 After initialization, run `openarch context` for read-only project facts. During
 implementation use `openarch check --worktree --report`; after staging use
 `openarch check --staged --report`. The published command surface is `openarch init`,
-`openarch context`, `openarch scan`, `openarch review`, `openarch check`,
+`openarch context`, `openarch contract`, `openarch scan`, `openarch review`, `openarch check`,
 `openarch rules`, `openarch docs`, `openarch test`, `openarch toolchains`, and `openarch update`
 (`openarch coordination`,
 `openarch lsp`, `openarch calibration`, and `openarch anti-patterns` are
 advanced-visible). `openarch test --list` lists the registered test-governance
 providers (ids used in `test_governance.providers`); bare `openarch test` runs
-the test-governance evaluation. `openarch update` is read-only: it compares the installed
+the test-governance evaluation. `openarch contract [--json]` prints the
+machine-contract catalog for external plugins (contract id/version/status); read it
+at plugin startup so unknown contract versions degrade to text or unavailable
+instead of being parsed as an older version. `openarch update` is read-only: it compares the installed
 version against the latest release and prints update steps; it never
 auto-installs. Re-run `openarch init --agent <harness>` after upgrading to
 refresh the installed Skill tree.

@@ -33,9 +33,11 @@ export interface ReviewReport {
   readonly top3: readonly ReviewEntry[];
   readonly hasData: boolean;
   readonly p95?: P95Values;
+  /** 读取失败时保留原因，调用方必须把它呈现为 UNAVAILABLE 而不是 clean。 */
+  readonly reason?: string;
 }
 
-const unavailableReview = (): ReviewReport => ({ nFiles: 0, entries: [], top3: [], hasData: false });
+const unavailableReview = (reason?: string): ReviewReport => ({ nFiles: 0, entries: [], top3: [], hasData: false, ...(reason ? { reason } : {}) });
 
 export const review = () =>
   Effect.gen(function* () {
@@ -49,9 +51,9 @@ export const review = () =>
       if (!participatesInPopulation(m.fileKind, "production-governance")) return [];
       const breakdown = p95Vals ? computeCRLStateBreakdown({
         maxFuncBranch: maxFuncWeightedBranchOf(m), nestingDepth: m.nestingDepth,
-        loc: m.loc, alphaStruct: m.alphaStruct,
+        loc: m.loc, declarationLoc: m.declarationLoc, alphaStruct: m.alphaStruct,
         connectedness: m.connectedness,
-        externalPassthroughCalls: m.externalPassthroughCalls ?? m.passthroughCalls,
+        externalPassthroughCalls: m.externalPassthroughCalls, passthroughCalls: m.passthroughCalls,
       }, p95Vals) : undefined;
       return [{
         path: m.path, crlState: breakdown?.composite ?? 0,
@@ -70,4 +72,7 @@ export const review = () =>
     entries.sort((a, b) => b.localBurden - a.localBurden);
     const top3 = entries.filter((entry) => entry.localBurden > 0 || entry.crl > 0).slice(0, 3);
     return { nFiles: entries.length, entries, top3, hasData: entries.some((entry) => entry.localBurden > 0 || entry.crl > 0), p95: p95Vals } as ReviewReport;
-  }).pipe(Effect.catchAll(() => Effect.succeed(unavailableReview())));
+  }).pipe(
+    Effect.catchAll((error) => Effect.succeed(unavailableReview(error instanceof Error ? error.message : String(error)))),
+    Effect.catchAllDefect((defect) => Effect.succeed(unavailableReview(defect instanceof Error ? defect.message : String(defect)))),
+  );

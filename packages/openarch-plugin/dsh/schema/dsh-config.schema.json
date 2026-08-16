@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openarch.dev/schemas/dsh-config-v1.schema.json",
+  "title": "OpenArch DSH 插件配置",
+  "$comment": "apply(ctx, config) 的 config 契约。所有键都可省略（各模块会合并 DEFAULTS）；清单/预设只应出现这里列出的键。",
+  "type": "object",
+  "properties": {
+    "openarchBin": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cwd": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cliTimeoutMs": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 900000
+    },
+    "cliMaxBuffer": {
+      "type": "integer",
+      "minimum": 65536,
+      "maximum": 1073741824
+    },
+    "stateTtlMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400000
+    },
+    "historyParseCap": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000
+    },
+    "historyKeep": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000
+    },
+    "topFiles": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000
+    },
+    "distributionBins": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 256
+    },
+    "maxShards": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000
+    },
+    "refreshMs": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 86400000
+    }
+  },
+  "additionalProperties": false
+}

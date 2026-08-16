@@ -1,10 +1,10 @@
 // packages/core/src/application/diffImpact.ts
-// 单文件冲击计算——I_push 5 因子 + D_MR 恶化值（纯函数，不含 Effect）。
+// 单文件冲击计算——I_push 4 因子 + D_MR 恶化值（纯函数，不含 Effect）。
 import { reach } from "../domain/reach";
 import { confidence } from "../domain/confidence";
 import { alphaStruct } from "../domain/alpha";
-import { computeIPush } from "../domain/i-push";
-import { requiresDependentSync, type ChangeKind } from "../domain/weights";
+import { computeIPush, computeSeverityBudget } from "../domain/i-push";
+import type { ChangeKind } from "../domain/weights";
 import type { FileAst } from "../domain/ast";
 import type { DependencyGraph } from "../domain/graph";
 import type { IndexEntry } from "../port/StorageService";
@@ -44,6 +44,8 @@ export interface ImpactOutput {
   readonly relPath: string;
   readonly alphaStruct: number;
   readonly deltaI: number;
+  /** Σ λ_ast × branchMagnitude（report-only 规模参照分母）；非生产文件为 0，与 deltaI 口径一致。 */
+  readonly severityBudget: number;
   /** Baseline metric used for this calculation; pending revisions preserve it until sealing. */
   readonly oldEntry: IndexEntry | null;
   readonly writeEntry: Omit<IndexEntry, "path"> & { path: string };
@@ -53,18 +55,9 @@ export interface ImpactOutput {
 
 // ── 辅助 ──
 
-const gCompletionFrom = (reverseEdges: ReadonlyMap<string, readonly string[]>, absPath: string, changedSet: ReadonlySet<string>): number => {
-  const dependents = reverseEdges.get(absPath) ?? [];
-  const changedDeps = dependents.filter(d => changedSet.has(d));
-  const coverage = dependents.length === 0 ? 1.0 : changedDeps.length / dependents.length;
-  return coverage >= 0.9 ? 0.5 : coverage >= 0.5 ? 1.0 : coverage > 0 ? 1.5 : 2.0;
-};
-
-// ── 公开 API ──
-
 /** 计算单个变更文件的冲击量 + D_MR 贡献 + writeEntry（纯函数，无副作用） */
 export const computeFileImpact = (input: ImpactInput): ImpactOutput => {
-  const { ast, graph, inDegrees, reverseEdges, changedSet, nFiles, changeKinds, pathClasses, oldEntry } = input;
+  const { ast, inDegrees, nFiles, changeKinds, pathClasses, oldEntry } = input;
   const absPath = toAbsolute(ast.path);
   const relPath = toRelative(absPath);
   const fileKind = oldEntry?.fileKind ?? classifyFileKindWithPolicy(relPath, input.fileKindRules);
@@ -76,16 +69,16 @@ export const computeFileImpact = (input: ImpactInput): ImpactOutput => {
   const a = alphaStruct({ reach: r, confidence: c, nFiles });
   const inDeg = inDegrees.get(absPath) ?? 0;
   const w = layerWeightOf(absPath, pathClasses);
-  const gC = gCompletionFrom(reverseEdges, absPath, changedSet);
 
   const previousWeightedControlFlow = input.semanticBeforeState === "git"
     ? input.semanticBefore?.weightedBranchTotal ?? 0
     : weightedBranchTotalOf(oldEntry ?? {});
-  const dI = !isProduction ? 0 : computeIPush(changeKinds.map((changeKind) => ({
+  const pushes = changeKinds.map((changeKind) => ({
     changeKind, alphaStruct: a, inDegree: inDeg, layerWeight: w,
-    lambdaJoint: requiresDependentSync(changeKind) ? gC : 1,
     weightedBranchDelta: weightedControlFlow - previousWeightedControlFlow,
-  })));
+  }));
+  const dI = !isProduction ? 0 : computeIPush(pushes);
+  const severityBudget = !isProduction ? 0 : computeSeverityBudget(pushes);
 
   // D_MR: 复用 CRL_state 的局部负担语义；暴露度单独呈现，不混成腐化分数。
   // 冷启动（无 baseline P95 分母）时无法同口径归一化恶化——即使 git before 存在，
@@ -126,7 +119,7 @@ export const computeFileImpact = (input: ImpactInput): ImpactOutput => {
   const writeEntry = projectBaselineEntry({ ast, fileKind, inDegree: inDeg, alphaStruct: a, previous: oldEntry });
 
   return {
-    absPath, relPath, alphaStruct: a, deltaI: dI,
+    absPath, relPath, alphaStruct: a, deltaI: dI, severityBudget,
     oldEntry: oldEntry ?? null,
     writeEntry,
     mrDetail,

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>OpenArch · 源码哲学实践分析报告</title>
+<title>OpenArch · 源码架构与结构分析报告</title>
 <style>
   /* ── Design tokens (validated palette · dataviz skill) ─────────────────── */
   /* categorical dark slots PASS validator on #1a1a19; status colors carry icon+label */
@@ -75,14 +75,14 @@
     position: fixed; top: 18px; right: 22px; z-index: 50;
     display: flex; gap: 8px; align-items: center;
   }
-  .toolbar button {
+  .toolbar button, .toolbar a {
     background: var(--surface-1); color: var(--ink-2);
     border: 1px solid var(--hairline); border-radius: 999px;
     padding: 8px 14px; font-size: 0.8rem; cursor: pointer;
     backdrop-filter: blur(8px); transition: all .2s ease;
-    font-family: inherit;
+    font-family: inherit; text-decoration: none;
   }
-  .toolbar button:hover { color: var(--ink-1); border-color: var(--series-1); }
+  .toolbar button:hover, .toolbar a:hover { color: var(--ink-1); border-color: var(--series-1); }
 
   /* ── Hero ─────────────────────────────────────────────────────────────── */
   header.hero {
@@ -130,6 +130,12 @@
   }
   h2 { font-size: clamp(1.5rem, 3vw, 2.1rem); color: var(--ink-1); font-weight: 700; margin-top: 8px; letter-spacing: -0.01em; }
   .sec-sub { color: var(--ink-3); margin-top: 10px; max-width: 68ch; font-size: 0.96rem; }
+  .part-head h2 { font-size: clamp(1.8rem, 3.6vw, 2.6rem); }
+  .part-head .part-tag {
+    display: inline-block; margin-top: 16px; padding: 5px 14px; border-radius: 999px;
+    font-size: 0.8rem; border: 1px solid rgba(57,135,229,0.4); color: var(--series-1);
+    background: rgba(57,135,229,0.08); font-weight: 600;
+  }
 
   /* ── TL;DR card ───────────────────────────────────────────────────────── */
   .tldr {
@@ -167,8 +173,9 @@
   .stat .bar-track { height: 4px; background: var(--gridline); border-radius: 2px; margin-top: 14px; overflow: hidden; }
   .stat .bar-fill { height: 100%; background: var(--series-1); border-radius: 2px; width: 0; transition: width 1.4s cubic-bezier(.2,.8,.2,1); }
 
-  /* ── Philosophy grid ──────────────────────────────────────────────────── */
+  /* ── Capability / metric cards ────────────────────────────────────────── */
   .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .phil-card {
     background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 12px;
     padding: 24px; position: relative; transition: border-color .25s ease;
@@ -179,11 +186,16 @@
   }
   .phil-card h3 { color: var(--ink-1); font-size: 1.08rem; margin: 8px 0 10px; font-weight: 700; }
   .phil-card p { font-size: 0.9rem; color: var(--ink-2); }
+  .phil-card .formula {
+    display: block; margin-top: 10px; padding: 8px 12px; border-radius: 8px;
+    background: var(--surface-2); border: 1px solid var(--hairline);
+    font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 0.78rem; color: var(--series-1);
+  }
 
-  /* ── Score chart (canvas) ─────────────────────────────────────────────── */
+  /* ── Chart cards (canvas) ─────────────────────────────────────────────── */
   .chart-card {
     background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 14px;
-    padding: 28px 24px 18px;
+    padding: 28px 24px 18px; position: relative;
   }
   .chart-legend {
     display: flex; gap: 18px; flex-wrap: wrap; font-size: 0.8rem; color: var(--ink-3);
@@ -191,39 +203,19 @@
   }
   .chart-legend .key { display: inline-flex; align-items: center; gap: 7px; }
   .chart-legend .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
-  #scoreChart { width: 100%; height: 420px; display: block; }
-  #scoreTip {
+  #archCanvas { width: 100%; height: 460px; display: block; }
+  #burdenCanvas { width: 100%; height: 216px; display: block; }
+  #scatterCanvas { width: 100%; height: 330px; display: block; }
+  #loopCanvas { width: 100%; height: 300px; display: block; }
+  #logCanvas { width: 100%; height: 250px; display: block; }
+  #archTip, #scatterTip {
     position: absolute; pointer-events: none; opacity: 0; transition: opacity .15s ease;
     background: var(--surface-2); border: 1px solid var(--series-1); color: var(--ink-1);
-    padding: 8px 12px; border-radius: 8px; font-size: 0.82rem; max-width: 260px;
+    padding: 8px 12px; border-radius: 8px; font-size: 0.82rem; max-width: 280px;
     box-shadow: 0 8px 30px rgba(0,0,0,.4); z-index: 20;
   }
 
-  /* ── Checkup cards ────────────────────────────────────────────────────── */
-  .check-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
-  .chk {
-    background: var(--surface-1); border: 1px solid var(--hairline); border-left: 3px solid var(--ink-3);
-    border-radius: 10px; padding: 20px 22px; transition: transform .2s ease;
-  }
-  .chk:hover { transform: translateY(-2px); }
-  .chk.pass { border-left-color: var(--good); }
-  .chk.warn { border-left-color: var(--warning); }
-  .chk.minor { border-left-color: var(--series-3); }
-  .chk-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-  .chk-icon {
-    width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center;
-    font-size: 0.8rem; font-weight: 800; flex-shrink: 0;
-  }
-  .chk.pass .chk-icon { background: rgba(12,163,12,0.16); color: var(--good); }
-  .chk.warn .chk-icon { background: rgba(250,178,25,0.16); color: var(--warning); }
-  .chk.minor .chk-icon { background: rgba(25,158,112,0.16); color: var(--series-3); }
-  .chk h4 { color: var(--ink-1); font-size: 0.98rem; font-weight: 600; }
-  .chk .tag { margin-left: auto; font-size: 0.68rem; padding: 2px 8px; border-radius: 999px; color: var(--ink-3); border: 1px solid var(--hairline); }
-  .chk p { font-size: 0.875rem; color: var(--ink-2); margin-top: 4px; }
-  .chk .ev { margin-top: 10px; font-size: 0.76rem; color: var(--ink-3); font-family: ui-monospace, "SF Mono", Consolas, monospace; word-break: break-word; }
-
-  /* ── Fail-closed defense line ─────────────────────────────────────────── */
-  #guardRail { width: 100%; height: 70px; display: block; }
+  /* ── Loop step cards ──────────────────────────────────────────────────── */
   .guard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: 10px; margin-top: 24px; }
   .guard {
     background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 9px;
@@ -263,18 +255,14 @@
   .tension .verdict-line { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--hairline); font-size: 0.84rem; color: var(--ink-3); }
   .tension .verdict-line b { color: var(--ink-2); }
 
-  /* ── Verdict table ────────────────────────────────────────────────────── */
+  /* ── Layer / theory table ─────────────────────────────────────────────── */
   .vtable { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
   .vtable th, .vtable td { text-align: left; padding: 13px 14px; border-bottom: 1px solid var(--hairline); }
   .vtable th { color: var(--ink-3); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }
   .vtable td { color: var(--ink-2); }
   .vtable td.dim { color: var(--ink-1); font-weight: 600; }
-  .vtable td .badge {
-    display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.74rem; font-weight: 600;
-  }
-  .b-vhigh { background: rgba(12,163,12,0.16); color: var(--good); }
-  .b-high  { background: rgba(57,135,229,0.16); color: var(--series-1); }
-  .b-mid   { background: rgba(250,178,25,0.16); color: var(--warning); }
+  .vtable td .num { font-variant-numeric: tabular-nums; color: var(--ink-1); font-weight: 700; }
+  .vtable td code { color: var(--series-1); font-family: ui-monospace, monospace; font-size: 0.78rem; }
   .vtable-wrap { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 12px; overflow: hidden; }
 
   /* ── Footer ───────────────────────────────────────────────────────────── */
@@ -287,6 +275,11 @@
   footer .note code { color: var(--series-1); font-family: ui-monospace, monospace; }
   .copy { margin-top: 26px; font-size: 0.78rem; color: var(--ink-3); }
 
+  /* ── Scroll reveal (site idiom) ───────────────────────────────────────── */
+  .wrap > section { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s ease; }
+  .wrap > section.in { opacity: 1; transform: none; }
+
+  @media (max-width: 860px) { .grid-2 { grid-template-columns: 1fr; } }
   @media (max-width: 720px) {
     .toolbar { top: 12px; right: 12px; }
     .diverge { grid-template-columns: 1fr; }
@@ -294,6 +287,7 @@
   }
   @media (prefers-reduced-motion: reduce) {
     * { animation: none !important; transition: none !important; }
+    .wrap > section { opacity: 1 !important; transform: none !important; }
   }
 </style>
 </head>
@@ -301,6 +295,7 @@
 <canvas id="bg"></canvas>
 
 <div class="toolbar">
+  <a href="openarch-usage-guide.html">📖 使用手册</a>
   <button id="themeBtn" aria-label="切换主题">🌙 深色</button>
 </div>
 
@@ -308,19 +303,20 @@
 
   <!-- ───────────────────────── HERO ───────────────────────── -->
   <header class="hero">
-    <span class="eyebrow">源码哲学实践分析 · Source Audit</span>
-    <h1 class="title">OpenArch 是否<span class="accent">践行了</span>它自己的哲学？</h1>
+    <span class="eyebrow">源码架构与结构分析 · Source &amp; Structure</span>
+    <h1 class="title">解剖一条<span class="accent">防线</span>：源码与功能</h1>
     <p class="lede">
-      一份基于源码逐行核对的评估报告。用 OpenArch 自己的标准审视 OpenArch 自己的源码——
-      信息论度量、fail-closed 门禁、确定性、测试治理、以及最关键的：用它自己治理它自己。
+      把 OpenArch 拆开看：<strong style="color:var(--ink-1)">源码部分</strong>解剖 39,525 行产品代码的分层骨架与结构信号，
+      <strong style="color:var(--ink-1)">功能部分</strong>清点命令面、机器契约、脚本引擎与治理闭环如何互相咬合。
+      每个数字都来自本仓库 <code style="color:var(--series-1)">openarch</code> 自审与 Git 统计——不是估算，可复现。
     </p>
     <div class="hero-meta">
-      <span><b>对象</b> · openarch@0.1.0（core 20,327 行 TS）</span>
-      <span><b>方法</b> · 源码核对 + openarch context/review 自审</span>
-      <span><b>结论</b> · 言行高度一致，2 处可挑剔张力</span>
+      <span><b>对象</b> · openarch@0.1.2 · HEAD 5de9f725（2026-08-16 快照）</span>
+      <span><b>方法</b> · openarch context / review + git ls-files 逐层统计</span>
+      <span><b>结构</b> · 源码（分层 · 信号）＋ 功能（全景 · 闭环 · 指标 · 理论）</span>
     </div>
     <div class="hero-quote">
-      "没有调查，没有发言权。"<cite>—— OpenArch SKILL.md 引《反对本本主义》，也是本报告遵循的方法</cite>
+      "没有调查，没有发言权。"<cite>—— 《反对本本主义》，也是本报告的方法：先取事实，再作判断</cite>
     </div>
   </header>
 
@@ -329,13 +325,12 @@
     <div class="sec-head"><span class="sec-num">概览</span></div>
     <div class="tldr">
       <p>
-        <span class="pill">言行一致</span>
-        这是我见过的少数把哲学主张<strong style="color:var(--ink-1)">真的编码进源码与自身配置</strong>的治理框架。
-        在与自身立场强相关的点上——fail-closed、确定性、分层、测试治理、用自己治理自己——它做到了"较真"的程度：
-        <strong style="color:var(--ink-1)">11 道 fail-closed 守卫</strong>、用自己的工具审查自己的源码、
-        把自己超阈值的几个大文件<strong style="color:var(--ink-1)">如实暴露</strong>出来而非掩饰。
-        可挑剔的张力集中在两处：度量权重的可审计性不足，以及它把自己几个超阈的大文件列为技术债却选择不强制消除——
-        而后者，恰恰也是它哲学的一部分。
+        <span class="pill">双轨解剖</span>
+        源码侧是一条以 <strong style="color:var(--ink-1)">3,378 行纯函数 domain 为圆心</strong>的六边形防线——
+        9 个可替换端口向外展开成 application（6,920 行）与 adapter（5,594 行），ESLint 锁死"adapter 不依赖 application"的边界；
+        功能侧由 <strong style="color:var(--ink-1)">15 个命令、4 份机器契约、3 个脚本引擎</strong>咬合成一条
+        "调查 → 防线 → 回扫 → 修复/校准 → 验证 → 沉淀"的治理闭环。
+        两轨在指标罗盘上会合：状态是基线，变化是信号。全部数值取自 HEAD 快照，重跑命令即得现势结论。
       </p>
     </div>
   </section>
@@ -343,222 +338,279 @@
   <!-- ───────────────────────── KPI ─────────────────────────── -->
   <section id="stats">
     <div class="sec-head">
-      <span class="sec-num">01 · 自审实测</span>
-      <h2>用 openarch 跑自己，得到的关键事实</h2>
-      <p class="sec-sub">以下数字来自 <code style="color:var(--series-1)">openarch context</code> 与 <code style="color:var(--series-1)">openarch review</code> 对本仓库的真实裁决，不是估算。</p>
+      <span class="sec-num">01 · 总体画像</span>
+      <h2>用 openarch 跑自己，先拿到事实</h2>
+      <p class="sec-sub">来自 <code style="color:var(--series-1)">openarch context / review</code> 的真实裁决与 <code style="color:var(--series-1)">git ls-files</code> 统计（口径：tracked 的 .ts/.tsx/.go/.js/.mjs）。</p>
     </div>
     <div class="kpi-row" id="kpiRow"></div>
   </section>
 
-  <!-- ───────────────────────── PHILOSOPHY ──────────────────── -->
-  <section id="philosophy">
-    <div class="sec-head">
-      <span class="sec-num">02 · 它的哲学</span>
-      <h2>六条核心主张</h2>
-      <p class="sec-sub">提炼自 README 与 SKILL.md。后面的核对就是逐一验证源码是否兑现。</p>
-    </div>
-    <div class="grid-3" id="philGrid"></div>
+  <!-- ═══════════════════ PART Ⅰ · 源码 ═══════════════════ -->
+  <section id="part1" class="part-head">
+    <span class="sec-num">PART Ⅰ · 源码</span>
+    <h2>一条防线的<span style="background:linear-gradient(110deg,var(--series-1),var(--series-3));-webkit-background-clip:text;background-clip:text;color:transparent">骨架</span></h2>
+    <p class="sec-sub">分层是防腐的第一道结构防线：核心纯函数、合同可替换、边界由工具强制，而不是靠约定。</p>
+    <span class="part-tag">02 分层架构 · 03 结构信号</span>
   </section>
 
-  <!-- ───────────────────────── SCORE CHART ─────────────────── -->
-  <section id="scores">
+  <!-- ───────────────────────── ARCHITECTURE ───────────────── -->
+  <section id="arch">
     <div class="sec-head">
-      <span class="sec-num">03 · 实践程度</span>
-      <h2>八维度评分</h2>
-      <p class="sec-sub">本项目在八个维度上的实践强度，由高到低排列。悬停可见每项依据。</p>
+      <span class="sec-num">02 · 分层架构（源码）</span>
+      <h2>以纯函数为圆心的六边形</h2>
+      <p class="sec-sub">
+        依赖方向向内：CLI 与引擎子系统经 application 编排，application 只消费 port 合同，adapter 实现 port 并被 ESLint 禁止反向依赖 application。
+        光点沿辐条向圆心流动即依赖方向。悬停每一环查看职责与边界。
+      </p>
     </div>
-    <div class="chart-card" style="position:relative">
+    <div class="chart-card">
       <div class="chart-legend">
-        <span class="key"><span class="dot" style="background:var(--series-1)"></span>实践强度（0–100）</span>
-        <span class="key"><span class="dot" style="background:var(--good)"></span>达标线（≥85 = 高）</span>
+        <span class="key"><span class="dot" style="background:var(--series-3)"></span>domain · 纯函数核心 3,378 行</span>
+        <span class="key"><span class="dot" style="background:var(--series-1)"></span>port ×9 / application / adapter</span>
+        <span class="key"><span class="dot" style="background:var(--series-2)"></span>外部消费者（cli · plugin · Go 服务）</span>
         <span style="margin-left:auto">悬停查看依据 →</span>
       </div>
-      <canvas id="scoreChart"></canvas>
-      <div id="scoreTip"></div>
+      <canvas id="archCanvas" role="img" aria-label="OpenArch 分层架构图：domain 纯函数核心居中，port、application、adapter 依次向外，CLI、插件与 Go 协调服务作为外部消费者"></canvas>
+      <div id="archTip"></div>
+    </div>
+    <div class="vtable-wrap" style="margin-top:16px">
+      <table class="vtable">
+        <thead><tr><th>层 / 组件</th><th>行数</th><th>职责</th><th>边界规则</th></tr></thead>
+        <tbody id="layerBody"></tbody>
+      </table>
     </div>
   </section>
 
-  <!-- ───────────────────────── CHECKUP ─────────────────────── -->
-  <section id="checkup">
+  <!-- ───────────────────────── STRUCTURE SIGNALS ──────────── -->
+  <section id="signals">
     <div class="sec-head">
-      <span class="sec-num">04 · 逐条核对</span>
-      <h2>哲学主张 → 源码证据</h2>
-      <p class="sec-sub">每条配可追溯的 file:line。✅ 兑现 · ⚠️ 张力 · ◆ 小点。</p>
-    </div>
-    <div class="check-grid" id="checkGrid"></div>
-  </section>
-
-  <!-- ───────────────────────── FAIL-CLOSED ─────────────────── -->
-  <section id="failclosed">
-    <div class="sec-head">
-      <span class="sec-num">05 · Fail-closed 防线</span>
-      <h2>11 道守卫 + 1 兜底</h2>
+      <span class="sec-num">03 · 结构信号（源码）</span>
+      <h2>高负担文件与契约候选</h2>
       <p class="sec-sub">
-        一次子调查曾把 <code style="color:var(--series-1)">gate.ts</code> 的"默认 PASS"误判为 fail-closed 缺陷。
-        实际上：gate.ts 是规则求值器（规则未触发=PASS 语义正确），真正负责 fail-closed 的是上层 gateApp——
-        它在进入求值<b style="color:var(--ink-1)">之前</b>就拦下了这些情况，全部返回 <code style="color:var(--series-1)">UNAVAILABLE (exit 3)</code>。
+        两类 report-only 信号，全部来自 <code style="color:var(--series-1)">openarch review</code> 的真实输出：
+        结构候选解释指标策略（不自动形成 finding），定义面信号圈出"声明密集 + 规模大"的契约候选。
+        架构门禁 PASS（13 条规则未触发）——信号是调查线索，不是判罪。
       </p>
     </div>
-    <div class="chart-card" style="padding:14px 0 4px">
-      <canvas id="guardRail"></canvas>
+    <div class="grid-2">
+      <div class="chart-card">
+        <div class="chart-legend">
+          <span class="key"><span class="dot" style="background:var(--series-1)"></span>局部负担（0–1，P95 归一化）</span>
+        </div>
+        <canvas id="burdenCanvas" role="img" aria-label="Top-3 局部负担文件条形图：docs.ts 0.635、discover.ts 0.635、extensions.ts 0.627"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-legend">
+          <span class="key"><span class="dot" style="background:var(--series-1)"></span>core</span>
+          <span class="key"><span class="dot" style="background:var(--series-2)"></span>cli</span>
+          <span class="key"><span class="dot" style="background:var(--series-3)"></span>plugin</span>
+          <span style="margin-left:auto">点径 ∝ loc · 悬停查看 →</span>
+        </div>
+        <canvas id="scatterCanvas" role="img" aria-label="定义面信号散点图：九个契约候选的声明数与行数分布"></canvas>
+        <div id="scatterTip"></div>
+      </div>
     </div>
-    <div class="guard-grid" id="guardGrid"></div>
-  </section>
 
-  <!-- ───────────────────────── TENSIONS ────────────────────── -->
-  <section id="tensions">
-    <div class="sec-head">
-      <span class="sec-num">06 · 诚实的张力</span>
-      <h2>两处可挑剔点（diverging）</h2>
-      <p class="sec-sub">用"主张 ↔ 实现"的分歧视角呈现。这两点不是"言行不一"，更像是哲学在自身代码上的诚实留白。</p>
-    </div>
-
-    <div class="tension">
-      <h3>张力 1 · 度量权重缺推导依据 <span class="sev">中</span></h3>
+    <div class="tension" style="margin-top:24px">
+      <h3>结构债 · 显式标注，而非强制消除 <span class="sev">低</span></h3>
       <div class="diverge">
-        <div class="pole claim"><small>哲学主张</small>零硬编码 + 可审计：每个判定都应可追溯、可校验</div>
+        <div class="pole claim"><small>哲学主张</small>腐化会回流，防线按主要矛盾渐进建立，不追求一次全绿</div>
         <div class="mid">↔</div>
-        <div class="pole reality"><small>实际实现</small>LAMBDA_AST 等权重只标"design §7.2"，无推导公式或校准实验</div>
+        <div class="pole reality"><small>审查事实</small>Top-3 高负担文件持续上榜（历史负载 258.7 / 164.9 / 77.5），门禁仍 PASS</div>
       </div>
       <p class="body">
-        <b style="color:var(--ink-1)">厘清一个概念</b>：这不违反"零硬编码<b>阈值</b>"（threshold 由 P95 校准，成立）——
-        LAMBDA_AST 是模型 <b>weight</b>，属主观建模。但哲学要求"可审计"，而"权重来自某设计文档某节"只是可追溯、不是可校验。
-        这是<b>哲学内部的小不一致</b>：它对项目代码要求的校准严格度，高于它对自己核心公式的严格度。
+        这三个文件是命令与编排层的成熟大文件（<code style="color:var(--series-1)">docs.ts</code> · <code style="color:var(--series-1)">discover.ts</code> · <code style="color:var(--series-1)">extensions.ts</code>）。
+        review 如实列出而不掩饰；项目把治理精力投给主要矛盾（契约面、事实注册表），把成熟大文件标注为技术债。
+        这正是"战壕"哲学的落地：防线跟着主要矛盾走，而不是四处灭火。
       </p>
-      <div class="verdict-line"><b>证据</b> · <code style="color:var(--series-1)">domain/weights.ts</code> LAMBDA_AST 表 · <code style="color:var(--series-1)">domain/crlState.ts</code> 六维权重 · <code style="color:var(--series-1)">domain/confidence.ts:21</code></div>
-    </div>
-
-    <div class="tension">
-      <h3>张力 2 · 自己的指标超了自己的 WARN 阈值，却 PASS <span class="sev">低</span></h3>
-      <div class="diverge">
-        <div class="pole claim"><small>哲学主张</small>enforce 门禁：超阈即 WARN/BLOCK</small></div>
-        <div class="mid">↔</div>
-        <div class="pole reality"><small>实际实现</small>diff.ts=0.656 &gt; application 阈值 0.65，但 review 报 PASS</small></div>
-      </div>
-      <p class="body">
-        这<b>不算 bug</b>：<code style="color:var(--series-1)">review</code> 标题就叫"治理复盘（仅报告）"，裁决交给 <code style="color:var(--series-1)">check --staged</code>。
-        但它暴露一个真实选择：项目把这几个大文件作为<b style="color:var(--ink-1)">显式技术债标注，而非强制消除</b>——
-        既符合红军哲学（"腐化会回流，不追求一次全绿"），也可被批评为"自己定的规矩自己破例"。至少它没有藏。
-      </p>
-      <div class="verdict-line"><b>证据</b> · <code style="color:var(--series-1)">cli/src/commands/diff.ts</code> crl_local=0.656 · <code style="color:var(--series-1)">.openarch/config.yml</code> application 阈值 0.65 · review 输出"架构门禁: PASS"</div>
+      <div class="verdict-line"><b>证据</b> · <code style="color:var(--series-1)">openarch review</code> 结构候选 Top-3 · <code style="color:var(--series-1)">.openarch/config.yml</code> 13 条已声明规则（typescript-js 与 go-coordination 双总体，校准=sealed）</div>
     </div>
   </section>
 
-  <!-- ───────────────────────── VERDICT ─────────────────────── -->
-  <section id="verdict">
+  <!-- ═══════════════════ PART Ⅱ · 功能 ═══════════════════ -->
+  <section id="part2" class="part-head">
+    <span class="sec-num">PART Ⅱ · 功能</span>
+    <h2>防线如何<span style="background:linear-gradient(110deg,var(--series-1),var(--series-3));-webkit-background-clip:text;background-clip:text;color:transparent">运转</span></h2>
+    <p class="sec-sub">功能不是功能清单的堆叠，而是闭环：命令采集事实，契约固定边界，脚本重建防线，指标路由验证强度。</p>
+    <span class="part-tag">04 功能全景 · 05 治理闭环 · 06 指标罗盘 · 07 理论落点</span>
+  </section>
+
+  <!-- ───────────────────────── CAPABILITY MAP ─────────────── -->
+  <section id="caps">
     <div class="sec-head">
-      <span class="sec-num">07 · 总评</span>
-      <h2>维度裁定</h2>
+      <span class="sec-num">04 · 功能全景（功能）</span>
+      <h2>八个位面的能力清点</h2>
+      <p class="sec-sub">每一项都对应可执行的命令与可复核的合同——没有一项是"规划中"。</p>
+    </div>
+    <div class="grid-3" id="capGrid"></div>
+  </section>
+
+  <!-- ───────────────────────── GOVERNANCE LOOP ────────────── -->
+  <section id="loop">
+    <div class="sec-head">
+      <span class="sec-num">05 · 治理闭环（功能）</span>
+      <h2>六步一环，防线廉价可重建</h2>
+      <p class="sec-sub">
+        这是 Skill 宪法里的最小闭环：每一步都有确定的命令入口与停止条件；
+        沉淀的经验回流为新一轮调查的输入——环闭合，腐化才不会在防线外绕行。
+      </p>
+    </div>
+    <div class="chart-card" style="padding:20px 24px 8px">
+      <canvas id="loopCanvas" role="img" aria-label="治理闭环环图：调查、防线、回扫、修复校准、验证、沉淀六步循环"></canvas>
+    </div>
+    <div class="guard-grid" id="loopGrid"></div>
+  </section>
+
+  <!-- ───────────────────────── METRIC COMPASS ─────────────── -->
+  <section id="metrics">
+    <div class="sec-head">
+      <span class="sec-num">06 · 指标罗盘（功能）</span>
+      <h2>状态是基线，变化是信号</h2>
+      <p class="sec-sub">三个指标各管一段：I_push 度量"这次改动推动多大的浪"，CRL_state 度量"现在哪里负担最重"，D_MR 度量"这次变更让负担变好还是变坏"。对数压缩让极端值不主导判断。</p>
+    </div>
+    <div class="grid-3" id="metricGrid"></div>
+    <div class="chart-card" style="margin-top:16px">
+      <div class="chart-legend">
+        <span class="key"><span class="dot" style="background:var(--series-2)"></span>线性计数 n（归一化）</span>
+        <span class="key"><span class="dot" style="background:var(--series-1)"></span>log₂(n+1) 压缩后</span>
+        <span style="margin-left:auto">信息论落地：inDegree 1 → 128 的压缩对比</span>
+      </div>
+      <canvas id="logCanvas" role="img" aria-label="对数压缩示意：入度从 1 到 128 时线性计数与对数压缩的对比条形图"></canvas>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── THEORY MAPPING ─────────────── -->
+  <section id="theory">
+    <div class="sec-head">
+      <span class="sec-num">07 · 理论落点</span>
+      <h2>三大理论 → 源码与功能证据</h2>
+      <p class="sec-sub">哲学不写在标语里，写在可复核的载体上：每条理论都能指到命令、公式或防线。</p>
     </div>
     <div class="vtable-wrap">
       <table class="vtable">
-        <thead><tr><th>维度</th><th>实践程度</th><th>说明</th></tr></thead>
-        <tbody id="verdictBody"></tbody>
+        <thead><tr><th>理论</th><th>实现载体</th><th>证据</th></tr></thead>
+        <tbody id="theoryBody"></tbody>
       </table>
     </div>
   </section>
 
   <!-- ───────────────────────── FOOTER ──────────────────────── -->
   <footer>
-    <p class="copy">OpenArch 源码哲学实践分析报告 · 基于源码逐行核对与 openarch context/review 自审生成</p>
+    <div class="note">
+      <b>方法与复现</b><br/>
+      本页全部数值为 <b>openarch@0.1.2 · HEAD 5de9f725（2026-08-16）</b>快照：
+      门禁/信号来自 <code>pnpm openarch context</code> 与 <code>pnpm openarch review</code>；
+      行数统计来自 <code>git ls-files</code>（口径：tracked 的 .ts/.tsx/.go/.js/.mjs，core 23,254 · cli 5,060 · plugin 3,925 · Go 服务 7,286）。
+      结构信号随演进变化——在任意 revision 重跑同一组命令，即可得到该时点的现势结论：
+      <code>git checkout &lt;rev&gt; && pnpm openarch review</code>。
+    </div>
+    <p class="copy">OpenArch 源码架构与结构分析报告 · 基于 openarch 自审与 Git 统计生成 · 上一版：源码哲学实践分析（已由本页取代）</p>
   </footer>
 
 </div>
 
 <script>
-/* ════════════════════════ DATA ════════════════════════ */
+/* ════════════════════════ DATA (HEAD 5de9f725 snapshot) ════════════════════════ */
 const KPI = [
-  { v: 535,  u: '', l: '基线扫描文件', p: 100 },
-  { v: 14,   u: '条', l: '已声明架构规则', p: 78 },
-  { v: 11,   u: '道', l: 'fail-closed 守卫', p: 92 },
-  { v: 168,  u: '', l: '测试文件（全处理）', p: 100 },
-  { v: 320,  u: '', l: '门禁评估生产文件', p: 88 },
-  { v: 0,    u: '', l: '反模式 finding（自审）', p: 100 },
+  { v: 39525, u: '', l: '产品源码行（TS · Go · JS）', p: 100 },
+  { v: 369,   u: '', l: '门禁评估生产文件 · 13 规则 PASS', p: 72 },
+  { v: 198,   u: '', l: '测试文件 · provider 全处理（AVAILABLE）', p: 100 },
+  { v: 18329, u: '', l: 'TS 测试行（177 个 .test.ts）', p: 46 },
+  { v: 0,     u: '', l: '反模式 finding（17 规则执行）', p: 100 },
+  { v: 3378,  u: '', l: 'domain 纯函数核心（行）', p: 15 },
 ];
 
-const PHIL = [
-  { n: '01', t: '腐化是熵，不是 bug', d: '防线必须"廉价可重建"，不追求一次全绿。是战壕，不是一次建好的墙。' },
-  { n: '02', t: '信息论底座', d: '对数压缩避免极端值主导；状态=基线 / 变化=信号；保留不确定性。' },
-  { n: '03', t: '零硬编码阈值', d: '判定阈值由项目自身 P95 分布校准，而非通用假设。' },
-  { n: '04', t: '本地·确定·可审计', d: '门禁里没有 LLM，靠 tree-sitter / 编译器 / LSP 本地符号级分析。' },
-  { n: '05', t: 'Fail-closed', d: '证据缺失/模糊 → PARTIAL / UNAVAILABLE，绝不假装 clean。' },
-  { n: '06', t: 'Skill 是真 playbook', d: '同一套方法论跨 5 个 Agent 平台，agent 真正会读、能就地重建。' },
+const LAYERS = [
+  { key: 'domain', name: 'domain', lines: 3378,
+    role: '度量、依赖图、公式与规则语义——纯函数，无 IO、无进程、无时间',
+    bound: '被所有层依赖，不依赖任何层；变更即高 I_push（层权重最高）' },
+  { key: 'port', name: 'port ×9', lines: 357,
+    role: '可替换合同：Storage · Parser · Rule · Lock · SymbolUse · SemanticRelation · SemanticToolchain · ScanProgress · SymbolCalibration',
+    bound: '实现可整体替换；application 只消费合同，不触达实现' },
+  { key: 'application', name: 'application', lines: 6920,
+    role: 'scan / check / review / gate / docs 用例编排；治理写锁串行化共享状态',
+    bound: '读 durable 基线只经 StorageService 端口（no-direct-baseline-storage 项目防线）' },
+  { key: 'adapter', name: 'adapter', lines: 5594,
+    role: 'tree-sitter 五语言策略 · LSP session · JSON 存储 · CEL 求值器',
+    bound: 'ESLint 强制：adapter 不得依赖 application' },
+  { key: 'engines', name: '引擎子系统（core 根级）', lines: 7005,
+    role: 'script-runtime · staged-analysis · test-governance · symbol-use · implicit-deps · anti-patterns · document-store',
+    bound: '共享 ProjectFacts v2 快照；项目脚本只经公开扩展点消费事实' },
+  { key: 'cli', name: 'cli', lines: 5060,
+    role: '15 命令路由 · 双语 i18n · 报告渲染',
+    bound: 'bundledDependencies 只携带 core 一个内部依赖' },
+  { key: 'plugin', name: 'openarch-plugin', lines: 3925,
+    role: 'Skill 资产镜像 · DSH 插件 · 用户级 installer',
+    bound: '8 棵镜像树由 pluginSkillSync 合同测试锁定，不手工分叉' },
+  { key: 'go', name: 'coordination（Go）', lines: 7286,
+    role: 'task / lease / evidence 协调服务（可选远端）',
+    bound: '显式 --coordination-url 才启用；未配置时远程操作 UNAVAILABLE' },
 ];
 
-const SCORES = [
-  { dim: 'Dogfood 自治理',        score: 97, grade: '极高', note: 'config.yml 用 OpenArch 治理 OpenArch：自报 authority 边界、自检生产代码必须纳入 gate、自带校准日期。最强一致性证据。' },
-  { dim: 'Fail-closed 门禁',      score: 96, grade: '很高', note: 'gateApp 在求值前拦 11 道守卫，连"配置不完备"（多语言无策略/策略歧义/无 sealed 校准）都 UNAVAILABLE。' },
-  { dim: '确定性·本地·无 LLM',    score: 94, grade: '高',   note: '手写 CEL 子集求值器 + tree-sitter，gate 路径零 LLM/HTTP/随机/时间判断，完全可复现。' },
-  { dim: '测试治理·反 TEST_BLOAT', score: 92, grade: '高',   note: 'MinHash + LSH band 工业级实现；自身 168 个测试无 skip/only、无巨型测试、断言完整。' },
-  { dim: '分层架构',              score: 90, grade: '高',   note: 'domain/application/port/adapter 六边形；config 给各层赋 I_push 权重（domain 1.3 / parser 0.8），把架构判断编码成可校准因子。' },
-  { dim: '信息论度量',            score: 88, grade: '高',   note: 'log₂(inDegree+1) reach 压缩、P95 线性插值归一化（非 max，避免 outlier 主导）、crl_local ∈ [0,1]。' },
-  { dim: '零硬编码阈值',          score: 85, grade: '高',   note: 'threshold 由 policy 级 P95 校准驱动（typescript-js / go-coordination 分别校准）；每条规则带校准日期与理由。' },
-  { dim: '度量权重可审计性',      score: 62, grade: '中',   note: 'LAMBDA_AST / 六维权重只标 design §7.2，无推导或校准实验——可追溯但不可校验（张力 1）。' },
+const BURDEN = [
+  { f: 'cli/commands/docs.ts',        v: 0.635, exp: 0.101, shape: 0.357, hist: 77.5 },
+  { f: 'core/application/discover.ts', v: 0.635, exp: 0.147, shape: 0.732, hist: 258.7 },
+  { f: 'cli/commands/extensions.ts',  v: 0.627, exp: 0.160, shape: 0.607, hist: 164.9 },
 ];
 
-const CHECKS = [
-  { type:'pass', icon:'✓', tag:'兑现', h:'信息论度量——真做了，且贯彻',
-    p:'对数压缩 + P95 归一化贯穿。reach 用 log₂(inDegree+1) 防 log(0)；P95 注释直言"避免 outlier 主导归一化分母"。',
-    ev:'domain/i-push.ts:21 · domain/p95.ts:6-13 · domain/crlState.ts:64 (safeDiv 上限 1)' },
-  { type:'pass', icon:'✓', tag:'兑现', h:'零硬编码"阈值"——成立',
-    p:'判定阈值由 P95 校准驱动；语言级校准通过 policy 维度实现（TS/JS 与 Go 各自 P95），非裸 language。最初子调查误判"未落地"，因没看到 gateApp 的 policy→P95 路由。',
-    ev:'application/governance/gateApp.ts:163-167 · .openarch/config.yml:59-61' },
-  { type:'pass', icon:'✓', tag:'兑现', h:'确定性门禁——无 LLM、本地、可审计',
-    p:'裁决是纯函数；规则引擎是手写 CEL 子集求值器（tokenizer + 递归下降 + 查表比较），零外部依赖。整个 gate 路径无任何 LLM/网络/随机/时间判断。',
-    ev:'application/governance/gate.ts:59-73 · adapter/rule/CelAdapter.ts' },
-  { type:'pass', icon:'✓', tag:'兑现', h:'Fail-closed——比一般工具更严格',
-    p:'gate.ts 是规则求值器（规则未触发=PASS 语义正确）；上层 gateApp 在求值前拦 11 道守卫，全部 UNAVAILABLE (exit 3)。连配置不完备都 fail-closed。',
-    ev:'application/governance/gateApp.ts:113,117,120,133,141,168,189' },
-  { type:'pass', icon:'✓', tag:'兑现', h:'测试治理 + 反 TEST_BLOAT——工业级，自身达标',
-    p:'focused_test / unapproved_skip / missing_assertion 全是确定性 AST 查询；TEST_BLOAT 是真 MinHash + LSH band（块窗口 8、阈值 0.6）。自身 168 测试无 skip、无巨型、断言完整。',
-    ev:'test-governance/providers/vitest.ts · application/testBloatMetrics.ts:65-107' },
-  { type:'pass', icon:'✓', tag:'兑现', h:'用自己治理自己（Dogfood）——全场最佳',
-    p:'config.yml 本质是"用 OpenArch 治理 OpenArch"：声明自己的 authority 边界（staged-script-execution 禁 node:fs）、强制把 CLI 入口与 Go service 纳入 gate。review 诚实地列出自己 Top-3 高负担文件，没藏。',
-    ev:'.openarch/config.yml · staged-analysis/staticImports.ts ("The sole projection") · openarch review 实测' },
-  { type:'pass', icon:'✓', tag:'兑现', h:'分层架构——端口/适配器，且编码进配置',
-    p:'domain/application/port/adapter 六边形；config 给各层赋 I_push 权重并注明理由（domain 纯函数变更更危险 / parser 天然复杂）。',
-    ev:'.openarch/config.yml:43-57 · packages/core/src/{domain,application,port,adapter}' },
-  { type:'warn', icon:'!', tag:'张力', h:'度量权重缺乏推导依据',
-    p:'LAMBDA_AST（100/80/60/…）、六维权重、confidence 的 0.3 只标"design §7.2"章节号，无推导或校准。是模型 weight 非 threshold，不违反"零阈值"，但未达"可审计"自检标准。',
-    ev:'domain/weights.ts · domain/crlState.ts:25-27 · domain/confidence.ts:20-21' },
-  { type:'warn', icon:'!', tag:'张力', h:'自己的指标超了自己的 WARN 阈值，却 PASS',
-    p:'review 显示 diff.ts=0.656 / discover.ts=0.644 / scan.ts=0.633，application 层阈值为 0.65。diff.ts 超阈但 review=PASS。因 review 是"仅报告"模式，裁决交 check --staged——是设计选择（标注而非消除），非 bug。',
-    ev:'cli/src/commands/diff.ts · .openarch/config.yml:82 (application crl_local>0.65)' },
-  { type:'minor', icon:'◆', tag:'小点', h:'Verdict 枚举术语粒度',
-    p:'GateVerdict 只有 PASS/WARN/BLOCK，UNAVAILABLE 在 gateApp 层加，缺独立 PARTIAL（细分成了 11 个 reason 字符串）。功能够用，与 SKILL.md 把 PARTIAL/UNAVAILABLE 并列为"事实边界"的措辞略有出入。吹毛求疵级别。',
-    ev:'application/governance/gate.ts:19 · gateApp.ts:42' },
+const DEFFACE = [
+  { f: 'script-runtime/projectFactsContract.ts', pkg: 'core',   decl: 134, loc: 247 },
+  { f: 'adapter/symbol-use/LspSymbolUse.ts',     pkg: 'core',   decl: 124, loc: 410 },
+  { f: 'coordination/CoordinationClient.ts',     pkg: 'core',   decl: 107, loc: 405 },
+  { f: 'cli/report/testReport.ts',               pkg: 'cli',    decl: 99,  loc: 304 },
+  { f: 'dsh/client/openarch-dashboard.mjs',      pkg: 'plugin', decl: 68,  loc: 768 },
+  { f: 'application/discover.ts',                pkg: 'core',   decl: 65,  loc: 282 },
+  { f: 'application/diff.ts',                    pkg: 'core',   decl: 64,  loc: 245 },
+  { f: 'domain/evolutionHistory.ts',             pkg: 'core',   decl: 64,  loc: 249 },
+  { f: 'symbol-use/typescript.ts',               pkg: 'core',   decl: 64,  loc: 315 },
 ];
 
-const GUARDS = [
-  ['languages_empty',              '语言列表为空',         'gateApp.ts:113'],
-  ['missing_baseline_index',       '基线索引缺失',         'gateApp.ts:117'],
-  ['baseline_scope_incompatible',  '基线 scope 不兼容',    'gateApp.ts:120'],
-  ['metric_contract_incompatible', '指标合同版本不符',     'gateApp.ts:120'],
-  ['unsupported_gate_metric',      '规则引用不支持的 metric', 'gateApp.ts:122'],
-  ['missing_max_function_branch',  'maxFuncBranch 缺失',   'gateApp.ts:133'],
-  ['missing_metric_language',      'language 缺失',        'gateApp.ts:136'],
-  ['unconfigured_language_policy', '多语言无显式策略',     'gateApp.ts:141'],
-  ['unconfigured_language_policy', '有文件无策略匹配',     'gateApp.ts:144'],
-  ['ambiguous_structural_policy',  '策略歧义（多匹配）',   'gateApp.ts:148'],
-  ['policy_calibration_missing',   '策略无 sealed 校准',   'gateApp.ts:168'],
-  ['execution_failed',             '执行期错误（catchAll 兜底）', 'gateApp.ts:189'],
+const CAPS = [
+  { n: '15', t: '命令面', d: '11 公开 + 4 高级：init · context · contract · scan · review · check · rules · docs · toolchains · test · update ／ coordination · lsp · calibration · anti-patterns。命令注册表是唯一 authority。' },
+  { n: '4 份', t: '机器契约', d: 'context-json · test-governance-json · provider-list · rules-facts。openarch contract 输出目录；破坏性变更必须提升版本，插件对未知版本 fail-closed。' },
+  { n: '6 + 5', t: '测试治理', d: 'provider：Vitest · node:test · Go · Rust · JUnit · pytest；runner 执行真实命令给证据。198 个测试文件全部被 provider 处理（AVAILABLE）。' },
+  { n: '3 · 30', t: '脚本引擎', d: 'anti-patterns / implicit-deps / test-governance 三引擎共享 ProjectFacts 快照；清单 30 条目；7 个事实域自描述注册表（rules facts 可检索消费者）。' },
+  { n: '5 语言', t: '符号级语义', d: 'TS 编译器 provider（精确）· pyright · gopls · rust-analyzer · jdtls。complete 是语言级校准边界，越界保持 PARTIAL 并保留已收集事实。' },
+  { n: '8 棵', t: 'Skill 体系', d: '86 行宪法 + 8 份 reference + 4 份工具链指南；zh / en 双语独立编写；镜像树由合同测试锁定翻译、结构与残留。' },
+  { n: '7,286 行', t: '协调服务（Go）', d: 'task / lease / evidence；证据经 authority key 脱敏导出。默认不启用——地址只来自用户显式配置，绝不从环境推导。' },
+  { n: '6 工具', t: 'DSH 插件', d: 'openarch_context / check / review / scan / test / contract。消费契约目录，schema 未知版本直接拒绝——插件与 CLI 的边界同样 fail-closed。' },
 ];
 
-const VERDICT = [
-  ['信息论（对数/P95/不确定性）', 'vhigh', '高',   '贯彻，机制正确；语言级 P95 经 policy 维度实现'],
-  ['零硬编码阈值',                'high',  '高',   'threshold 由 P95 校准；weight 是另一回事（张力 1）'],
-  ['确定性 / 本地 / 无 LLM',       'vhigh', '很高', '全本地 CEL + tree-sitter，零外部依赖'],
-  ['Fail-closed',                 'vhigh', '很高', '11 道守卫，含配置完备性'],
-  ['测试治理',                    'vhigh', '高',   '工业级 MinHash，自身测试达标'],
-  ['Dogfood（治理自己）',          'vhigh', '极高', '最强一致性证据'],
-  ['分层架构',                    'high',  '高',   '六边形 + 层权重编码'],
-  ['度量权重可审计性',            'mid',   '中',   '有来源标注、缺校准依据（张力 1）'],
+const LOOP = [
+  ['调查', 'context / review', '认知链先行：只读建立项目事实，再选最小动作；PARTIAL 不是 clean'],
+  ['防线', 'rules facts → skeleton → 脚本', '三引擎把可复现腐化模式固化为检测规则，事实不可用即 UNAVAILABLE'],
+  ['回扫', 'rules scan / discover', '存量命中确认覆盖；零命中是 CLEAN，不是未验证'],
+  ['修复 · 校准', 'seal-calibration / --record-config', 'P95 封存为 gate epoch；配置变更必须审计'],
+  ['验证', 'check --staged --report', '全量信号面：PASS 也要读完 WARN、finding 与边界'],
+  ['沉淀', 'docs record → docs check', '经验入 DocumentStore；能力资产随合同变更更新'],
+];
+
+const METRICS = [
+  { n: 'I_push', t: '变更冲击上界',
+    formula: 'Σ λ_ast × branchMagnitude × α_struct × log₂(inDegree+1) × ω_layer',
+    d: '声明级 diff 驱动的传播上界，不是 LOC 也不是质量分。report-only 路由证据：高值先核对合同、分类、Reach 与验证计划，不进 gate。' },
+  { n: 'CRL_state', t: '当前局部负担',
+    formula: 'localBurden = maxFuncBranch + nesting + loc + externalPassthrough',
+    d: '四个输入经项目 P95 归一化；唯一可进入校准门禁的负担族。暴露度与模块形态只作解释，不单独定罪。' },
+  { n: 'D_MR', t: '变更诊断',
+    formula: 'Δ局部负担（改善与恶化分列，不抵消）',
+    d: '同 P95 族度量本次生产变更让负担变好还是变坏；测试与辅助文件不参与，独立展示、不进 gate。' },
+];
+
+const THEORY = [
+  ['实事求是（实践循环）', 'context 只读事实 · gateApp 前置守卫 · Skill 认知链',
+   '先调查后判断：<code>context</code> 不刷新基线不裁决；证据缺失一律 UNAVAILABLE（exit 3），11+ 道守卫在求值前拦截'],
+  ['信息论（保留不确定性）', 'log₂ 压缩 · P95 校准 epoch · 双 coverage 分离',
+   'inDegree 经对数压缩防极端值主导；阈值来自本项目 P95（sealed epoch）；符号事实分别声明声明覆盖与引用覆盖'],
+  ['红军经验（持久防腐）', '脚本引擎三线 · 最小闭环路由 · 技术债显式标注',
+   '防线廉价可重建：写一个 .mjs 即筑一条新防线；Top-3 高负担文件如实上榜，不追求一次全绿'],
+  ['状态是基线，变化是信号', 'scan 状态基线 · check 变化裁决',
+   'scan 建 CRL/结构基线；check 以 I_push / D_MR 裁决变更。两轨互补：判断在变化上，参照在状态里'],
 ];
 
 /* ════════════════════════ RENDER HTML ════════════════════════ */
 const $ = (s) => document.querySelector(s);
 
-// KPI
 $('#kpiRow').innerHTML = KPI.map(k => `
   <div class="stat">
     <div class="v" data-count="${k.v}">${k.v}<span class="u">${k.u}</span></div>
@@ -566,42 +618,44 @@ $('#kpiRow').innerHTML = KPI.map(k => `
     <div class="bar-track"><div class="bar-fill" data-p="${k.p}"></div></div>
   </div>`).join('');
 
-// Philosophy
-$('#philGrid').innerHTML = PHIL.map(p => `
+$('#layerBody').innerHTML = LAYERS.map(l => `
+  <tr>
+    <td class="dim">${l.name}</td>
+    <td><span class="num">${l.lines.toLocaleString()}</span></td>
+    <td>${l.role}</td>
+    <td>${l.bound}</td>
+  </tr>`).join('');
+
+$('#capGrid').innerHTML = CAPS.map((c, i) => `
   <div class="phil-card">
-    <div class="pn">${p.n}</div>
-    <h3>${p.t}</h3>
-    <p>${p.d}</p>
+    <div class="pn">${String(i + 1).padStart(2, '0')} · ${c.n}</div>
+    <h3>${c.t}</h3>
+    <p>${c.d}</p>
   </div>`).join('');
 
-// Checkup
-$('#checkGrid').innerHTML = CHECKS.map(c => `
-  <div class="chk ${c.type}">
-    <div class="chk-head">
-      <div class="chk-icon">${c.icon}</div>
-      <h4>${c.h}</h4>
-      <span class="tag">${c.tag}</span>
-    </div>
-    <p>${c.p}</p>
-    <div class="ev">${c.ev}</div>
-  </div>`).join('');
-
-// Guards
-$('#guardGrid').innerHTML = GUARDS.map((g, i) => `
+$('#loopGrid').innerHTML = LOOP.map((g, i) => `
   <div class="guard">
-    <div class="gn">${String(i+1).padStart(2,'0')}</div>
+    <div class="gn">${String(i + 1).padStart(2, '0')}</div>
     <div class="gb">
-      <h5>${g[1]} <code>${g[0]}</code></h5>
+      <h5>${g[0]} <code>${g[1]}</code></h5>
       <p>${g[2]}</p>
     </div>
   </div>`).join('');
 
-// Verdict table
-$('#verdictBody').innerHTML = VERDICT.map(v => {
-  const cls = v[1]==='vhigh'?'b-vhigh':v[1]==='high'?'b-high':'b-mid';
-  const label = v[1]==='vhigh'?'很高 · 90+':v[1]==='high'?'高 · 85+':'中 · 待校准';
-  return `<tr><td class="dim">${v[0]}</td><td><span class="badge ${cls}">${label}</span></td><td>${v[3]}</td></tr>`;
-}).join('');
+$('#metricGrid').innerHTML = METRICS.map(m => `
+  <div class="phil-card">
+    <div class="pn">${m.n}</div>
+    <h3>${m.t}</h3>
+    <span class="formula">${m.formula}</span>
+    <p style="margin-top:10px">${m.d}</p>
+  </div>`).join('');
+
+$('#theoryBody').innerHTML = THEORY.map(t => `
+  <tr>
+    <td class="dim">${t[0]}</td>
+    <td>${t[1]}</td>
+    <td>${t[2]}</td>
+  </tr>`).join('');
 
 /* ════════════════════════ THEME ════════════════════════ */
 const themeBtn = $('#themeBtn');
@@ -610,27 +664,41 @@ themeBtn.addEventListener('click', () => {
   theme = theme === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', theme);
   themeBtn.textContent = theme === 'dark' ? '🌙 深色' : '☀️ 浅色';
-  initBg();          // re-tint particles
-  drawScoreChart();  // re-paint with new tokens
-  drawGuardRail();
+  initBg();
+  redrawAll();
 });
 
 const token = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const dpr = () => Math.min(window.devicePixelRatio || 1, 2);
+function setupCanvas(c, h) {
+  const ctx = c.getContext('2d');
+  const w = c.clientWidth;
+  c.width = w * dpr(); c.height = h * dpr(); c.style.height = h + 'px';
+  ctx.setTransform(dpr(), 0, 0, dpr(), 0, 0);
+  return { ctx, w, h };
+}
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
+}
 
 /* ════════════════════════ BACKGROUND PARTICLES ════════════════════════ */
 let bgCanvas, bgCtx, particles = [], W, H, raf;
 const mouse = { x: -9999, y: -9999 };
 function initBg() {
   bgCanvas = $('#bg'); bgCtx = bgCanvas.getContext('2d');
-  resize(); buildParticles();
-  if (!raf) raf = requestAnimationFrame(loop);
+  resizeBg(); buildParticles();
+  if (!raf) raf = requestAnimationFrame(loopBg);
 }
-function resize() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+function resizeBg() {
   W = window.innerWidth; H = window.innerHeight;
-  bgCanvas.width = W * dpr; bgCanvas.height = H * dpr;
+  bgCanvas.width = W * dpr(); bgCanvas.height = H * dpr();
   bgCanvas.style.width = W + 'px'; bgCanvas.style.height = H + 'px';
-  bgCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  bgCtx.setTransform(dpr(), 0, 0, dpr(), 0, 0);
 }
 function buildParticles() {
   const count = Math.min(80, Math.floor(W * H / 16000));
@@ -640,7 +708,7 @@ function buildParticles() {
     r: Math.random() * 1.6 + 0.6,
   }));
 }
-function loop() {
+function loopBg() {
   bgCtx.clearRect(0, 0, W, H);
   const pc = token('--particle'); const link = token('--link');
   const maxDist = 130;
@@ -664,139 +732,392 @@ function loop() {
       }
     }
   }
-  raf = requestAnimationFrame(loop);
+  raf = requestAnimationFrame(loopBg);
 }
-window.addEventListener('resize', () => { resize(); buildParticles(); });
 window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; });
 window.addEventListener('mouseout', () => { mouse.x = -9999; mouse.y = -9999; });
 
-/* ════════════════════════ SCORE BAR CHART ════════════════════════ */
-let scoreCtx, scoreW, scoreH, scoreRects = [], chartProgress = 0, scoreRaf;
-const tip = $('#scoreTip');
-function setupScoreCanvas() {
-  const c = $('#scoreChart'); scoreCtx = c.getContext('2d');
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = c.clientWidth, h = 420;
-  c.width = w * dpr; c.height = h * dpr; c.style.height = h + 'px';
-  scoreCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  scoreW = w; scoreH = h;
-}
-function drawScoreChart() {
-  setupScoreCanvas();
-  const ctx = scoreCtx; ctx.clearRect(0, 0, scoreW, scoreH);
-  const ink1 = token('--ink-1'), ink2 = token('--ink-2'), ink3 = token('--ink-3');
-  const s1 = token('--series-1'), good = token('--good'), warning = token('--warning');
-  const grid = token('--gridline'), base = token('--baseline');
+/* ════════════════════════ ARCHITECTURE RINGS ════════════════════════ */
+const ARCH_RINGS = [
+  { key: 'domain', r0: 0,   r1: 54,  color: '--series-3', label: 'domain' },
+  { key: 'port',   r0: 54,  r1: 96,  color: '--series-1', label: 'port ×9' },
+  { key: 'application', r0: 96, r1: 150, color: '--series-1', label: 'application' },
+  { key: 'adapter', r0: 150, r1: 206, color: '--series-1', label: 'adapter' },
+];
+const ARCH_SATS = [
+  { key: 'cli',     label: 'cli 5,060',        ax: -90 },
+  { key: 'engines', label: '引擎子系统 7,005', ax: 0 },
+  { key: 'plugin',  label: 'plugin 3,925',     ax: 155 },
+  { key: 'go',      label: 'Go 服务 7,286',    ax: 205 },
+];
+let archPulses = [], archRaf = 0, archSatRects = [];
+function drawArch() {
+  const c = $('#archCanvas');
+  const { ctx, w, h } = setupCanvas(c, 460);
+  const cx = w / 2, cy = 246;
+  const s1 = token('--series-1'), s3 = token('--series-3'), s2 = token('--series-2');
+  const ink1 = token('--ink-1'), ink3 = token('--ink-3'), grid = token('--gridline');
+  const base = token('--baseline'), surf2 = token('--surface-2');
+  const showSats = w >= 600;
 
-  const labelW = 188, valueW = 60, padL = labelW, padR = valueW + 14;
-  const chartX = padL, chartW = scoreW - padL - padR;
-  const n = SCORES.length, rowH = scoreH / n;
-  const barH = Math.min(22, rowH - 18);
-
-  scoreRects = [];
-  SCORES.forEach((s, i) => {
-    const cy = i * rowH + rowH / 2;
-    const by = cy - barH / 2;
-    // label
-    ctx.fillStyle = ink1; ctx.font = "600 13px system-ui"; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillText(s.dim, 8, cy);
-    // grade dot
-    const gradeColor = s.score >= 85 ? good : warning;
-    ctx.beginPath(); ctx.arc(labelW - 10, cy, 3.2, 0, Math.PI * 2); ctx.fillStyle = gradeColor; ctx.fill();
-    // baseline track
-    ctx.fillStyle = grid; ctx.fillRect(chartX, by, chartW, barH);
-    // animated fill
-    const targetW = (s.score / 100) * chartW;
-    const w = targetW * chartProgress;
-    const grad = ctx.createLinearGradient(chartX, 0, chartX + chartW, 0);
-    grad.addColorStop(0, s1); grad.addColorStop(1, gradeColor);
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    roundRect(ctx, chartX, by, Math.max(0.001, w), barH, 4, 4, 0, 0); ctx.fill();
-    // threshold tick @ 85
-    const tx = chartX + (85 / 100) * chartW;
-    ctx.strokeStyle = base; ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(tx, by - 4); ctx.lineTo(tx, by + barH + 4); ctx.stroke(); ctx.setLineDash([]);
-    // value
-    ctx.fillStyle = ink2; ctx.font = "700 14px system-ui"; ctx.textAlign = 'left';
-    ctx.fillText(String(s.score), chartX + chartW + 12, cy);
-    scoreRects.push({ x: 0, y: i * rowH, w: scoreW, h: rowH, s });
-  });
-}
-function roundRect(ctx, x, y, w, h, tl, tr, br, bl) {
-  ctx.moveTo(x + tl, y);
-  ctx.lineTo(x + w - tr, y); ctx.arcTo(x + w, y, x + w, y + tr, tr);
-  ctx.lineTo(x + w, y + h - br); ctx.arcTo(x + w, y + h, x + w - br, y + h, br);
-  ctx.lineTo(x + bl, y + h); ctx.arcTo(x, y + h, x, y + h - bl, bl);
-  ctx.lineTo(x, y + tl); ctx.arcTo(x, y, x + tl, y, tl);
-}
-function animateScore() {
-  chartProgress = 0;
-  const start = performance.now(), dur = 1400;
-  function step(t) {
-    const k = Math.min(1, (t - start) / dur);
-    chartProgress = 1 - Math.pow(1 - k, 3); // easeOutCubic
-    drawScoreChart();
-    if (k < 1) scoreRaf = requestAnimationFrame(step);
-  }
-  scoreRaf = requestAnimationFrame(step);
-}
-$('#scoreChart').addEventListener('mousemove', (e) => {
-  const rect = e.currentTarget.getBoundingClientRect();
-  const my = e.clientY - rect.top;
-  const hit = scoreRects.find(r => my >= r.y && my <= r.y + r.h);
-  if (hit) {
-    tip.innerHTML = `<b style="color:var(--ink-1)">${hit.s.dim}</b> · ${hit.s.grade} (${hit.s.score})<br/><span style="color:var(--ink-3)">${hit.s.note}</span>`;
-    tip.style.opacity = 1;
-    tip.style.left = (e.clientX - rect.left + 16) + 'px';
-    tip.style.top = (my + 16) + 'px';
-  } else tip.style.opacity = 0;
-});
-$('#scoreChart').addEventListener('mouseleave', () => tip.style.opacity = 0);
-
-/* ════════════════════════ GUARD RAIL ════════════════════════ */
-let guardProgress = 0;
-function drawGuardRail() {
-  const c = $('#guardRail'); const ctx = c.getContext('2d');
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = c.clientWidth, h = 70;
-  c.width = w * dpr; c.height = h * dpr; c.style.height = h + 'px';
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
-  const good = token('--good'), link = token('--link'), ink3 = token('--ink-3'), s1 = token('--series-1');
-  const n = GUARDS.length, padX = 30, gap = (w - padX * 2) / (n - 1), y = h / 2;
-  // line
-  ctx.strokeStyle = link; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(padX, y); ctx.lineTo(w - padX, y); ctx.stroke();
-  // nodes
-  for (let i = 0; i < n; i++) {
-    const x = padX + gap * i;
-    const lit = i / (n - 1) <= guardProgress;
-    ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2);
-    ctx.fillStyle = lit ? good : token('--surface-2'); ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = lit ? good : ink3; ctx.stroke();
-    if (lit) {
-      ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2);
-      ctx.strokeStyle = good; ctx.globalAlpha = 0.25; ctx.lineWidth = 2; ctx.stroke(); ctx.globalAlpha = 1;
-      // shield check
-      ctx.fillStyle = token('--on-warning') === '#1a1a19' ? '#fff' : '#fff';
-      ctx.font = "800 10px system-ui"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('✓', x, y + 0.5);
+  // ring bands
+  for (const ring of ARCH_RINGS) {
+    const key = ring.key;
+    const info = LAYERS.find(l => l.key === key);
+    if (ring.r0 === 0) {
+      ctx.beginPath(); ctx.arc(cx, cy, ring.r1, 0, Math.PI * 2);
+      ctx.fillStyle = s3; ctx.globalAlpha = 0.14; ctx.fill(); ctx.globalAlpha = 1;
+      ctx.lineWidth = 1.5; ctx.strokeStyle = s3; ctx.stroke();
+      ctx.fillStyle = ink1; ctx.font = '700 13px system-ui';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('domain', cx, cy - 8);
+      ctx.fillStyle = ink3; ctx.font = '600 11px system-ui';
+      ctx.fillText('3,378 行 · 纯函数', cx, cy + 10);
+    } else {
+      const mid = (ring.r0 + ring.r1) / 2;
+      ctx.beginPath(); ctx.arc(cx, cy, mid, 0, Math.PI * 2);
+      ctx.strokeStyle = s1; ctx.globalAlpha = 0.10 + 0.05 * (ARCH_RINGS.indexOf(ring) % 2);
+      ctx.lineWidth = ring.r1 - ring.r0 - 4; ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.beginPath(); ctx.arc(cx, cy, ring.r1, 0, Math.PI * 2);
+      ctx.lineWidth = 1; ctx.strokeStyle = grid; ctx.stroke();
+      // band label at top
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = ink1; ctx.font = '600 12px system-ui';
+      ctx.fillText(ring.label, cx, cy - mid);
+      ctx.fillStyle = ink3; ctx.font = '10px system-ui';
+      ctx.fillText(info.lines.toLocaleString() + ' 行', cx, cy - mid + 14);
     }
   }
+  // radial spokes
+  for (let i = 0; i < 8; i++) {
+    const a = (Math.PI * 2 * i) / 8 + Math.PI / 8;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * 54, cy + Math.sin(a) * 54);
+    ctx.lineTo(cx + Math.cos(a) * 206, cy + Math.sin(a) * 206);
+    ctx.strokeStyle = grid; ctx.lineWidth = 1; ctx.setLineDash([2, 4]); ctx.stroke(); ctx.setLineDash([]);
+  }
+  // pulses flow inward (dependency direction)
+  for (const p of archPulses) {
+    const x = cx + Math.cos(p.a) * p.r, y = cy + Math.sin(p.a) * p.r;
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, 12);
+    glow.addColorStop(0, s1); glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = 0.8; ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.arc(x, y, 2.6, 0, Math.PI * 2);
+    ctx.fillStyle = s1; ctx.fill();
+  }
+  // satellites + connectors
+  archSatRects = [];
+  if (showSats) {
+    for (const sat of ARCH_SATS) {
+      const a = (sat.ax * Math.PI) / 180;
+      const dist = 206 + 58;
+      const sx = cx + Math.cos(a) * dist, sy = cy + Math.sin(a) * dist;
+      // connector
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * 206, cy + Math.sin(a) * 206);
+      ctx.lineTo(sx - Math.cos(a) * 14, sy - Math.sin(a) * 14);
+      ctx.strokeStyle = base; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.beginPath();
+      const hx = sx - Math.cos(a) * 20, hy = sy - Math.sin(a) * 20;
+      ctx.arc(hx, hy, 3, 0, Math.PI * 2);
+      ctx.fillStyle = s2; ctx.fill();
+      // node pill
+      ctx.font = '600 11px system-ui';
+      const tw = ctx.measureText(sat.label).width;
+      const bw = tw + 20, bh = 26, bx = sx - bw / 2, by = sy - bh / 2;
+      ctx.beginPath(); roundRect(ctx, bx, by, bw, bh, 13); ctx.fill();
+      ctx.fillStyle = surf2; ctx.fill();
+      ctx.lineWidth = 1; ctx.strokeStyle = s2; ctx.stroke();
+      ctx.fillStyle = ink1; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(sat.label, sx, sy + 0.5);
+      archSatRects.push({ x: bx, y: by, w: bw, h: bh, key: sat.key });
+    }
+  }
+  // direction caption
+  ctx.fillStyle = ink3; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
+  ctx.fillText('依赖方向：外 → 内（光点流向圆心）', cx, h - 10);
 }
-function animateGuard() {
-  guardProgress = 0;
-  const start = performance.now(), dur = 1600;
+function stepArch(ts) {
+  if (archPulses.length === 0) {
+    archPulses = Array.from({ length: 5 }, (_, i) => ({
+      a: (Math.PI * 2 * i) / 5 + 0.5,
+      r: 206 + Math.random() * 40,
+      v: 0.55 + Math.random() * 0.4,
+    }));
+  }
+  for (const p of archPulses) {
+    p.r -= p.v;
+    if (p.r < 50) { p.r = 206 + Math.random() * 30; p.a = Math.random() * Math.PI * 2; }
+  }
+  drawArch();
+  if (!REDUCED) archRaf = requestAnimationFrame(stepArch);
+}
+const archTip = $('#archTip');
+$('#archCanvas').addEventListener('mousemove', (e) => {
+  const rect = e.currentTarget.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const cx = rect.width / 2, cy = (460 / 460) * 246; // canvas logical height = 460, cy fixed
+  let hit = null;
+  const sat = archSatRects.find(s => mx >= s.x && mx <= s.x + s.w && my >= s.y && my <= s.y + s.h);
+  if (sat) hit = LAYERS.find(l => l.key === sat.key);
+  if (!hit) {
+    const d = Math.hypot(mx - cx, my - cy);
+    const ring = ARCH_RINGS.find(r => d >= r.r0 && d <= r.r1);
+    if (ring) hit = LAYERS.find(l => l.key === ring.key);
+  }
+  if (hit) {
+    archTip.innerHTML = `<b style="color:var(--ink-1)">${hit.name} · ${hit.lines.toLocaleString()} 行</b><br/><span style="color:var(--ink-2)">${hit.role}</span><br/><span style="color:var(--ink-3)">边界：${hit.bound}</span>`;
+    archTip.style.opacity = 1;
+    archTip.style.left = Math.min(mx + 16, rect.width - 240) + 'px';
+    archTip.style.top = (my + 14) + 'px';
+  } else archTip.style.opacity = 0;
+});
+$('#archCanvas').addEventListener('mouseleave', () => archTip.style.opacity = 0);
+
+/* ════════════════════════ BURDEN BARS ════════════════════════ */
+let burdenProgress = REDUCED ? 1 : 0;
+function drawBurden() {
+  const c = $('#burdenCanvas');
+  const { ctx, w, h } = setupCanvas(c, 216);
+  const ink1 = token('--ink-1'), ink2 = token('--ink-2'), ink3 = token('--ink-3');
+  const s1 = token('--series-1'), s3 = token('--series-3'), grid = token('--gridline');
+  const labelW = Math.min(210, w * 0.42), valueW = 52;
+  const chartX = labelW, chartW = w - labelW - valueW;
+  const rowH = h / BURDEN.length;
+  const barH = 20;
+  // axis gridlines 0 / .25 / .5 / .75 / 1
+  for (let g = 0; g <= 4; g++) {
+    const gx = chartX + (g / 4) * chartW;
+    ctx.strokeStyle = grid; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(gx, 8); ctx.lineTo(gx, h - 18); ctx.stroke();
+    ctx.fillStyle = ink3; ctx.font = '9px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText((g / 4).toFixed(2), gx, h - 6);
+  }
+  BURDEN.forEach((b, i) => {
+    const cy = i * rowH + rowH / 2 - 4;
+    const short = b.f.split('/').pop();
+    ctx.fillStyle = ink1; ctx.font = '600 12px ui-monospace, monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(short, 6, cy - 8);
+    ctx.fillStyle = ink3; ctx.font = '9.5px system-ui';
+    ctx.fillText(`暴露 ${b.exp} · 形态 ${b.shape} · 历史 ${b.hist}`, 6, cy + 9);
+    const by = cy - barH / 2;
+    ctx.fillStyle = grid; ctx.fillRect(chartX, by, chartW, barH);
+    const grad = ctx.createLinearGradient(chartX, 0, chartX + chartW, 0);
+    grad.addColorStop(0, s3); grad.addColorStop(1, s1);
+    ctx.fillStyle = grad;
+    ctx.beginPath(); roundRect(ctx, chartX, by, Math.max(0.001, b.v * chartW * burdenProgress), barH, 4); ctx.fill();
+    ctx.fillStyle = ink2; ctx.font = '700 13px system-ui';
+    ctx.fillText(b.v.toFixed(3), chartX + chartW + 10, cy);
+  });
+  ctx.fillStyle = ink3; ctx.font = '10px system-ui'; ctx.textAlign = 'left';
+  ctx.fillText('结构候选 Top-3（report-only · 门禁 PASS）', chartX, 8);
+}
+function animateBurden() {
+  if (REDUCED) { drawBurden(); return; }
+  burdenProgress = 0;
+  const start = performance.now(), dur = 1200;
   function step(t) {
     const k = Math.min(1, (t - start) / dur);
-    guardProgress = 1 - Math.pow(1 - k, 2);
-    drawGuardRail();
+    burdenProgress = 1 - Math.pow(1 - k, 3);
+    drawBurden();
     if (k < 1) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
 }
 
-/* ════════════════════════ COUNT-UP + TRIGGER ════════════════════════ */
+/* ════════════════════════ DEFINITION-FACE SCATTER ════════════════════════ */
+const PKG_COLOR = { core: '--series-1', cli: '--series-2', plugin: '--series-3' };
+const DEFFACE_RECTS = [];
+function drawScatter() {
+  const c = $('#scatterCanvas');
+  const { ctx, w, h } = setupCanvas(c, 330);
+  const ink1 = token('--ink-1'), ink2 = token('--ink-2'), ink3 = token('--ink-3');
+  const grid = token('--gridline'), base = token('--baseline');
+  const padL = 46, padR = 16, padT = 26, padB = 40;
+  const xMin = 50, xMax = 140, yMin = 200, yMax = 800;
+  const px = (v) => padL + ((v - xMin) / (xMax - xMin)) * (w - padL - padR);
+  const py = (v) => h - padB - ((v - yMin) / (yMax - yMin)) * (h - padT - padB);
+  // grid + ticks
+  ctx.font = '9px system-ui'; ctx.fillStyle = ink3;
+  for (let xv = 60; xv <= 140; xv += 20) {
+    ctx.strokeStyle = grid; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(px(xv), padT); ctx.lineTo(px(xv), h - padB); ctx.stroke();
+    ctx.textAlign = 'center'; ctx.fillText(String(xv), px(xv), h - padB + 14);
+  }
+  for (let yv = 200; yv <= 800; yv += 150) {
+    ctx.strokeStyle = grid;
+    ctx.beginPath(); ctx.moveTo(padL, py(yv)); ctx.lineTo(w - padR, py(yv)); ctx.stroke();
+    ctx.textAlign = 'right'; ctx.fillText(String(yv), padL - 8, py(yv) + 3);
+  }
+  // axes titles
+  ctx.fillStyle = ink2; ctx.font = '600 10px system-ui';
+  ctx.textAlign = 'center'; ctx.fillText('声明数 decl →', (padL + w - padR) / 2, h - 8);
+  ctx.save(); ctx.translate(12, (padT + h - padB) / 2); ctx.rotate(-Math.PI / 2);
+  ctx.fillText('实现行数 loc →', 0, 0); ctx.restore();
+  DEFFACE_RECTS.length = 0;
+  DEFFACE.forEach((d, i) => {
+    const x = px(d.decl), y = py(d.loc);
+    const r = 5 + Math.sqrt(d.loc) * 0.32;
+    const col = token(PKG_COLOR[d.pkg]);
+    const stagger = REDUCED ? 1 : Math.min(1, Math.max(0, scatterPop * 10 - i));
+    if (stagger <= 0) return;
+    ctx.globalAlpha = 0.16 + 0.84 * stagger;
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, r * 2.2);
+    glow.addColorStop(0, col); glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = 0.18 * stagger; ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(x, y, r * 2.2, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = stagger;
+    ctx.beginPath(); ctx.arc(x, y, r * stagger, 0, Math.PI * 2);
+    ctx.fillStyle = col; ctx.fill();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = token('--surface-1'); ctx.stroke();
+    ctx.globalAlpha = 1;
+    DEFFACE_RECTS.push({ x, y, r: Math.max(r, 12), d });
+  });
+  // note
+  ctx.fillStyle = ink3; ctx.font = '10px system-ui'; ctx.textAlign = 'left';
+  ctx.fillText('9 个候选均同时超过本语言 decl P95 与 loc P95', padL, 14);
+}
+let scatterPop = REDUCED ? 1 : 0;
+const scatterTip = $('#scatterTip');
+$('#scatterCanvas').addEventListener('mousemove', (e) => {
+  const rect = e.currentTarget.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  let best = null, bd = 1e9;
+  for (const p of DEFFACE_RECTS) {
+    const d = Math.hypot(mx - p.x, my - p.y);
+    if (d < p.r + 6 && d < bd) { bd = d; best = p; }
+  }
+  if (best) {
+    scatterTip.innerHTML = `<b style="color:var(--ink-1)" class="mono">${best.d.f}</b><br/><span style="color:var(--ink-2)">decl ${best.d.decl} · loc ${best.d.loc} · ${best.d.pkg}</span>`;
+    scatterTip.style.opacity = 1;
+    scatterTip.style.left = Math.min(mx + 14, rect.width - 220) + 'px';
+    scatterTip.style.top = (my + 12) + 'px';
+  } else scatterTip.style.opacity = 0;
+});
+$('#scatterCanvas').addEventListener('mouseleave', () => scatterTip.style.opacity = 0);
+function animateScatter() {
+  if (REDUCED) { scatterPop = 1; drawScatter(); return; }
+  scatterPop = 0;
+  const start = performance.now(), dur = 1600;
+  function step(t) {
+    const k = Math.min(1, (t - start) / dur);
+    scatterPop = k;
+    drawScatter();
+    if (k < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+/* ════════════════════════ GOVERNANCE LOOP RING ════════════════════════ */
+let loopAngle = 0, loopRaf = 0;
+function drawLoop() {
+  const c = $('#loopCanvas');
+  const { ctx, w, h } = setupCanvas(c, 300);
+  const cx = w / 2, cy = h / 2, R = Math.min(h / 2 - 52, 108);
+  const s1 = token('--series-1'), s3 = token('--series-3');
+  const ink1 = token('--ink-1'), ink3 = token('--ink-3');
+  const grid = token('--gridline'), surf2 = token('--surface-2');
+  const n = LOOP.length;
+  // circle track
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.strokeStyle = grid; ctx.lineWidth = 2; ctx.stroke();
+  // arrowheads between nodes
+  for (let i = 0; i < n; i++) {
+    const a = (-Math.PI / 2) + (Math.PI * 2 * (i + 0.5)) / n;
+    const x = cx + Math.cos(a) * R, y = cy + Math.sin(a) * R;
+    const t = a + Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(t) * 6, y + Math.sin(t) * 6);
+    ctx.lineTo(x + Math.cos(t - 2.5) * 5, y + Math.sin(t - 2.5) * 5);
+    ctx.lineTo(x + Math.cos(t + 2.5) * 5, y + Math.sin(t + 2.5) * 5);
+    ctx.closePath(); ctx.fillStyle = grid; ctx.fill();
+  }
+  // traveling pulse
+  const pa = loopAngle;
+  const pxl = cx + Math.cos(pa) * R, pyl = cy + Math.sin(pa) * R;
+  const glow = ctx.createRadialGradient(pxl, pyl, 0, pxl, pyl, 16);
+  glow.addColorStop(0, s1); glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.globalAlpha = 0.8; ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(pxl, pyl, 16, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+  // nodes + labels
+  LOOP.forEach((s, i) => {
+    const a = (-Math.PI / 2) + (Math.PI * 2 * i) / n;
+    const x = cx + Math.cos(a) * R, y = cy + Math.sin(a) * R;
+    ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2);
+    ctx.fillStyle = surf2; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = i === 0 ? s3 : s1; ctx.stroke();
+    ctx.fillStyle = i === 0 ? s3 : s1; ctx.font = '800 12px system-ui';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(i + 1), x, y + 1);
+    // label outside
+    const lx = cx + Math.cos(a) * (R + 34), ly = cy + Math.sin(a) * (R + 30);
+    ctx.fillStyle = ink1; ctx.font = '600 12px system-ui';
+    ctx.fillText(s[0], lx, ly);
+    ctx.fillStyle = ink3; ctx.font = '9px ui-monospace, monospace';
+    ctx.fillText(s[1].split(' ')[0], lx, ly + 14);
+  });
+  // center
+  ctx.fillStyle = ink1; ctx.font = '700 14px system-ui'; ctx.textAlign = 'center';
+  ctx.fillText('治理闭环', cx, cy - 6);
+  ctx.fillStyle = ink3; ctx.font = '10px system-ui';
+  ctx.fillText('经验回流为下一轮调查', cx, cy + 12);
+}
+function startLoop() {
+  if (REDUCED) { drawLoop(); return; }
+  const step = () => { loopAngle += 0.008; drawLoop(); loopRaf = requestAnimationFrame(step); };
+  loopRaf = requestAnimationFrame(step);
+}
+
+/* ════════════════════════ LOG COMPRESSION ════════════════════════ */
+let logProgress = REDUCED ? 1 : 0;
+function drawLog() {
+  const c = $('#logCanvas');
+  const { ctx, w, h } = setupCanvas(c, 250);
+  const ink1 = token('--ink-1'), ink3 = token('--ink-3');
+  const s1 = token('--series-1'), s2 = token('--series-2'), grid = token('--gridline');
+  const ns = [1, 2, 4, 8, 16, 32, 64, 128];
+  const padB = 34, padT = 10;
+  const chartH = h - padB - padT;
+  const gw = (w - 30) / ns.length;
+  ns.forEach((n, i) => {
+    const gx = 18 + gw * i + gw / 2;
+    const linH = (n / 128) * chartH * logProgress;
+    const logH = (Math.log2(n + 1) / Math.log2(129)) * chartH * logProgress;
+    const bw = Math.min(16, gw / 3);
+    // linear
+    ctx.fillStyle = s2; ctx.globalAlpha = 0.55;
+    ctx.beginPath(); roundRect(ctx, gx - bw - 2, padT + chartH - linH, bw, Math.max(1, linH), 3); ctx.fill();
+    // log
+    ctx.globalAlpha = 1; ctx.fillStyle = s1;
+    ctx.beginPath(); roundRect(ctx, gx + 2, padT + chartH - logH, bw, Math.max(1, logH), 3); ctx.fill();
+    // labels
+    ctx.fillStyle = ink3; ctx.font = '9px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText(String(n - 1), gx, h - padB + 14);
+    ctx.fillStyle = ink1; ctx.font = '700 10px system-ui';
+    ctx.fillText(Math.log2(n + 1).toFixed(1), gx, padT + chartH - logH - 8);
+  });
+  ctx.fillStyle = ink3; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
+  ctx.fillText('inDegree（入度）', w / 2, h - 6);
+  // baseline
+  ctx.strokeStyle = grid; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(14, padT + chartH); ctx.lineTo(w - 14, padT + chartH); ctx.stroke();
+}
+function animateLog() {
+  if (REDUCED) { drawLog(); return; }
+  logProgress = 0;
+  const start = performance.now(), dur = 1200;
+  function step(t) {
+    const k = Math.min(1, (t - start) / dur);
+    logProgress = 1 - Math.pow(1 - k, 3);
+    drawLog();
+    if (k < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+/* ════════════════════════ COUNT-UP ════════════════════════ */
 function countUp(el) {
   const target = +el.dataset.count;
   if (target === 0) return;
@@ -805,34 +1126,41 @@ function countUp(el) {
   function step(t) {
     const k = Math.min(1, (t - start) / dur);
     const v = Math.round(target * (1 - Math.pow(1 - k, 3)));
-    el.innerHTML = v + u;
+    el.innerHTML = v.toLocaleString() + u;
     if (k < 1) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
 }
 
-const io = new IntersectionObserver((entries) => {
+/* ════════════════════════ REVEAL + TRIGGERS ════════════════════════ */
+function redrawAll() {
+  drawArch(); drawBurden(); drawScatter(); drawLoop(); drawLog();
+}
+const animIO = new IntersectionObserver((entries) => {
   entries.forEach(e => {
     if (!e.isIntersecting) return;
-    if (e.target.id === 'stats') {
+    const id = e.target.id;
+    if (id === 'stats') {
       document.querySelectorAll('.stat .v').forEach(countUp);
       document.querySelectorAll('.bar-fill').forEach(b => b.style.width = b.dataset.p + '%');
-      io.unobserve(e.target);
-    } else if (e.target.id === 'scores') {
-      animateScore(); io.unobserve(e.target);
-    } else if (e.target.id === 'failclosed') {
-      animateGuard(); io.unobserve(e.target);
-    }
+    } else if (id === 'signals') { animateBurden(); animateScatter(); }
+    else if (id === 'metrics') { animateLog(); }
+    animIO.unobserve(e.target);
   });
 }, { threshold: 0.25 });
-['stats', 'scores', 'failclosed'].forEach(id => { const el = document.getElementById(id); if (el) io.observe(el); });
+['stats', 'signals', 'metrics'].forEach(id => { const el = document.getElementById(id); if (el) animIO.observe(el); });
 
-window.addEventListener('resize', () => { drawScoreChart(); drawGuardRail(); });
+const revealIO = new IntersectionObserver((entries) => entries.forEach(e => {
+  if (e.isIntersecting) { e.target.classList.add('in'); revealIO.unobserve(e.target); }
+}), { threshold: 0.12 });
+document.querySelectorAll('.wrap > section').forEach(s => revealIO.observe(s));
+
+window.addEventListener('resize', () => { resizeBg(); buildParticles(); redrawAll(); });
 
 /* boot */
 initBg();
-drawScoreChart();
-drawGuardRail();
+drawArch(); if (!REDUCED) stepArch();
+drawBurden(); drawScatter(); drawLoop(); startLoop(); drawLog();
 </script>
 </body>
 </html>

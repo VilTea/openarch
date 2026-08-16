@@ -171,23 +171,40 @@ func (g gitClient) refreshFromRemoteWithServiceDescendants(ctx context.Context, 
 		return g.refreshLocal(ctx, expectedHead)
 	}
 	if expected := strings.TrimSpace(expectedHead); expected != "" && expected != remoteHead {
-		if !allowServiceDescendants || !g.isAncestor(ctx, expected, remoteHead) {
-			return RemoteDescriptor{}, fmt.Errorf("refresh head %q does not match remote head %q", expectedHead, remoteHead)
-		}
-		changed, err := g.run(ctx, "diff", "--name-only", expected, remoteHead)
-		if err != nil {
+		if err := g.validateRefreshHead(ctx, expected, remoteHead, allowServiceDescendants); err != nil {
 			return RemoteDescriptor{}, err
-		}
-		for _, path := range strings.Fields(changed) {
-			if !isServiceOwnedPath(path) {
-				return RemoteDescriptor{}, fmt.Errorf("refresh head %q has non-service-owned descendant change %q", expectedHead, path)
-			}
 		}
 	}
 	if err := g.advanceWorktree(ctx, remoteHead); err != nil {
 		return RemoteDescriptor{}, err
 	}
 	return g.descriptor(ctx)
+}
+
+// validateRefreshHead accepts an advertised head that is an ancestor of remote
+// truth. A shared docs-repo can carry several projects on one branch: a
+// project may advertise its own pushed head while another project has advanced
+// the remote in the meantime. For a read-side refresh that is safe because the
+// worktree only fast-forwards and the returned descriptor reports the actual
+// head. Strict callers that must bind to the advertised commit additionally
+// require every descendant change to be service-owned.
+func (g gitClient) validateRefreshHead(ctx context.Context, expectedHead string, remoteHead string, allowServiceDescendants bool) error {
+	if !g.isAncestor(ctx, expectedHead, remoteHead) {
+		return fmt.Errorf("refresh head %q is not an ancestor of remote head %q", expectedHead, remoteHead)
+	}
+	if !allowServiceDescendants {
+		return nil
+	}
+	changed, err := g.run(ctx, "diff", "--name-only", expectedHead, remoteHead)
+	if err != nil {
+		return err
+	}
+	for _, path := range strings.Fields(changed) {
+		if !isServiceOwnedPath(path) {
+			return fmt.Errorf("refresh head %q has non-service-owned descendant change %q", expectedHead, path)
+		}
+	}
+	return nil
 }
 
 // refreshLocal validates the advertised head against the shared local worktree

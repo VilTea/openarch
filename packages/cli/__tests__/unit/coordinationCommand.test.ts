@@ -62,6 +62,28 @@ describe("coordination bootstrap / refresh / scope", () => {
     expect(JSON.parse(written)).toEqual({ schemaVersion: "1", repository: { repositoryId: "repo-1" } });
   });
 
+  it("scope migrate-legacy writes an explicit repositoryId registration and never rewrites legacy", async () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const cwd = tempProject();
+    const docsRepo = tempProject();
+    fs.mkdirSync(path.join(docsRepo, ".git"), { recursive: true });
+    fs.mkdirSync(path.join(docsRepo, "projects", "legacy-a"), { recursive: true });
+    vi.spyOn(coreModule, "statusDocsRepo").mockReturnValue({ associated: true, config: { target: docsRepo }, symlinkValid: true });
+    const code = await coordinationCommand(["scope", "migrate-legacy", "--legacy-path", "projects/legacy-a", "--repository-id", "repo-explicit"], baseContext(cwd));
+    expect(code).toBe(0);
+    const written = fs.readFileSync(path.join(docsRepo, "repositories", "repo-explicit", "scope.json"), "utf8");
+    expect(JSON.parse(written)).toEqual({ schemaVersion: "1", repository: { repositoryId: "repo-explicit" } });
+    expect(fs.existsSync(path.join(docsRepo, "projects", "legacy-a"))).toBe(true);
+  });
+
+  it("scope migrate-legacy rejects a basename-like identity source", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const code = await coordinationCommand(["scope", "migrate-legacy", "--legacy-path", "projects/a/b", "--repository-id", "repo-1"], baseContext(tempProject()));
+    expect(code).toBe(3);
+  });
+
   it("scope register fails closed without an associated docs-repo", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(coreModule, "statusDocsRepo").mockReturnValue({ associated: false, config: null, symlinkValid: false });
@@ -73,6 +95,32 @@ describe("coordination bootstrap / refresh / scope", () => {
   it("scope register rejects path-like id", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const code = await coordinationCommand(["scope", "register", "--repository-id", "a/b"], baseContext(tempProject()));
+    expect(code).toBe(3);
+  });
+});
+
+describe("coordination debt", () => {
+  beforeEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
+
+  it("debt register writes an Agent-owned deferred decision template", async () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const cwd = tempProject();
+    const docsRepo = tempProject();
+    fs.mkdirSync(path.join(docsRepo, ".git"), { recursive: true });
+    vi.spyOn(coreModule, "statusDocsRepo").mockReturnValue({ associated: true, config: { target: docsRepo }, symlinkValid: true });
+    const code = await coordinationCommand(["debt", "register", "--repository-id", "repo-1", "--service-id", "svc-a", "--debt-id", "debt-1", "--title", "Defer split", "--reason", "No evidence", "--reconsider-condition", "Third language"], baseContext(cwd));
+    expect(code).toBe(0);
+    const written = JSON.parse(fs.readFileSync(path.join(docsRepo, "debts", "repo-1", "svc-a", "debt-1.json"), "utf8"));
+    expect(written).toMatchObject({ schemaVersion: "1", debt: { repositoryId: "repo-1", serviceId: "svc-a", debtId: "debt-1" }, status: "deferred" });
+  });
+
+  it("debt register fails closed without a docs-repo", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(coreModule, "statusDocsRepo").mockReturnValue({ associated: false, config: null, symlinkValid: false });
+    const code = await coordinationCommand(["debt", "register", "--repository-id", "repo-1", "--service-id", "svc-a", "--debt-id", "d1", "--title", "x", "--reason", "y", "--reconsider-condition", "z"], baseContext(tempProject()));
     expect(code).toBe(3);
   });
 });

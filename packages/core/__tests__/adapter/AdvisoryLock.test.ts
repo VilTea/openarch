@@ -83,7 +83,7 @@ describe("AdvisoryLockAdapter", () => {
     await Effect.runPromise(release(winners[0]!.right));
   });
 
-  it("两个独立 PID 并发 acquire 同名锁 → 恰好一个成功", async () => {
+  it("两个独立 PID 并发 acquire 同名锁 → 恰好一个成功", { timeout: 30_000 }, async () => {
     const name = "multi-process";
     const results = await Promise.all([
       acquireInChild(tmpDir, name, "child-a"),

@@ -23,8 +23,17 @@ type fakeTaskStore struct {
 func (f *fakeTaskStore) ReadProposal(context.Context, domain.TaskRef) (domain.TaskProposalRecord, bool, error) {
 	return domain.TaskProposalRecord{Proposal: domain.TaskProposal{RequestedBy: "agent-1"}, ContentSHA256: proposalSHA}, true, nil
 }
+func (f *fakeTaskStore) ListProposals(context.Context) ([]domain.TaskProposalRecord, error) {
+	return []domain.TaskProposalRecord{{
+		Proposal:      domain.TaskProposal{Task: taskRef(), Title: "listed task", Hypothesis: "list lifecycle", RequestedBy: "agent-1"},
+		ContentSHA256: proposalSHA,
+	}}, nil
+}
 func (f *fakeTaskStore) ListLifecycle(context.Context, domain.TaskRef) ([]domain.TaskLifecycleEvent, error) {
 	return f.events, nil
+}
+func (f *fakeTaskStore) ListLifecycleStreams(context.Context) (map[domain.TaskRef][]domain.TaskLifecycleEvent, error) {
+	return map[domain.TaskRef][]domain.TaskLifecycleEvent{taskRef(): f.events}, nil
 }
 func (f *fakeTaskStore) AppendLifecycle(_ context.Context, event domain.TaskLifecycleEvent) error {
 	f.events = append(f.events, event)
@@ -36,7 +45,9 @@ type fakeScopeStore struct{}
 func (fakeScopeStore) Read(context.Context) (domain.ScopeRegistry, error) {
 	return domain.ScopeRegistry{Services: []domain.ServiceDocument{{Service: domain.ServiceRef{RepositoryID: "repo-1", ID: "svc-a"}}}}, nil
 }
-func (fakeScopeStore) ListLegacyProjects(context.Context) ([]domain.LegacyProjectRef, error) { return nil, nil }
+func (fakeScopeStore) ListLegacyProjects(context.Context) ([]domain.LegacyProjectRef, error) {
+	return nil, nil
+}
 
 type fakeDocsSync struct{}
 
@@ -125,6 +136,37 @@ func TestClaimLifecycle(t *testing.T) {
 			t.Fatalf("want ErrTaskAlreadyClaimed, got %v", err)
 		}
 	})
+}
+
+func TestListLifecycle(t *testing.T) {
+	verified := domain.TaskLifecycleEvent{
+		SchemaVersion: domain.TaskEventSchemaVersion, Task: taskRef(), Type: "verified",
+		ProposalSHA256: proposalSHA, VerifiedHeadSHA: headSHA,
+	}
+	store := &fakeTaskStore{events: []domain.TaskLifecycleEvent{verified}}
+	service := newTestService(t, store)
+
+	summaries, err := service.List(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("list length = %d, want 1", len(summaries))
+	}
+	summary := summaries[0]
+	if summary.Task != taskRef() || summary.Title != "listed task" || summary.ProposalSHA256 != proposalSHA || summary.Status.State != "verified" || summary.Status.VerifiedHeadSHA != headSHA {
+		t.Fatalf("unexpected task summary: %+v", summary)
+	}
+
+	if filtered, err := service.List(context.Background(), "repo-1"); err != nil || len(filtered) != 1 {
+		t.Fatalf("repository filter list = %d, err=%v", len(filtered), err)
+	}
+	if filtered, err := service.List(context.Background(), "repo-other"); err != nil || len(filtered) != 0 {
+		t.Fatalf("unknown repository filter list = %d, err=%v", len(filtered), err)
+	}
+	if _, err := service.List(context.Background(), "bad id"); err == nil {
+		t.Fatal("invalid repository filter was accepted")
+	}
 }
 
 func TestCompleteLifecycle(t *testing.T) {

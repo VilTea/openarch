@@ -25,6 +25,24 @@ describe("record", () => {
     expect(readFileSync(result.filePath, "utf8")).toContain("src/a.ts (CRL=9.0, maxFuncBranch=2)");
   });
 
+  it("renders an English template when the caller requests the en locale", async () => {
+    const root = join(tmpdir(), `openarch-record-en-${Date.now()}`);
+    const docs = join(root, "docs");
+    mkdirSync(docs, { recursive: true });
+    const StorageTest = Layer.succeed(StorageService, {
+      readIndex: () => Effect.succeed(null), listAllFileMetrics: () => Effect.succeed([]), readAllHistory: () => Effect.succeed([]),
+    });
+    const result = await Effect.runPromise(record({
+      title: "localized fact", docsDir: docs, locale: "en", now: new Date("2026-07-18T00:00:00.000Z"),
+    }).pipe(Effect.provide(StorageTest)));
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    const content = readFileSync(result.filePath, "utf8");
+    expect(content).toContain("Source: openarch docs record");
+    expect(content).toContain("<!-- REQUIRED:");
+    expect(content).toContain("Highest historical CRL:");
+  });
+
   it("confines titles to the category directory and never overwrites a record", async () => {
     const root = join(tmpdir(), `openarch-record-boundary-${Date.now()}`);
     const docs = join(root, "docs");

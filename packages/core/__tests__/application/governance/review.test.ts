@@ -37,6 +37,6 @@ describe("review", () => {
       readAllHistory: () => Effect.succeed([]),
     } as never);
     const result = await Effect.runPromise(review().pipe(Effect.provide(StorageTest)));
-    expect(result).toEqual({ nFiles: 0, entries: [], top3: [], hasData: false });
+    expect(result).toEqual({ nFiles: 0, entries: [], top3: [], hasData: false, reason: "baseline unavailable" });
   });
 });

@@ -2,9 +2,20 @@ import { describe, expect, it } from "vitest";
 import { Effect, Layer } from "effect";
 import { resolve } from "node:path";
 import { testGovernance } from "../../src/application/testGovernance";
+import { suggestTestGovernanceAdapters } from "../../src/application/testGovernanceSetup";
 import { ParserService } from "../../src/port/ParserService";
 import { StorageService } from "../../src/port/StorageService";
 import { LockService } from "../../src/port/LockService";
+
+describe("testGovernance adapter suggestions", () => {
+  it("maps detected languages to candidates without auto-enabling them", () => {
+    expect(suggestTestGovernanceAdapters(["typescript", "go"])).toEqual({
+      providers: ["typescript-vitest", "go-testing"],
+      runners: ["node-test"],
+    });
+    expect(suggestTestGovernanceAdapters(["unknown-language"])).toBeUndefined();
+  });
+});
 
 describe("testGovernance application", () => {
   it("keeps provider facts and policy verdicts separate in read-only reporting mode", async () => {
@@ -36,7 +47,7 @@ describe("testGovernance application", () => {
       release: () => Effect.void,
     });
     const report = await Effect.runPromise(testGovernance({
-      providerIds: ["typescript-vitest"], policy: { rules: {} }, rules: [], persistence: "read",
+      providerIds: ["typescript-vitest"], policy: { rules: {} }, rules: [],
       discoveredTestFiles: ["packages/core/__tests__/empty.test.ts", "services/coordination/internal/evidence/sample_test.go", "packages/core/__tests__/new.test.ts"],
     }).pipe(Effect.provide(Layer.mergeAll(ParserTest, StorageTest, LockTest))));
     expect(report.decision.verdict).toBe("PASS");
@@ -67,6 +78,51 @@ describe("testGovernance application", () => {
       association: { targetPath: subjectPath, source: "../../src/domain/subject", confidence: "low" },
     }]);
     expect(report.collection.associationUnavailableTestFiles).toEqual([]);
+    expect(written).toEqual([]);
+  });
+
+  it("retired testMetrics persistence never writes provider facts into canonical shards", async () => {
+    const subjectPath = resolve("packages/core/src/domain/subject.ts").replace(/\\/g, "/");
+    const canonicalTestPath = "packages/core/__tests__/empty.test.ts";
+    const overlayTestPath = "packages/core/__tests__/new.test.ts";
+    const written: Array<Record<string, unknown>> = [];
+    const ParserTest = Layer.succeed(ParserService, {
+      parse: (path) => Effect.succeed({
+        path, language: "typescript" as const, branchCount: 0, nestingDepth: 0, functionCount: 0,
+        passthroughCalls: 0, imports: [], functions: [],
+      }), query: () => Effect.succeed([]), supportedLanguages: Effect.succeed(["typescript"]),
+    });
+    const StorageTest = Layer.succeed(StorageService, {
+      writeBaseline: () => Effect.void, readIndex: () => Effect.succeed(null), writeIndex: () => Effect.void,
+      writeFileMetrics: (_path, entry) => Effect.sync(() => { written.push(entry); }), deleteFileMetrics: () => Effect.void, readFileMetrics: () => Effect.succeed(null),
+      listAllFileMetrics: () => Effect.succeed([[canonicalTestPath, {
+        path: canonicalTestPath, fileKind: "test" as const,
+        branchCount: 7, nestingDepth: 3, inDegree: 1, outDegree: 2, alphaStruct: 0.2,
+      }], [subjectPath, {
+        path: subjectPath, fileKind: "production" as const,
+        branchCount: 0, nestingDepth: 0, inDegree: 0, outDegree: 0, alphaStruct: 0,
+      }]]),
+      listCurrentFileMetrics: () => Effect.succeed([[canonicalTestPath, {
+        path: canonicalTestPath, fileKind: "test" as const,
+        branchCount: 9, nestingDepth: 4, inDegree: 2, outDegree: 3, alphaStruct: 0.3,
+      }], [overlayTestPath, {
+        path: overlayTestPath, fileKind: "test" as const,
+        branchCount: 8, nestingDepth: 2, inDegree: 0, outDegree: 1, alphaStruct: 0.1,
+      }], [subjectPath, {
+        path: subjectPath, fileKind: "production" as const,
+        branchCount: 0, nestingDepth: 0, inDegree: 0, outDegree: 0, alphaStruct: 0,
+      }]]),
+      clearFileMetrics: () => Effect.void, writeHistory: () => Effect.void, readHistoryEntry: () => Effect.succeed(null), readAllHistory: () => Effect.succeed([]),
+    });
+    const LockTest = Layer.succeed(LockService, {
+      acquire: () => Effect.succeed({ name: "governance-state-write", agentId: "test", acquiredAt: 0, lockId: "test-lock" }),
+      release: () => Effect.void,
+    });
+    const report = await Effect.runPromise(testGovernance({
+      providerIds: ["typescript-vitest"], policy: { rules: {} }, rules: [],
+      discoveredTestFiles: [canonicalTestPath, overlayTestPath],
+    }).pipe(Effect.provide(Layer.mergeAll(ParserTest, StorageTest, LockTest))));
+    expect(report.collection.coverage.unbaselinedTestFiles).toEqual([expect.stringMatching(/new\.test\.ts$/)]);
     expect(written).toEqual([]);
   });
 });

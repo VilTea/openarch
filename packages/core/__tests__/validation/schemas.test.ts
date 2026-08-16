@@ -115,6 +115,16 @@ describe("BaselineIndexSchema", () => {
     });
     expect(parsed.meta.configSnapshotSha256).toBe("c".repeat(64));
   });
+  it("preserves per-policy production populations in meta (machine contract input)", () => {
+    const parsed = BaselineIndexSchema.parse({
+      version: "5.2",
+      meta: {
+        scanAt: "2026-07-05T00:00:00Z", nFiles: 3, languages: ["typescript"],
+        policyPopulations: { "alpha-ts": 38, "beta-go": 12 },
+      },
+    });
+    expect(parsed.meta.policyPopulations).toEqual({ "alpha-ts": 38, "beta-go": 12 });
+  });
   it("rejects an unknown present structural calibration version but accepts a legacy index without calibration", () => {
     const base = { version: "5.2", meta: { scanAt: "2026-07-05T00:00:00Z", nFiles: 3, languages: ["typescript"] } };
     expect(() => BaselineIndexSchema.parse(base)).not.toThrow();

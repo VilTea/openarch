@@ -4,14 +4,21 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
+	"github.com/openarch/openarch/services/coordination/internal/collaboration/adapter/events"
 	"github.com/openarch/openarch/services/coordination/internal/collaboration/application"
 	"github.com/openarch/openarch/services/coordination/internal/collaboration/domain"
 )
 
 // RegisterTaskRoutes attaches collaboration routes to the composition-root
 // mux. Task transport stays outside the evidence HTTP adapter.
-func RegisterTaskRoutes(mux *http.ServeMux, service application.TaskService) {
+func RegisterTaskRoutes(mux *http.ServeMux, service application.TaskService, publishers ...*events.Publisher) {
+	publish := func(event events.Event) {
+		for _, publisher := range publishers {
+			publisher.Publish(event)
+		}
+	}
 	mux.HandleFunc("POST /v1/tasks/submit", func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
@@ -34,7 +41,22 @@ func RegisterTaskRoutes(mux *http.ServeMux, service application.TaskService) {
 		if result.Created {
 			status = http.StatusCreated
 		}
+		publish(events.Event{Type: "task.verified", RepositoryID: string(submission.Task.RepositoryID), ServiceID: string(submission.Task.ServiceID), TaskID: submission.Task.TaskID, Timestamp: time.Now().UTC()})
 		writeJSON(w, status, result)
+	})
+
+	mux.HandleFunc("GET /v1/tasks", func(w http.ResponseWriter, r *http.Request) {
+		filter, err := repositoryFilter(r)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid repositoryId filter: " + err.Error()})
+			return
+		}
+		summaries, err := service.List(r.Context(), string(filter))
+		if err != nil {
+			writeTaskError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"tasks": summaries})
 	})
 
 	mux.HandleFunc("POST /v1/tasks/claim", func(w http.ResponseWriter, r *http.Request) {
@@ -59,6 +81,7 @@ func RegisterTaskRoutes(mux *http.ServeMux, service application.TaskService) {
 		if result.Created {
 			status = http.StatusCreated
 		}
+		publish(events.Event{Type: "task.claimed", RepositoryID: string(payload.Task.RepositoryID), ServiceID: string(payload.Task.ServiceID), TaskID: payload.Task.TaskID, Timestamp: time.Now().UTC()})
 		writeJSON(w, status, result)
 	})
 
@@ -85,6 +108,7 @@ func RegisterTaskRoutes(mux *http.ServeMux, service application.TaskService) {
 		if result.Created {
 			status = http.StatusCreated
 		}
+		publish(events.Event{Type: "task.completed", RepositoryID: string(payload.Task.RepositoryID), ServiceID: string(payload.Task.ServiceID), TaskID: payload.Task.TaskID, Timestamp: time.Now().UTC()})
 		writeJSON(w, status, result)
 	})
 }

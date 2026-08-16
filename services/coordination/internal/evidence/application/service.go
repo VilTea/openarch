@@ -41,6 +41,11 @@ func (s Service) GetCalibration(ctx context.Context, key domain.CalibrationKey) 
 	if err := key.Validate(); err != nil {
 		return domain.Calibration{}, err
 	}
+	// 只读接口直接读投影；投影缺失/损坏时才重建（ingest/refresh 已在写路径重建）。
+	calibration, err := s.projectionRead.CalibrationByKey(ctx, key)
+	if err == nil {
+		return calibration, nil
+	}
 	if err := s.refreshProjection(ctx); err != nil {
 		return domain.Calibration{}, err
 	}
@@ -48,13 +53,16 @@ func (s Service) GetCalibration(ctx context.Context, key domain.CalibrationKey) 
 }
 
 type RepositoryInfo struct {
-	DocsRepo   collaborationdomain.DurableRepositoryDescriptor `json:"docsRepo"`
-	Scope      collaborationdomain.ScopeRegistry               `json:"scope,omitempty"`
-	ScopeState string                                          `json:"scopeState"`
+	DocsRepo       collaborationdomain.DurableRepositoryDescriptor `json:"docsRepo"`
+	Scope          collaborationdomain.ScopeRegistry               `json:"scope,omitempty"`
+	ScopeState     string                                          `json:"scopeState"`
+	LegacyProjects []collaborationdomain.LegacyProjectRef          `json:"legacyProjects,omitempty"`
 }
 
 // GetRepositoryInfo is a read-only bootstrap endpoint for agents. It returns
-// the redacted remote address and current head, never the service worktree.
+// the redacted remote address and current head, the registered scope, and any
+// legacy `projects/<basename>` locations that still need an explicit
+// migration to the repository/service/product registry.
 func (s Service) GetRepositoryInfo(ctx context.Context) (RepositoryInfo, error) {
 	descriptor, err := s.authorityRepo.Descriptor(ctx)
 	if err != nil {
@@ -66,37 +74,35 @@ func (s Service) GetRepositoryInfo(ctx context.Context) (RepositoryInfo, error) 
 	}
 	registry, err := s.scopeStore.Read(ctx)
 	if err != nil {
-		return info, nil
+		return RepositoryInfo{}, err
 	}
 	info.Scope = registry
 	info.ScopeState = "available"
+	legacy, err := s.scopeStore.ListLegacyProjects(ctx)
+	if err != nil {
+		return RepositoryInfo{}, err
+	}
+	info.LegacyProjects = legacy
 	return info, nil
 }
 
 // RefreshRepository acknowledges an agent-pushed head. The service performs
 // the bounded Git operation (fetch and fast-forward of its disposable
-// worktree), then rebuilds projections from the resulting Git facts.
+// worktree), then rebuilds projections from the resulting Git facts. When
+// another project advanced the shared branch after this agent's push, an
+// advertised ancestor head is still accepted; the returned info carries the
+// actual head the projection was rebuilt from.
 func (s Service) RefreshRepository(ctx context.Context, notice collaborationdomain.RepositorySyncNotice) (RepositoryInfo, error) {
 	if err := notice.Validate(); err != nil {
 		return RepositoryInfo{}, err
 	}
-	refreshed, err := s.authorityRepo.RefreshFromRemote(ctx, strings.TrimSpace(notice.Branch), strings.ToLower(strings.TrimSpace(notice.HeadSHA)))
-	if err != nil {
+	if _, err := s.authorityRepo.RefreshFromRemote(ctx, strings.TrimSpace(notice.Branch), strings.ToLower(strings.TrimSpace(notice.HeadSHA))); err != nil {
 		return RepositoryInfo{}, err
-	}
-	if !strings.EqualFold(refreshed.HeadSHA, notice.HeadSHA) {
-		return RepositoryInfo{}, &headMismatchError{expected: notice.HeadSHA, got: refreshed.HeadSHA}
 	}
 	if err := s.refreshProjection(ctx); err != nil {
 		return RepositoryInfo{}, err
 	}
 	return s.GetRepositoryInfo(ctx)
-}
-
-type headMismatchError struct{ expected, got string }
-
-func (e *headMismatchError) Error() string {
-	return "docs-repo refresh head does not match observed remote head: expected " + e.expected + ", got " + e.got
 }
 
 func (s Service) refreshProjection(ctx context.Context) error {

@@ -19,7 +19,7 @@ export const invalidateBaselineGenerationReadCache = (cache: BaselineGenerationR
   cache.snapshot = undefined;
 };
 
-const generationManifest = (directory: string): { readonly key: string; readonly hasCanonicalShards: boolean } => {
+export const generationManifest = (directory: string): { readonly key: string; readonly hasCanonicalShards: boolean } => {
   const files = readdirSync(directory)
     .filter((name) => name.endsWith(".json"))
     .sort();
@@ -46,7 +46,9 @@ export const readCompleteGenerationIfCanonical = (root: string, cache?: Baseline
   const manifest = generationManifest(directory);
   if (cache?.key === manifest.key && cache.snapshot) return cache.snapshot;
   const parsed = BaselineIndexSchema.parse(JSON.parse(readFileSync(index, "utf8")));
-  if (!parsed.meta.snapshotSha256 && !manifest.hasCanonicalShards) {
+  // 校准 2026-08-15：legacy 目录没有 canonical shards 时不存在可深校验的身份，
+  // 即使 index 携带 snapshotSha256 也只是测试/迁移夹具——回退 legacy 读取路径。
+  if (!manifest.hasCanonicalShards) {
     if (cache) invalidateBaselineGenerationReadCache(cache);
     return null;
   }

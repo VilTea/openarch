@@ -6,7 +6,7 @@
 
 面向 AI 辅助团队的本地优先治理框架：承认软件腐化不可避免，并给每个代理提供一条轻量、可随时重建的防线——以信息论为度量根基、以确定性本地证据为验证、以代理真正会读的行动手册为承载体。
 
-`openarch` — 一个命令，五语言符号级分析，18 条内置规则，零 LSP 门禁，全链路可复现。
+`openarch` — 一个命令，五语言符号级分析，30 个内置脚本清单条目（14 反模式 · 9 测试治理 · 5 starter · 1 隐式依赖 · 1 配置），零 LSP 门禁，全链路可复现。
 
 *English: [README.md](./README.md)*
 
@@ -107,11 +107,31 @@ openarch init --agent claude
 ## 命令行
 
 ```text
-公开命令：init · context · scan · review · check · rules · docs · toolchains
+公开命令：init · context · contract · scan · review · check · rules · docs · toolchains · test · update
 高级命令：coordination · lsp · calibration · anti-patterns
 ```
 
 每个命令的详细用法：`openarch <command> --help`。
+
+- `review --evolution` 用真实 Git 提交历史做协调面演化调查；`rules discover` 维护隐式依赖图，让变更冲击在不启动 LSP 时也可复现。
+- `check --worktree|--staged --report --verbose --tests --record-config` 是全量验证面；`--semantic` 在确定性静态图之上追加编译器/LSP 消费者证据。
+
+## 测试治理
+
+`openarch test` 是独立报告位面，不是质量分：
+
+- 五个参考适配器：**Vitest**（TS/JS）、**Go testing**、**Rust Cargo test**、**Java JUnit**、**Python pytest**，另有 Cargo/Maven/Gradle/pytest runner 提供实际命令执行证据。
+- Provider 覆盖 fail-closed：逐 provider 的 `candidates / handled / missingBaseline / failed`、test-illusion finding（看似有断言实则没有）、S2 静态模块→测试关联。
+- `openarch test [--list] [--bloat] [--json]`：无启用 provider 时按检测语言给出适配器建议——只建议，绝不自动启用。
+
+## 机器契约与插件
+
+外部集成（例如 [DSH 插件](./packages/openarch-plugin/README.md)）只消费版本化 JSON 契约，不解析 `.openarch` 内部文件：
+
+- 所有载荷顶层带自识别 `schema`：`context --json`（`context-json-v1`）、`test --json`（`test-governance-json-v1`）、`test --list --json`。
+- `openarch contract --json` 是机器契约目录：破坏性变更必须 bump version；插件对未知版本 fail-closed，不靠猜。
+- `context --json` 的 readiness 每项带 `kind: enforcing | advisory | optional`——code-hook 未装是真实 ⚠（提交不经过门禁）；`coordination-service: not_configured` 是可选能力的常态，不是故障。
+- `update --json` 是只读远端发行感知，绝不自动安装。
 
 ## 多语言与工具链
 
@@ -124,6 +144,8 @@ openarch init --agent claude
 | Go | 静态上界 + file-heavy 兜底（fail-closed） |
 
 外部工具链是**本机事实**：`openarch toolchains` 查看，`openarch init --toolchains user` 配置。
+
+符号级 `complete` 是校准边界，不是普适声明：TypeScript 限受治理 tsconfig 工程；Rust 限单 crate 且无 `build.rs`/workspace/macro invocation/path attribute/cfg；Go 限单 module 且无 `go.work`/build constraint/生成代码；Java 限标准 Maven 布局且无模块/依赖/反射；Python 限 pyright 可解析范围。边界之外报告保持 `PARTIAL` 并保留已收集事实——绝不降级成伪造的零。
 
 ## 项目结构
 

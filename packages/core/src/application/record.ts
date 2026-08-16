@@ -19,6 +19,8 @@ export interface RecordInput {
   readonly category?: RecordCategory;
   /** Keeps history replay and generated document date on one observation time. */
   readonly now?: Date;
+  /** Template locale; the CLI passes the command locale so non-Chinese projects get local templates. */
+  readonly locale?: "zh" | "en";
 }
 
 export type RecordCategory = "anti_patterns" | "patterns" | "decisions";
@@ -28,7 +30,7 @@ export interface RecordOutput {
   readonly category: RecordCategory;
 }
 
-const TEMPLATE = (title: string, date: string, maxCrl: number, topFile: string, topMaxFuncBranch: number, nFiles: number) =>
+const TEMPLATE_ZH = (title: string, date: string, maxCrl: number, topFile: string, topMaxFuncBranch: number, nFiles: number) =>
   `# ${title}
 日期: ${date}
 来源: openarch docs record
@@ -37,7 +39,7 @@ const TEMPLATE = (title: string, date: string, maxCrl: number, topFile: string, 
 
 ## 背景
 <!-- 必填：什么改动触发了这条记录？涉及哪些文件？gate 输出是什么？
-  示例："修改 CelAdapter.ts，新增 comparison() 方法。gate WARN: max_func_branch > 8 (9.3), i_push > 10 (12.1)" -->
+  示例："修改 CelAdapter.ts，新增 comparison() 方法。gate WARN: max_func_branch > 8 (9.3)；diff 冲击 I_push=12.1（report-only 路由证据）" -->
 
 ## 分析
 <!-- 必填：为什么触发规则？是单次改动过大还是架构问题？CRL 趋势如何？
@@ -51,6 +53,32 @@ const TEMPLATE = (title: string, date: string, maxCrl: number, topFile: string, 
 <!-- 必填：下次遇到类似情况怎么处理？这是可复用的认知吗？
   示例："parser/compiler 类代码可能有较高的单函数复杂度。先确认分支集中位置，再按项目路径分类设 max_func_branch 阈值；文件总量和顶层分派在校准前只作报告。" -->
 `;
+
+const TEMPLATE_EN = (title: string, date: string, maxCrl: number, topFile: string, topMaxFuncBranch: number, nFiles: number) =>
+  `# ${title}
+Date: ${date}
+Source: openarch docs record
+Highest historical CRL: ${maxCrl > 0 ? `${topFile} (CRL=${maxCrl.toFixed(1)}, maxFuncBranch=${topMaxFuncBranch})` : "no sealed history data"}
+Files: ${nFiles}
+
+## Background
+<!-- REQUIRED: what change triggered this record? Which files were involved and what did the gate output say?
+  Example: "Modified CelAdapter.ts to add comparison(). Gate WARN: max_func_branch > 8 (9.3); diff impact I_push=12.1 (report-only routing evidence)." -->
+
+## Analysis
+<!-- REQUIRED: why did the rule trigger? Is this a one-off large change or a structural problem, and how is the CRL trend?
+  Example: "CelAdapter is a hand-written recursive-descent parser; every syntax node parses in one file, so high branching is intrinsic rather than a one-off change. CRL=5.6 is low and acceptable." -->
+
+## Response
+<!-- REQUIRED: what decision was made - accept / refactor / defer - and what was the outcome?
+  Example: "Accepted the WARN: the hand-written parser is temporary and disappears after the Phase 2 CEL implementation." -->
+
+## Lessons
+<!-- REQUIRED: how should this be handled next time, and is this reusable knowledge?
+  Example: "Parser/compiler code can legitimately have high per-function complexity. Confirm where branching concentrates first, then calibrate max_func_branch thresholds by project path class; file totals and top-level dispatch stay report-only before calibration." -->
+`;
+
+const templateFor = (locale: "zh" | "en") => locale === "en" ? TEMPLATE_EN : TEMPLATE_ZH;
 
 const errnoCodeOf = (error: unknown): string | undefined => {
   if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
@@ -103,7 +131,7 @@ export const record = (input: RecordInput) =>
     const writeResult = yield* Effect.either(Effect.try({
       try: () => {
         mkdirSync(outDir, { recursive: true });
-        writeFileSync(outFile, TEMPLATE(input.title.trim(), today, maxCrl, topFile, topBranch, index?.meta.nFiles ?? 0), { flag: "wx" });
+        writeFileSync(outFile, templateFor(input.locale ?? "zh")(input.title.trim(), today, maxCrl, topFile, topBranch, index?.meta.nFiles ?? 0), { flag: "wx" });
       },
       catch: (error) => error,
     }));

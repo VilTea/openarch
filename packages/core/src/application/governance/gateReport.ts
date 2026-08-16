@@ -10,7 +10,8 @@ export interface GateFileMetric {
   readonly topLevelWeightedBranch?: number;
   readonly nestingDepth: number;
   readonly alphaStruct: number;
-  readonly cohesion: number;
+  /** @deprecated CT 已 cut；仅旧调用/测试兼容，不作为 gate 或报告信号。 */
+  readonly cohesion?: number;
   readonly loc?: number;
   /** 声明行（类型/接口头 + 函数签名）：CRL loc 因子按实现行口径排除（校准 2026-08-08）。 */
   readonly declarationLoc?: number;

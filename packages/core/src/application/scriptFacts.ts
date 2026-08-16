@@ -78,24 +78,33 @@ const semanticRelationsFor = (requested: readonly ScriptFactCapability[] | undef
     } satisfies FactResult<SemanticRelationsFact>;
   });
 
+const invocationBindingsFor = (requested: readonly ScriptFactCapability[] | undefined, files: readonly string[]) =>
+  Effect.gen(function* () {
+    if (!requested?.includes("invocation-bindings.v1")) {
+      return { availability: "unavailable" as const, reason: "当前命令的脚本未声明 invocation-bindings.v1。" };
+    }
+    const parser = yield* ParserService;
+    if (!parser.invocationBindings) {
+      return { availability: "unavailable" as const, reason: "当前 ParserService 未提供 invocation bindings。" };
+    }
+    return yield* Effect.forEach(
+      files,
+      (file) => parser.invocationBindings!(file),
+      { concurrency: DEFAULT_ANALYSIS_CONCURRENCY },
+    ).pipe(
+      Effect.match({
+        // fail-fast：任一失败走 onFailure（invocationBindings 本就是 Effect——
+        // 原来的 async 包装 + runPromise 是对 Effect 的误用，校准 2026-08-07）
+        onSuccess: (values) => ({ availability: "available" as const, value: values.flat() }),
+        onFailure: (error) => ({ availability: "unavailable" as const, reason: error.message }),
+      }),
+    );
+  });
+
 /** Application-owned composition point: project configuration and storage are read once, then scripts get a snapshot. */
 export const loadScriptFacts = (options: ScriptFactsOptions) =>
   Effect.gen(function* () {
-    const parser = yield* ParserService;
-    const bindings = parser.invocationBindings
-      ? yield* Effect.forEach(
-        options.files,
-        (file) => parser.invocationBindings!(file),
-        { concurrency: DEFAULT_ANALYSIS_CONCURRENCY },
-      ).pipe(
-        Effect.match({
-          // fail-fast：任一失败走 onFailure（invocationBindings 本就是 Effect——
-          // 原来的 async 包装 + runPromise 是对 Effect 的误用，校准 2026-08-07）
-          onSuccess: (values) => ({ availability: "available" as const, value: values.flat() }),
-          onFailure: (error) => ({ availability: "unavailable" as const, reason: error.message }),
-        }),
-      )
-      : { availability: "unavailable" as const, reason: "当前 ParserService 未提供 invocation bindings。" };
+    const bindings = yield* invocationBindingsFor(options.requestedCapabilities, options.files);
     const semanticRelations = yield* semanticRelationsFor(options.requestedCapabilities);
     if (options.baseline) return yield* Effect.promise(() => buildFacts(options, bindings, semanticRelations, options.baseline));
     const storage = yield* StorageService;

@@ -105,4 +105,81 @@ describe("status", () => {
     writeFileSync(join(cwd, ".openarch", "config.yml"), "rules_warn:\n  - name: branch\n    condition: max_func_branch > 5\n");
     expect(projectGovernanceStatus(cwd).architecturePolicy).toEqual({ state: "configured", declaredRules: 1 });
   });
+
+  it("projects structural policy populations, calibration source, and baseline identity from the index", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "openarch-status-policy-populations-"));
+    temporaryDirectories.push(cwd);
+    mkdirSync(join(cwd, ".openarch", "baseline"), { recursive: true });
+    writeFileSync(join(cwd, ".openarch", "config.yml"), "languages: [typescript]\n");
+    writeFileSync(join(cwd, ".openarch", "baseline", "_index.json"), JSON.stringify({
+      meta: {
+        nFiles: 10,
+        languages: ["typescript"],
+        snapshotSha256: "snapshot-abc",
+        metricContractVersion: "metric-contract-v4",
+        policyCalibrations: {
+          "alpha-ts": { current: {}, previous: {}, gate: { id: "sealed-1" } },
+          "beta-ts": { current: {} },
+        },
+        policyPopulations: { "alpha-ts": 51, "beta-ts": 12 },
+      },
+    }));
+
+    const report = projectGovernanceStatus(cwd);
+    expect(report.languages).toEqual(["typescript"]);
+    expect(report.baseline).toMatchObject({
+      snapshotSha256: "snapshot-abc",
+      metricContractVersion: "metric-contract-v4",
+      languages: ["typescript"],
+      policyPopulations: [
+        { id: "alpha-ts", productionFiles: 51, calibration: "sealed" },
+        { id: "beta-ts", productionFiles: 12, calibration: "bootstrapped" },
+      ],
+    });
+  });
+
+  it("exposes the fixed scan-exclusion boundary and failed scan reason", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "openarch-status-scan-"));
+    temporaryDirectories.push(cwd);
+    mkdirSync(join(cwd, ".openarch"), { recursive: true });
+    writeFileSync(join(cwd, ".openarch", "scan-status.json"), JSON.stringify({
+      status: "failed", phase: "parsing", completed: 2, total: 5, reason: "ParseError: bad syntax",
+    }));
+
+    const report = projectGovernanceStatus(cwd);
+    expect(report.scan.status).toEqual({
+      status: "failed", phase: "parsing", completed: 2, total: 5, reason: "ParseError: bad syntax",
+    });
+    expect(report.scan.exclusions.segments).toContain("/target/");
+    expect(report.scan.exclusions.directoryNames).toContain("node_modules");
+  });
+
+  it("lists structural policy facts from config without evaluating rules", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "openarch-status-structural-policies-"));
+    temporaryDirectories.push(cwd);
+    mkdirSync(join(cwd, ".openarch"), { recursive: true });
+    writeFileSync(join(cwd, ".openarch", "config.yml"), [
+      "structural_policies:",
+      "  - id: alpha-ts",
+      "    mode: enforce",
+      "    languages: [typescript]",
+      "    rules_warn:",
+      "      - name: branch",
+      "        condition: max_func_branch > 6",
+      "    rules_block: []",
+      "  - id: beta-go",
+      "    mode: observe",
+      "    languages: [go]",
+      "    rules_warn: []",
+      "    rules_block: []",
+    ].join("\n"));
+
+    const policy = projectGovernanceStatus(cwd).architecturePolicy;
+    expect(policy.state).toBe("configured");
+    expect(policy.declaredRules).toBe(1);
+    expect(policy.policies).toEqual([
+      { id: "alpha-ts", mode: "enforce", languages: ["typescript"], rules: 1 },
+      { id: "beta-go", mode: "observe", languages: ["go"], rules: 0 },
+    ]);
+  });
 });

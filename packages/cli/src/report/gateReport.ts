@@ -28,6 +28,12 @@ export const renderGateReport = (output: GateAppOutput, locale: Locale): readonl
       files: policy.evaluatedFiles,
     })));
   }
+  if (output.smallSamplePolicies && output.smallSamplePolicies.length > 0) {
+    lines.push(message(locale, "gate.smallSampleHeading"));
+    lines.push(...output.smallSamplePolicies.map((policy) => message(locale, "gate.smallSamplePolicy", {
+      id: policy.id, files: policy.files, calibration: message(locale, `gate.smallSample.${policy.calibration}`),
+    })));
+  }
   const calibrationShifts = output.calibrationShifts ?? [];
   if (calibrationShifts.length > 0) {
     lines.push(message(locale, "gate.calibrationHeading"));

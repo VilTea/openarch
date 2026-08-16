@@ -1,12 +1,14 @@
 export default {
   scope: "file",
+  targets: { languages: ["typescript", "javascript", "vue"] },
   stages: {
-    text: ({ files, text }) => files.filter((file) => text(file).includes("function") || text(file).includes("=>")),
+    text: ({ files, text }) => files.filter((file) => text(file).includes("function") || /\)\s*\{\s*\}/.test(text(file))),
     ast: {
-      pattern: "[(function_declaration body: (statement_block) @body) (arrow_function body: (statement_block) @body)]",
+      pattern: "[(function_declaration name: (_) @name body: (statement_block) @body) (method_definition name: (_) @name body: (statement_block) @body)]",
       extract: (matches) => matches.flatMap((match) => {
+        const name = match.captures.find((capture) => capture.name === "name")?.text;
         const body = match.captures.find((capture) => capture.name === "body")?.text;
-        return body ? [{ body }] : [];
+        return body && name && name !== "constructor" ? [{ name, body }] : [];
       }),
     },
   },

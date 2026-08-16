@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "OpenArch 架构治理——以 scan、review、check、rules、docs 驱动证据化治理",
-    "version": "0.1.0"
+    "version": "0.1.2"
   },
   "plugins": [
     {
       "name": "openarch",
       "source": "./",
       "description": "证据化治理：scan、review、check、rules、docs + 多平台 Skill",
-      "version": "0.1.0",
+      "version": "0.1.2",
       "category": "code-quality",
       "keywords": ["architecture", "governance", "crl", "code-quality"]
     }

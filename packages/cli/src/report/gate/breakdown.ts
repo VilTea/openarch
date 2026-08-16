@@ -3,7 +3,7 @@ import { type Locale, message } from "../../i18n";
 import { bar } from "./shared";
 
 export const renderBreakdown = (locale: Locale, metric: GateFileMetric, p95: NonNullable<NonNullable<GateAppOutput["report"]>["p95"]>, weights: NonNullable<GateAppOutput["report"]>["weights"]): readonly string[] => {
-  const breakdown = computeCRLStateBreakdown({ maxFuncBranch: maxFuncWeightedBranchOf(metric), nestingDepth: metric.nestingDepth, loc: metric.loc, alphaStruct: metric.alphaStruct, connectedness: metric.connectedness, externalPassthroughCalls: metric.externalPassthroughCalls }, p95, weights);
+  const breakdown = computeCRLStateBreakdown({ maxFuncBranch: maxFuncWeightedBranchOf(metric), nestingDepth: metric.nestingDepth, loc: metric.loc, declarationLoc: metric.declarationLoc, alphaStruct: metric.alphaStruct, connectedness: metric.connectedness, externalPassthroughCalls: metric.externalPassthroughCalls, passthroughCalls: metric.passthroughCalls }, p95, weights);
   const external = metric.externalPassthroughCalls ?? 0;
   return [
     message(locale, "gate.breakdownSummary", { local: breakdown.localBurden.toFixed(3), exposure: breakdown.exposure.toFixed(3), shape: breakdown.moduleShape.toFixed(3), composite: breakdown.composite.toFixed(3) }),

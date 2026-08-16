@@ -2,6 +2,30 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格；版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.3] - 2026-08-17
+
+多语言语义关系与机器契约版。
+
+### Added
+
+- **semantic-relations.v1 多语言扩展**：在 TypeScript 基础上新增 Python/Pyright、Go/gopls、Java/JDT LS、Rust/rust-analyzer 四个 LSP provider；关系族扩展 `embeds`/`instantiates`，符号类扩展 `struct`/`enum`/`trait`，并在真实 Python/Go/Java/Rust workspace 校准直接关系事实。各 provider 保持有界直接静态范围与 partial/unavailable 边界。
+- **gopls 常驻与通用 LSP daemon**：`openarch lsp <start|stop|status> [java|go]`；jdtls 转发 daemon 内核泛化为 `jdtls|gopls` 双 kind。Go semantic-relations 默认走 gopls 原生 `-remote=auto`（daemon 持有索引、`shutdown:"self"` 只回收 proxy）；`OPENARCH_GOPLS_DAEMON=off` 回退单次 `gopls serve` 供有界测试与校准。
+- **机器契约目录**：`openarch contract --json` 汇总 context / test-governance / provider-list / rules-facts / docs-check 五份 JSON 契约的 id/version/status；外部插件按 schema 未知版本 fail-closed。
+- **DSH 插件（DeepSeek Harness）**：v5.3 baseline 契约、`openarch_test` 治理工具、dashboard 与 `governance-state` 数据通道；多工作区独立缓存、会话 cwd 工具路由、root 白名单 fail-closed 与 cordis bundle patch。
+- **治理闭环与冲击量重构**：Task/Debt/protected_paths 闭环、I_push 报告路由、localBurden 单一口径、D_MR 按 policy 校准、impactScale 与 sealed replay 对齐、无消费指标退役与小样本校准保护。
+- **事实注册表与按需事实编排**：self-describing fact registry、`openarch rules facts`/`rules check --unused`；生命周期理由与 builtinConsumers；`string-key-calls-ts-js.v1` 语言限定 fact id（旧 id 保留兼容别名）；invocation-bindings 仅在被脚本显式 requires 时收集。
+- **文档治理闭环**：`docs check --unfilled` 与相似候选处置（`docs decide`）；record 模板本地化并强化未填写检测。
+
+### Changed
+
+- 结构解析：构造器空体等 false positive 校准；scan hygiene、语言回退与测试适配器建议按 provider 边界呈现。
+- staged-analysis 按阶段抽取 record collector，事实收集与呈现职责分离。
+
+### Fixed
+
+- Python/Pyright provider 补上 `initialize`/`initialized` 会话初始化，修复冷启动挂起；有候选时 complete 以 definition 请求全成功 + 仓库目标为准，空索引不再误判为零关系。
+- Go 大 module 冷启动从单次 `gopls serve` 失败切换到常驻 daemon 后能返回事实，但 diagnostics/definition 预算未达时仍如实保持 partial。
+
 ## [0.1.2] - 2026-08-12
 
 跨文件分析与跨环境可靠性版。

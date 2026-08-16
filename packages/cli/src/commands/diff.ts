@@ -40,8 +40,8 @@ const verifyStagedEvidence = (paths: readonly string[], cwd: string): number => 
   return 0;
 };
 
-const baseRevision = (): string => {
-  try { return execSync("git rev-parse HEAD", { encoding: "utf8", timeout: 5000 }).trim() || "uncommitted-base"; }
+const baseRevision = (cwd: string): string => {
+  try { return execSync("git rev-parse HEAD", { cwd, encoding: "utf8", timeout: 5000 }).trim() || "uncommitted-base"; }
   catch { return "uncommitted-base"; }
 };
 
@@ -158,6 +158,7 @@ const parseDiffRequest = (args: readonly string[], cwd: string): DiffRequest | u
 
 const executeDiff = async (
   request: DiffRequest,
+  cwd: string,
   locale: Locale,
   semanticProfiles?: readonly import("@openarch/core").SemanticFileProfile[],
   afterTexts?: ReadonlyMap<string, string>,
@@ -177,7 +178,7 @@ const executeDiff = async (
     ...(versionPairs ? { versionPairs } : {}),
     ...(calibrationAvailable ? { calibrationAvailable } : {}),
     persistence: "pending",
-    revisionKey: baseRevision(),
+    revisionKey: baseRevision(cwd),
     agentId: process.env.OPENARCH_AGENT_ID ?? "default",
     implicitDeps,
   }).pipe(Effect.provide(LiveLayer), Effect.either));
@@ -213,7 +214,7 @@ export const diffCommand: CommandHandler = async (args, context) => {
   if (request.paths.length === 0) return 0;
   const locale = context.locale;
   const detail = args.includes("--verbose");
-  if (request.changeType) return executeDiff(request, locale, undefined, undefined, undefined, detail);
+  if (request.changeType) return executeDiff(request, context.cwd, locale, undefined, undefined, undefined, detail);
   const semantic = await automaticSemanticProfiles(
     context.cwd,
     request.paths,
@@ -251,5 +252,5 @@ export const diffCommand: CommandHandler = async (args, context) => {
   }
   // durable 校准样本检测：项目校准存储有 profile → admission calibration_samples available
   const calibrationAvailable = hasDurableCalibrationSamples(context.cwd);
-  return executeDiff(request, locale, semantic.profiles, semantic.afterTexts, symbolUseReports, detail, versionPairs, calibrationAvailable);
+  return executeDiff(request, context.cwd, locale, semantic.profiles, semantic.afterTexts, symbolUseReports, detail, versionPairs, calibrationAvailable);
 };

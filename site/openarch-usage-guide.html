@@ -78,7 +78,7 @@
   }
   pre.code .c { color: var(--ink-3); } /* comment */
   pre.code .p { color: var(--series-1); } /* prompt/cmd */
-  code.inline { font-family: ui-monospace, monospace; font-size: 0.84em; color: var(--series-1); background: var(--surface-2); padding: 1px 6px; border-radius: 4px; }
+  code.inline { font-family: ui-monospace, monospace; font-size: 0.84em; color: var(--series-1); background: var(--surface-2); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; }
 
   /* TL;DR */
   .tldr { background: linear-gradient(150deg, var(--surface-1), var(--surface-2)); border: 1px solid var(--hairline); border-radius: 16px; padding: 32px 34px; position: relative; overflow: hidden; }
@@ -155,6 +155,26 @@
   .cmd.adv .cname { color: var(--warning); }
   .cmd .cdesc { color: var(--ink-3); font-size: 0.8rem; margin-top: 4px; }
 
+  /* evolution planes: test governance vs machine contracts */
+  .planes-wrap { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 14px; padding: 24px 22px 20px; }
+  #planesCanvas { width: 100%; height: 212px; display: block; }
+  .planes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px; }
+  .plane { position: relative; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 12px; padding: 20px 20px 10px; overflow: hidden; }
+  .plane::before { content: ""; position: absolute; left: 0; top: 0; right: 0; height: 3px; }
+  .plane.a::before { background: linear-gradient(90deg, var(--series-3), rgba(25,158,112,0)); }
+  .plane.b::before { background: linear-gradient(90deg, var(--series-1), rgba(57,135,229,0)); }
+  .plane .ph { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .plane .pbadge { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.07em; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+  .plane.a .pbadge { background: rgba(25,158,112,0.13); color: var(--series-3); border: 1px solid rgba(25,158,112,0.35); }
+  .plane.b .pbadge { background: rgba(57,135,229,0.13); color: var(--series-1); border: 1px solid rgba(57,135,229,0.35); }
+  .plane h3 { color: var(--ink-1); font-size: 1.04rem; font-weight: 700; }
+  .plane .pdesc { font-size: 0.82rem; color: var(--ink-3); margin-bottom: 6px; }
+  .pfeat { display: flex; gap: 12px; padding: 11px 0; border-top: 1px dashed var(--hairline); }
+  .pfeat .pk { flex: 0 0 auto; font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 0.78rem; font-weight: 700; }
+  .plane.a .pk { color: var(--series-3); }
+  .plane.b .pk { color: var(--series-1); }
+  .pfeat .pv { font-size: 0.8rem; color: var(--ink-2); line-height: 1.62; }
+
   /* agent 3-step */
   .a3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
   .a3 .a { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 12px; padding: 22px; position: relative; }
@@ -181,11 +201,54 @@
   footer .note code { color: var(--series-1); font-family: ui-monospace, monospace; }
   .copy { margin-top: 26px; font-size: 0.78rem; color: var(--ink-3); }
 
+  /* ── micro polish (tokens / layout unchanged) ── */
+  ::selection { background: rgba(57,135,229,0.30); }
+  :focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+  pre.code { scrollbar-width: thin; scrollbar-color: var(--baseline) transparent; }
+  pre.code::-webkit-scrollbar { height: 8px; }
+  pre.code::-webkit-scrollbar-thumb { background: var(--baseline); border-radius: 4px; }
+  pre.code::-webkit-scrollbar-track { background: transparent; }
+
+  header.hero { position: relative; }
+  header.hero::before {
+    content: ""; position: absolute; top: -120px; right: -140px; width: 480px; height: 480px;
+    border-radius: 50%; background: radial-gradient(circle, var(--glow), transparent 70%);
+    opacity: .55; pointer-events: none; z-index: -1;
+  }
+  .stat { transition: transform .25s ease, border-color .25s ease; }
+  .stat:hover { transform: translateY(-3px); border-color: var(--series-1); }
+  .tstep .card { transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease; }
+  .tstep:hover .card { transform: translateY(-2px); border-color: var(--series-1); }
+  .tstep .node { transition: box-shadow .25s ease; }
+  .tstep:hover .node { box-shadow: 0 0 0 7px rgba(57,135,229,0.14); }
+  .tabs button:not(.active):not(:disabled):hover { border-color: var(--series-1); color: var(--ink-1); }
+  .tabs button.active { box-shadow: 0 6px 18px var(--glow); }
+  .cmd { transition: transform .2s ease, border-color .2s ease; }
+  .cmd:hover { transform: translateY(-2px); border-color: var(--series-1); }
+  .cmd:hover .cname { text-shadow: 0 0 12px var(--glow); }
+  .faq { transition: border-color .2s ease, transform .2s ease; }
+  .faq:hover { border-color: var(--series-1); transform: translateY(-2px); }
+  .plane { transition: border-color .22s ease, transform .22s ease; }
+  .plane:hover { transform: translateY(-2px); }
+  .plane.a:hover { border-color: rgba(25,158,112,0.55); }
+  .plane.b:hover { border-color: rgba(57,135,229,0.55); }
+  .flow-steps .fs { transition: border-color .2s ease, transform .2s ease; }
+  .flow-steps .fs:hover { border-color: var(--series-1); transform: translateY(-2px); }
+  .a3 .a { transition: border-color .22s ease, transform .22s ease; }
+  .a3 .a:hover { border-color: var(--series-1); transform: translateY(-2px); }
+
   @media (max-width: 760px) {
     .toolbar { top: 12px; right: 12px; }
     .ba { grid-template-columns: 1fr; } .ba .arrow { transform: rotate(90deg); padding: 4px 0; }
     .flow-steps { grid-template-columns: 1fr 1fr; }
+    .planes { grid-template-columns: 1fr; }
+    .pfeat { flex-direction: column; gap: 3px; }
   }
+
+  /* scroll reveal (same idiom as the landing page) */
+  .wrap > section { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s ease; }
+  .wrap > section.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .wrap > section { opacity: 1 !important; transform: none !important; } }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -193,7 +256,7 @@
 <canvas id="bg"></canvas>
 
 <div class="toolbar">
-  <a href="openarch-analysis-report.html">📊 源码审计报告</a>
+  <a href="openarch-analysis-report.html">📊 架构分析报告</a>
   <button id="themeBtn">🌙 深色</button>
 </div>
 
@@ -257,7 +320,7 @@
     <div class="sec-head">
       <span class="sec-num">02 · 安装（重点）</span>
       <h2>三步让 Agent 装上并用起来</h2>
-      <p class="sec-sub">从拿到 CLI 到 Agent 在项目里跑起来。目前只提供可复现的源码构建路径（npm 仓库发行暂缓，已在选项中置灰）；初始化与验证两步通用。</p>
+      <p class="sec-sub">从拿到 CLI 到 Agent 在项目里跑起来。源码构建与本地 tarball 均正式可用（npm 仓库发行暂缓，已在选项中置灰）；初始化与验证两步通用。</p>
     </div>
 
     <div class="agent-first" id="agent-first">
@@ -283,7 +346,7 @@
           <div class="tabs">
             <button class="tab-btn active" data-tab="src">源码构建（推荐 · 可复现）</button>
             <button class="tab-btn" data-tab="npm" disabled title="npm 仓库发行暂缓，暂不可用">npm 安装 · 暂未开放</button>
-            <button class="tab-btn" data-tab="offline" disabled title="暂随 npm 发行一并开放">离线 / 内网 · 暂未开放</button>
+            <button class="tab-btn" data-tab="offline" title="本地 tarball 已正式可用">离线 / 内网 · 本地 tarball</button>
           </div>
 
           <div class="tab-panel active" data-panel="src">
@@ -387,23 +450,26 @@
     <div class="sec-head">
       <span class="sec-num">04 · 命令速查</span>
       <h2>openarch 命令面</h2>
-      <p class="sec-sub">公开命令 8 个 · 高级命令 4 个。逐命令帮助用 <code class="inline">openarch &lt;command&gt; --help</code>。</p>
+      <p class="sec-sub">公开命令 11 个 · 高级命令 4 个。逐命令帮助用 <code class="inline">openarch &lt;command&gt; --help</code>。</p>
     </div>
     <div class="kpi-row" style="margin-bottom:24px">
-      <div class="stat"><div class="v">8<span class="u"> + 4</span></div><div class="l">公开 + 高级命令</div></div>
-      <div class="stat"><div class="v">5<span class="u"> 种</span></div><div class="l">符号级语言</div></div>
-      <div class="stat"><div class="v">18<span class="u"> 条</span></div><div class="l">内置规则</div></div>
-      <div class="stat"><div class="v">0<span class="u"> LLM</span></div><div class="l">门禁确定性</div></div>
+      <div class="stat"><div class="v" data-count="11">11<span class="u"> + 4</span></div><div class="l">公开 + 高级命令</div></div>
+      <div class="stat"><div class="v" data-count="5">5<span class="u"> 种</span></div><div class="l">符号级语言</div></div>
+      <div class="stat"><div class="v" data-count="30">30<span class="u"> 条目</span></div><div class="l">内置脚本清单</div></div>
+      <div class="stat"><div class="v" data-count="0">0<span class="u"> LLM</span></div><div class="l">门禁确定性</div></div>
     </div>
     <div class="cmd-grid">
       <div class="cmd"><div class="cname">init</div><div class="cdesc">初始化受治理项目 · 装 Skill · hook · 模式 · 工具链</div></div>
-      <div class="cmd"><div class="cname">context</div><div class="cdesc">只读项目事实：基线、策略、治理可用性</div></div>
+      <div class="cmd"><div class="cname">context</div><div class="cdesc">只读项目事实：基线、策略、治理可用性 · --json 机器契约</div></div>
+      <div class="cmd"><div class="cname">contract</div><div class="cdesc">机器契约目录：插件消费的 JSON 契约 id/version/status</div></div>
       <div class="cmd"><div class="cname">scan</div><div class="cdesc">建立/更新状态基线（CRL、结构、TEST_BLOAT）</div></div>
-      <div class="cmd"><div class="cname">review</div><div class="cdesc">存量复盘：Top-3 局部负担、结构候选（仅报告）</div></div>
-      <div class="cmd"><div class="cname">check</div><div class="cdesc">变更冲击门禁：--worktree / --staged，含 --semantic</div></div>
-      <div class="cmd"><div class="cname">rules</div><div class="cdesc">项目规则：facts → skeleton → 脚本 → scan</div></div>
-      <div class="cmd"><div class="cname">docs</div><div class="cdesc">协作文档库：能力资产、经验 record</div></div>
+      <div class="cmd"><div class="cname">review</div><div class="cdesc">存量复盘：Top-3 局部负担、结构候选 · --evolution 历史演化（仅报告）</div></div>
+      <div class="cmd"><div class="cname">check</div><div class="cdesc">变更冲击门禁：--worktree / --staged · --semantic · --report --verbose --tests --full --record-config</div></div>
+      <div class="cmd"><div class="cname">rules</div><div class="cdesc">项目规则：facts（自描述注册表：--domain/--query 检索 · --unused 零消费者 CI 提示）→ skeleton → 脚本 → scan · discover 隐式依赖</div></div>
+      <div class="cmd"><div class="cname">docs</div><div class="cdesc">协作文档库：check（相似候选 · --unfilled · --json）/ record / status / decide 处置</div></div>
       <div class="cmd"><div class="cname">toolchains</div><div class="cdesc">查看/配置外部编译器与语言服务器</div></div>
+      <div class="cmd"><div class="cname">test</div><div class="cdesc">测试治理：六框架适配器、provider 覆盖、[--list] [--bloat] [--json]</div></div>
+      <div class="cmd"><div class="cname">update</div><div class="cdesc">只读远端发行感知：当前/最新版本 · --json</div></div>
       <div class="cmd adv"><div class="cname">coordination</div><div class="cdesc">可选远程：Task / 租约 / 语义锁（默认 UNAVAILABLE）</div></div>
       <div class="cmd adv"><div class="cname">lsp</div><div class="cdesc">LSP 预热与 daemon（jdtls 转发等）</div></div>
       <div class="cmd adv"><div class="cname">calibration</div><div class="cdesc">P95 校准 epoch 管理</div></div>
@@ -411,10 +477,39 @@
     </div>
   </section>
 
+  <!-- ───────── TEST & CONTRACTS ───────── -->
+  <section id="test-contracts">
+    <div class="sec-head">
+      <span class="sec-num">05 · 测试治理与机器契约</span>
+      <h2>两个独立演进位面</h2>
+      <p class="sec-sub">测试治理面向仓库内部的测试事实，机器契约面向外部插件的消费边界——两个位面各自版本化、独立演进，谁也不绑架谁。</p>
+    </div>
+    <div class="planes-wrap">
+      <canvas id="planesCanvas" role="img" aria-label="两个独立演进的位面示意图：测试治理与机器契约各走各的轨道"></canvas>
+      <div class="planes">
+        <article class="plane a">
+          <div class="ph"><span class="pbadge">位面 A · 独立报告层</span><h3>测试治理</h3></div>
+          <p class="pdesc">provider 采集测试事实、runner 执行真实命令；报告按 decision / collection / execution / scripts 四层分开——策略裁决与证据边界不互相覆盖。测试与辅助文件不进生产度量。</p>
+          <div class="pfeat"><span class="pk">🧪 openarch test</span><span class="pv">Vitest · node:test · Go testing · Rust Cargo · JUnit · pytest 六参考适配器；Cargo/Maven/Gradle/pytest/node:test runner 给实际命令证据；provider 边界 candidates / handled / missingBaseline / failed fail-closed，无启用 provider 时按语言只建议适配器、不自动启用。</span></div>
+          <div class="pfeat"><span class="pk">🔍 finding 与关联</span><span class="pv">test-illusion（看似有断言实则没有）、S2 静态模块→测试关联、<code class="inline">--bloat</code> minhash 膨胀诊断——全部 report-only，不进 gate。</span></div>
+          <div class="pfeat"><span class="pk">✅ check --tests</span><span class="pv">把测试治理评估追加进变更验证心流（可与 <code class="inline">--full</code> 组合跳过 diff 前置做全量）；<code class="inline">test --list</code> 列出已注册 provider，供配置引用。</span></div>
+        </article>
+        <article class="plane b">
+          <div class="ph"><span class="pbadge">位面 B · 版本化边界</span><h3>机器契约</h3></div>
+          <p class="pdesc">外部插件只消费版本化的 JSON 契约，不解析 <code class="inline">.openarch</code> 内部文件：破坏性变更必须 bump version，非破坏字段同版本追加；插件一律读顶层 <code class="inline">schema</code> 判断版本，不得用"缺字段即旧版"反推。</p>
+          <div class="pfeat"><span class="pk">📜 openarch contract</span><span class="pv">机器契约目录 <code class="inline">contract-catalog-json-v1</code>：context / test-governance / provider-list / rules-facts / docs-check 五份契约的 id、version、status 一览。</span></div>
+          <div class="pfeat"><span class="pk">🔌 context --json</span><span class="pv">顶层 <code class="inline">schema</code> 字段自识别（<code class="inline">context-json-v1</code>）；readiness 按 enforcing / advisory / optional 分级——code-hook 未装是 ⚠，协调服务未配置是常态。</span></div>
+          <div class="pfeat"><span class="pk">🗂 docs check --json</span><span class="pv">文档治理证据契约 <code class="inline">docs-check-json-v1</code>：索引文档、相似候选、未填写模板与处置记录——配合 <code class="inline">docs decide</code> 关闭相似候选的处置闭环。</span></div>
+          <div class="pfeat"><span class="pk">🛰 update --json</span><span class="pv">只读远端发行感知：打印当前/最新版本与升级步骤，绝不自动安装。</span></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
   <!-- ───────── FAQ ───────── -->
   <section id="faq">
     <div class="sec-head">
-      <span class="sec-num">05 · 边角与取舍</span>
+      <span class="sec-num">06 · 边角与取舍</span>
       <h2>常见疑问</h2>
     </div>
     <div class="faq">
@@ -423,11 +518,11 @@
     </div>
     <div class="faq">
       <h3><span class="q">Q.</span> 外部工具链（pyright / rust-analyzer / jdtls）要装吗？</h3>
-      <p>它们是<strong style="color:var(--ink-1)">机器事实</strong>，不是项目依赖——绝不写进 manifest/lockfile。TypeScript 用内置编译器 provider（精确），其余语言按需配置：<code class="inline">openarch toolchains</code> 查看，<code class="inline">openarch init --toolchains user|project</code> 填绝对路径。工具链不可用时符号级证据 fail-closed（不降级兑底）。</p>
+      <p>它们是<strong style="color:var(--ink-1)">机器事实</strong>，不是项目依赖——绝不写进 manifest/lockfile。TypeScript 用内置编译器 provider（精确），其余语言按需配置：<code class="inline">openarch toolchains</code> 查看，<code class="inline">openarch init --toolchains user|project</code> 填绝对路径。工具链不可用时符号级证据 fail-closed（不降级兑底）。符号级 <code class="inline">complete</code> 是语言级校准边界：Rust 单 crate 且无 build.rs/workspace/macro/cfg，Go 单 module 且无 go.work/build constraint/生成代码，Java 标准 Maven 布局且无模块/依赖/反射，Python 限 pyright 可解析范围；越界保持 <code class="inline">PARTIAL</code> 并保留已收集事实，绝不伪造零。</p>
     </div>
     <div class="faq">
       <h3><span class="q">Q.</span> 协调服务是必须的吗？</h3>
-      <p>不是。<strong style="color:var(--ink-1">本地 OpenArch 默认独立工作</strong>。只有用户显式执行 <code class="inline">openarch init --coordination-url &lt;https://...&gt;</code> 后，远程 Task/会议/语义锁才可用——否则这些操作是 <code class="inline">UNAVAILABLE</code>，本地治理照常。地址绝不从 Git remote、目录或环境变量推导。</p>
+      <p>不是。<strong style="color:var(--ink-1)">本地 OpenArch 默认独立工作</strong>。只有用户显式执行 <code class="inline">openarch init --coordination-url &lt;https://...&gt;</code> 后，远程 Task/会议/语义锁才可用——否则这些操作是 <code class="inline">UNAVAILABLE</code>，本地治理照常。地址绝不从 Git remote、目录或环境变量推导。</p>
     </div>
     <div class="faq">
       <h3><span class="q">Q.</span> 升级 OpenArch 后怎么刷新 Skill？</h3>
@@ -439,7 +534,7 @@
   <footer>
     <div class="note">
       <b>关于本手册</b><br/>
-      所有命令均取自仓库 <code>INSTALL.md</code> / <code>INSTALL.zh-CN.md</code> / <code>packages/openarch-plugin/README.md</code>，未做臆测。
+      所有命令均取自仓库 <code>INSTALL.md</code> / <code>INSTALL.zh-CN.md</code> / <code>packages/openarch-plugin/README.md</code>，并由命令注册表契约测试校验（<code>commands/index.ts</code> 是唯一 authority），未做臆测。
       <br/><br/>
       <b>源码仓库</b> · <a href="https://github.com/VilTea/openarch" target="_blank" rel="noopener" style="color:var(--series-1)">github.com/VilTea/openarch</a> —— 克隆后按本手册安装，或直接把 <code>INSTALL.md</code> 丢给你的 Agent。
       <br/><br/>
@@ -458,7 +553,7 @@ themeBtn.addEventListener('click', () => {
   theme = theme === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', theme);
   themeBtn.textContent = theme === 'dark' ? '🌙 深色' : '☀️ 浅色';
-  initBg(); drawFlow();
+  initBg(); drawFlow(); drawPlanes();
 });
 const token = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
@@ -521,7 +616,7 @@ function loop() {
   }
   raf = requestAnimationFrame(loop);
 }
-window.addEventListener('resize', () => { resize(); build(); drawFlow(); });
+window.addEventListener('resize', () => { resize(); build(); drawFlow(); drawPlanes(); });
 window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; });
 window.addEventListener('mouseout', () => { mouse.x = -9999; mouse.y = -9999; });
 
@@ -535,38 +630,165 @@ function drawFlow() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
   const s1 = token('--series-1'), s3 = token('--series-3'), ink3 = token('--ink-3');
   const ink1 = token('--ink-1'), grid = token('--gridline');
-  const n = 4, padX = 60, gap = (w - padX * 2) / (n - 1), y = h / 2;
+  const small = w < 640;
+  const n = 4, padX = small ? 44 : 60, R = small ? 18 : 26;
+  const gap = (w - padX * 2) / (n - 1), y = h / 2;
+  const labels = small
+    ? ['context', 'scan → review', 'check worktree', 'check staged']
+    : ['context', 'scan → review', 'check --worktree', 'check --staged'];
   // connectors
   ctx.strokeStyle = grid; ctx.lineWidth = 2;
   for (let i = 0; i < n - 1; i++) {
-    const x1 = padX + gap * i + 26, x2 = padX + gap * (i + 1) - 26;
+    const x1 = padX + gap * i + R, x2 = padX + gap * (i + 1) - R;
     ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2 - 8, y); ctx.stroke();
     // arrowhead
     ctx.beginPath(); ctx.moveTo(x2, y); ctx.lineTo(x2 - 8, y - 5); ctx.lineTo(x2 - 8, y + 5); ctx.closePath();
     ctx.fillStyle = grid; ctx.fill();
   }
-  const labels = ['context', 'scan → review', 'check --worktree', 'check --staged'];
   labels.forEach((lb, i) => {
     const x = padX + gap * i;
     // node circle
-    ctx.beginPath(); ctx.arc(x, y, 26, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2);
     ctx.fillStyle = token('--surface-2'); ctx.fill();
     ctx.lineWidth = 2; ctx.strokeStyle = i === 0 ? s3 : s1; ctx.stroke();
     // number
-    ctx.fillStyle = i === 0 ? s3 : s1; ctx.font = "800 16px system-ui";
+    ctx.fillStyle = i === 0 ? s3 : s1; ctx.font = `800 ${small ? 13 : 16}px system-ui`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(i + 1), x, y + 1);
     // label below
-    ctx.fillStyle = ink1; ctx.font = "600 12px system-ui";
-    ctx.fillText(lb, x, y + 46);
+    ctx.fillStyle = ink1; ctx.font = `600 ${small ? 10 : 12}px system-ui`;
+    ctx.fillText(lb, x, y + R + 20);
     // tag above
-    ctx.fillStyle = ink3; ctx.font = "10px system-ui";
-    ctx.fillText(['START', 'BASELINE', 'DURING', 'COMMIT'][i], x, y - 42);
+    ctx.fillStyle = ink3; ctx.font = `${small ? 9 : 10}px system-ui`;
+    ctx.fillText(['START', 'BASELINE', 'DURING', 'COMMIT'][i], x, y - R - 16);
   });
 }
+
+/* ═══════ EVOLUTION PLANES ═══════ */
+/* Two rails, two independent clocks: the pulses travel at their own periods,
+   visualizing that test governance and machine contracts evolve separately. */
+const planesReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let planesRaf = 0, planesW = 0;
+function drawPlanes(ts) {
+  const c = document.getElementById('planesCanvas'); if (!c) return;
+  const ctx = c.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = c.clientWidth, h = 212;
+  if (w !== planesW) {
+    planesW = w;
+    c.width = w * dpr; c.height = h * dpr; c.style.height = h + 'px';
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  const s1 = token('--series-1'), s3 = token('--series-3'), ink1 = token('--ink-1');
+  const ink3 = token('--ink-3'), grid = token('--gridline');
+  const surf2 = token('--surface-2'), cardBg = token('--surface-1');
+  const small = w < 640;
+  const rails = [
+    { y: h * 0.30, color: s3, tag: '位面 A · 测试治理', period: 5200,
+      nodes: small ? ['--list', 'test', '--tests'] : ['test --list', 'openarch test', 'check --tests'] },
+    { y: h * 0.74, color: s1, tag: '位面 B · 机器契约', period: 3400,
+      nodes: small ? ['context', 'contract', 'update'] : ['context --json', 'openarch contract', 'update --json'] },
+  ];
+  // independence divider
+  ctx.setLineDash([4, 7]); ctx.strokeStyle = grid; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(24, h / 2); ctx.lineTo(w - 24, h / 2); ctx.stroke();
+  ctx.setLineDash([]);
+  const divLabel = '独立演进 · 互不强制';
+  ctx.font = '600 10px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const tw = ctx.measureText(divLabel).width;
+  ctx.fillStyle = cardBg; ctx.fillRect(w / 2 - tw / 2 - 10, h / 2 - 9, tw + 20, 18);
+  ctx.fillStyle = ink3; ctx.fillText(divLabel, w / 2, h / 2);
+
+  for (const rail of rails) {
+    const n = rail.nodes.length, r = small ? 15 : 19;
+    const padX = (small ? 40 : 70) + r;
+    const gap = (w - padX * 2) / (n - 1);
+    const xs = rail.nodes.map((_, i) => padX + gap * i);
+    const startX = xs[0] + r + 6, endX = xs[n - 1] - r - 8;
+    // rail line + arrowhead
+    ctx.strokeStyle = grid; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(startX, rail.y); ctx.lineTo(endX, rail.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(xs[n - 1] - r, rail.y);
+    ctx.lineTo(xs[n - 1] - r - 8, rail.y - 5); ctx.lineTo(xs[n - 1] - r - 8, rail.y + 5); ctx.closePath();
+    ctx.fillStyle = grid; ctx.fill();
+    // rail tag
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = rail.color; ctx.font = '700 10px system-ui';
+    ctx.fillText(rail.tag, xs[0] - r, rail.y - (small ? 28 : 32));
+    // pulse: ping-pong along the rail, each rail on its own clock
+    let px = null;
+    if (ts != null && !planesReduced) {
+      const cyc = (ts % rail.period) / rail.period;
+      const tt = cyc < 0.5 ? cyc * 2 : (1 - cyc) * 2;
+      px = startX + (endX - startX) * tt;
+    }
+    rail.nodes.forEach((lb, i) => {
+      const x = xs[i];
+      const near = px != null && Math.abs(px - x) < r + 12;
+      ctx.beginPath(); ctx.arc(x, rail.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = surf2; ctx.fill();
+      ctx.lineWidth = near ? 2.5 : 1.5;
+      ctx.strokeStyle = rail.color; ctx.globalAlpha = near ? 1 : 0.65; ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.fillStyle = near ? rail.color : ink3; ctx.font = '800 12px system-ui';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(i + 1), x, rail.y + 1);
+      ctx.fillStyle = ink1; ctx.font = '600 11px ui-monospace, monospace';
+      ctx.fillText(lb, x, rail.y + r + 15);
+    });
+    if (px != null) {
+      const glow = ctx.createRadialGradient(px, rail.y, 0, px, rail.y, 14);
+      glow.addColorStop(0, rail.color); glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = 0.85; ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(px, rail.y, 14, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.beginPath(); ctx.arc(px, rail.y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = rail.color; ctx.fill();
+    }
+  }
+}
+function startPlanes() {
+  cancelAnimationFrame(planesRaf);
+  if (planesReduced) { drawPlanes(); return; }
+  const loop = (ts) => { drawPlanes(ts); planesRaf = requestAnimationFrame(loop); };
+  planesRaf = requestAnimationFrame(loop);
+}
+
+/* ═══════ SCROLL REVEAL ═══════ */
+const sections = document.querySelectorAll('.wrap > section');
+if ('IntersectionObserver' in window) {
+  const revealIO = new IntersectionObserver((entries) => entries.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add('in'); revealIO.unobserve(e.target); }
+  }), { threshold: 0.12 });
+  sections.forEach(s => revealIO.observe(s));
+} else {
+  sections.forEach(s => s.classList.add('in'));
+}
+
+/* ═════════ KPI COUNT-UP ═════════ */
+const statReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function countUp(el) {
+  const target = +el.dataset.count;
+  if (!target || statReduced) return;
+  const u = el.querySelector('.u')?.outerHTML || '';
+  const start = performance.now(), dur = 1100;
+  function step(t) {
+    const k = Math.min(1, (t - start) / dur);
+    el.innerHTML = Math.round(target * (1 - Math.pow(1 - k, 3))) + u;
+    if (k < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+const statIO = new IntersectionObserver((entries) => entries.forEach(e => {
+  if (!e.isIntersecting) return;
+  document.querySelectorAll('.stat .v').forEach(countUp);
+  statIO.unobserve(e.target);
+}), { threshold: 0.4 });
+const kpiSection = document.getElementById('commands');
+if (kpiSection) statIO.observe(kpiSection);
 
 /* boot */
 initBg();
 drawFlow();
+startPlanes();
 </script>
 </body>
 </html>

@@ -21,6 +21,18 @@ afterEach(() => {
 });
 
 describe("governanceReadiness", () => {
+  it("classifies readiness semantics so plugins do not alarm on optional capability defaults", () => {
+    const project = tempDir();
+
+    const items = governanceReadiness(project).items;
+    const coordination = items.find((entry) => entry.id === "coordination-service");
+    const codeHook = items.find((entry) => entry.id === "code-hook");
+
+    expect(coordination).toMatchObject({ state: "not_configured", kind: "optional" });
+    expect(codeHook).toMatchObject({ state: "not_configured", kind: "enforcing" });
+    expect(items.find((entry) => entry.id === "document-store")?.kind).toBe("advisory");
+  });
+
   it("reports an unobserved project-local similarity check without treating it as configured failure", () => {
     const project = tempDir();
     initializeProjectDocumentStore(project);

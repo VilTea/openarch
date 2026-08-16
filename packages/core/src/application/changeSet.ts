@@ -63,7 +63,10 @@ export const collectGitChangeSet = (cwd: string, requestedPaths: readonly string
     const prefix = gitPrefix(cwd);
     const gitPaths = requestedPaths.map((path) => relativePath(cwd, path));
     const separator = gitPaths.length > 0 ? ["--", ...gitPaths] : ["--"];
-    const tracked = parseStatus(git(cwd, ["diff", ...(staged ? ["--cached"] : []), "--relative", "--name-status", "--find-renames", "-z", "HEAD", ...separator]));
+    const tracked = parseStatus(git(cwd, [
+      "diff", ...(staged ? ["--cached"] : []), "--relative", "--name-status", "--find-renames", "-z",
+      ...(staged ? ["HEAD"] : []), ...separator,
+    ]));
     const trackedPaths = new Set(tracked.map((entry) => entry.path));
     const untracked = staged ? [] : git(cwd, ["ls-files", "--others", "--exclude-standard", "-z", ...separator])
       .split("\0").filter(Boolean)
@@ -77,9 +80,11 @@ export const collectGitChangeSet = (cwd: string, requestedPaths: readonly string
         population: options.population ?? "production-governance",
       }),
     );
+    // worktree 语义：before 取 Git index 快照（未暂存改动的起点）；staged 语义：before 取 HEAD。
+    const beforeObject = (status: GitStatus): string => `${staged ? `HEAD:` : ":"}${repositoryPath(prefix, status.beforePath ?? status.path)}`;
     const beforeTexts = readGitBlobs(cwd, candidates
       .filter((status) => status.kind !== "added")
-      .map((status) => ({ key: status.path, object: `HEAD:${repositoryPath(prefix, status.beforePath ?? status.path)}` })));
+      .map((status) => ({ key: status.path, object: beforeObject(status) })));
     const stagedAfterTexts = staged ? readGitBlobs(cwd, candidates
       .filter((status) => status.kind !== "deleted")
       .map((status) => ({ key: status.path, object: `:${repositoryPath(prefix, status.path)}` }))) : undefined;

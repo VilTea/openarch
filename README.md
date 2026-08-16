@@ -6,7 +6,7 @@
 
 A local-first governance framework for AI-assisted teams: it accepts that software corrosion is inevitable, and gives every agent a lightweight, continuously-rebuildable defense line — grounded in information theory, verified by deterministic local evidence, and carried as a playbook your agents actually read.
 
-`openarch` — one command, five-language symbol-level analysis, 18 built-in rules, zero-LSP gate, fully reproducible end to end.
+`openarch` — one command, five-language symbol-level analysis, 30 built-in script entries (14 anti-patterns · 9 test-governance · 5 starters · 1 implicit-deps · 1 config), zero-LSP gate, fully reproducible end to end.
 
 *Simplified Chinese: [README.zh-CN.md](./README.zh-CN.md)*
 
@@ -107,11 +107,31 @@ The [OpenArch Agent Plugin](./packages/openarch-plugin/README.md) provides stati
 ## Command Line
 
 ```text
-Public commands:  init · context · scan · review · check · rules · docs · toolchains
+Public commands:  init · context · contract · scan · review · check · rules · docs · toolchains · test · update
 Advanced commands: coordination · lsp · calibration · anti-patterns
 ```
 
 Per-command usage: `openarch <command> --help`.
+
+- `review --evolution` turns real Git commit history into a report-only coordination-surface investigation; `rules discover` feeds the implicit-dependency graph that makes change impact reproducible without an LSP.
+- `check --worktree|--staged --report --verbose --tests --record-config` is the full verification surface; `--semantic` adds compiler/LSP consumer evidence on top of the deterministic static graph.
+
+## Test Governance
+
+`openarch test` is an independent report layer, not a quality score:
+
+- Five reference adapters: **Vitest** (TS/JS), **Go testing**, **Rust Cargo test**, **Java JUnit**, **Python pytest** — plus Cargo/Maven/Gradle/pytest runners for actual command evidence.
+- Provider coverage is fail-closed: `candidates / handled / missingBaseline / failed` per provider, test-illusion findings for assertions that look like assertions but are not, and S2 static module→test associations.
+- `openarch test [--list] [--bloat] [--json]`: no active provider shows adapter suggestions per detected language — suggestions only, never auto-enabled.
+
+## Machine Contracts & Plugins
+
+External integrations (such as the [DSH plugin](./packages/openarch-plugin/README.md)) consume versioned JSON contracts instead of parsing `.openarch` internals:
+
+- Every payload self-identifies with a top-level `schema`: `context --json` (`context-json-v1`), `test --json` (`test-governance-json-v1`), `test --list --json`.
+- `openarch contract --json` is the machine-contract catalog: breaking changes bump the version; plugins fail closed on unknown versions instead of guessing.
+- `context --json` readiness entries carry `kind: enforcing | advisory | optional` — a missing code hook is a real ⚠ (commits skip the gate); `coordination-service: not_configured` is the normal optional state, not a failure.
+- `update --json` is read-only remote-release awareness; it never auto-installs.
 
 ## Languages & Toolchains
 
@@ -124,6 +144,8 @@ Per-command usage: `openarch <command> --help`.
 | Go | static upper bound + file-heavy fallback (fail-closed) |
 
 External toolchains are **machine facts**: `openarch toolchains` to inspect, `openarch init --toolchains user` to configure.
+
+Symbol-level `complete` is a calibrated boundary, not a universal claim: TypeScript within governed tsconfig projects; Rust single-crate without `build.rs`/workspace/macro invocation/path attributes/cfg; Go single-module without `go.work`/build constraints/generated code; Java standard Maven layout without modules/deps/reflection; Python within pyright-resolvable scope. Outside those boundaries the report stays `PARTIAL` and keeps the facts it did collect — never downgraded to a fake zero.
 
 ## Project Structure
 

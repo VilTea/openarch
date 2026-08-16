@@ -53,7 +53,7 @@ export const IndexEntrySchema = z.object({
   alphaStruct: z.number().min(0).max(1),
   imports: z.array(z.string()).optional(),        // 依赖的 resolvedPath 列表（diff 重建图用）
   reexports: z.array(z.string()).optional(),      // 已确认 public re-export；仅供演化关系分类
-  cohesion: z.number().min(0).max(1).optional(),   // 文件内函数间调用密度（公式6 子公式）
+  cohesion: z.number().min(0).max(1).optional(),   // @deprecated CT 已 cut；旧分片读取兼容
   passthroughCalls: z.number().int().min(0).optional(),  // 透传调用数（Confidence 输入 + CRL_state）
   loc: z.number().int().min(1).optional(),                // 文件行数（CRL_state 用）
   declarationLoc: z.number().int().min(0).optional(),     // 声明行（CRL loc 因子按实现行口径排除，校准 2026-08-08）
@@ -73,6 +73,7 @@ export const BaselineIndexSchema = z.object({
   meta: z.object({
     scanAt: z.string().min(10),
     snapshotSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+    shardManifestSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     sourceSnapshotSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     configSnapshotSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     nFiles: z.number().int().min(0),
@@ -93,6 +94,7 @@ export const BaselineIndexSchema = z.object({
       previous: StructuralCalibrationProfileSchema.optional(),
       gate: StructuralCalibrationProfileSchema.optional(),
     })).optional(),
+    policyPopulations: z.record(z.number().int().min(0)).optional(),
     p95: z.object({
       branch: z.number(), nesting: z.number(), loc: z.number(),
       alpha: z.number(), oneMinusConnectedness: z.number(), externalPassthrough: z.number(),

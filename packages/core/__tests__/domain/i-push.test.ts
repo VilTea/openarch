@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeIPush } from "../../src/domain/i-push";
+import { computeIPush, computeSeverityBudget } from "../../src/domain/i-push";
 
 describe("computeIPush", () => {
   it("3 因子（无 layerWeight）与旧公式一致", () => {
@@ -43,15 +43,16 @@ describe("computeIPush", () => {
     expect(d).toBeCloseTo(10.5, 1);
   });
 
-  it("λ_joint 退化（缺省 1.0）与旧公式一致", () => {
-    const d = computeIPush([{ changeKind: "function_body", alphaStruct: 0.5, inDegree: 3 }]);
-    const dWithJoint = computeIPush([{ changeKind: "function_body", alphaStruct: 0.5, inDegree: 3, lambdaJoint: 1.0 }]);
-    expect(d).toBe(dWithJoint);
+  it("λ_joint 已冻结：不再存在乘法因子（校准 2026-08-15）", () => {
+    const d = computeIPush([{ changeKind: "function_sig", alphaStruct: 0.6, inDegree: 2 }]);
+    // λ=50, α=0.6, log₂(3)=1.585, ω=1.0 → 50×0.6×1.585=47.55
+    expect(d).toBeCloseTo(47.55, 1);
   });
 
-  it("λ_joint = γ_completion：全覆盖(0.5) vs 孤立变更(2.0)——4 倍差", () => {
-    const d05 = computeIPush([{ changeKind: "function_sig", alphaStruct: 0.6, inDegree: 2, lambdaJoint: 0.5 }]);
-    const d20 = computeIPush([{ changeKind: "function_sig", alphaStruct: 0.6, inDegree: 2, lambdaJoint: 2.0 }]);
-    expect(d20 / d05).toBeCloseTo(4.0, 1);
+  it("severity budget 汇总 λ_ast × branchMagnitude，供强度归一使用", () => {
+    expect(computeSeverityBudget([
+      { changeKind: "function_sig", alphaStruct: 0.6, inDegree: 2 },
+      { changeKind: "branch_add", alphaStruct: 0.3, inDegree: 1, weightedBranchDelta: 2 },
+    ])).toBeCloseTo(50 + 5 * 2, 5);
   });
 });

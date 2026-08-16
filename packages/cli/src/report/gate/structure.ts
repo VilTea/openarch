@@ -9,7 +9,7 @@ export const renderStructuralSections = (locale: Locale, output: GateAppOutput):
   const { metrics, p95, weights } = output.report;
   const lines: string[] = [];
   const top = p95 ? metrics.filter((metric) => metric.fileKind === "production")
-    .map((metric) => ({ metric, breakdown: computeCRLStateBreakdown({ maxFuncBranch: maxFuncWeightedBranchOf(metric), nestingDepth: metric.nestingDepth, loc: metric.loc, alphaStruct: metric.alphaStruct, connectedness: metric.connectedness, externalPassthroughCalls: metric.externalPassthroughCalls }, p95, weights) }))
+    .map((metric) => ({ metric, breakdown: computeCRLStateBreakdown({ maxFuncBranch: maxFuncWeightedBranchOf(metric), nestingDepth: metric.nestingDepth, loc: metric.loc, declarationLoc: metric.declarationLoc, alphaStruct: metric.alphaStruct, connectedness: metric.connectedness, externalPassthroughCalls: metric.externalPassthroughCalls, passthroughCalls: metric.passthroughCalls }, p95, weights) }))
     .filter(({ breakdown }) => breakdown.localBurden > 0).sort((left, right) => right.breakdown.localBurden - left.breakdown.localBurden).slice(0, 3) : [];
   if (top.length > 0) {
     lines.push("", message(locale, "gate.topHeading"), "");

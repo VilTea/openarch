@@ -4,6 +4,7 @@ import { BaselineSchemaError, IoError } from "../errors/errors";
 import type { FileDelta, SemanticEvidence } from "../domain/crl";
 import type { FileKind, TestMetrics } from "../domain/testGovernance";
 import type { MRDiagnosis } from "../domain/mrDiagnosis";
+import type { HistoryImpactFact } from "../domain/impactCalibration";
 import type { StructuralCalibrationState } from "../domain/calibration";
 import type { HistoryCompactionResult } from "../domain/historyRetention";
 import type { Language } from "../domain/ast";
@@ -25,6 +26,7 @@ export interface IndexEntry {
   readonly imports?: readonly string[];           // 依赖的 resolvedPath 列表
   /** Parser-confirmed public re-exports; evolution analysis excludes them from implementation edges. */
   readonly reexports?: readonly string[];
+  /** @deprecated CT 已 cut（v5.3）；旧 baseline 保留读取兼容，新 baseline 不再写入。 */
   readonly cohesion?: number;                      // 文件内函数间调用密度（公式6）
   readonly passthroughCalls?: number;               // 透传调用数（喂 Confidence + 存量 CRL）
   readonly loc?: number;                             // 文件行数（CRL_state 用）
@@ -38,6 +40,7 @@ export interface IndexEntry {
   /** Current and preceding raw crl_local inputs; hashes avoid storing a second metric snapshot. */
   readonly localBurdenFingerprint?: string;
   readonly previousLocalBurdenFingerprint?: string;
+  /** @deprecated 校准 2026-08-15：testMetrics 持久化已退役，测试治理恒为只读采集；旧分片保留读取兼容。 */
   readonly testMetrics?: TestMetrics;                  // provider 产出的版本化测试事实
 }
 
@@ -49,6 +52,8 @@ export interface BaselineIndex {
     readonly scanAt: string;
     /** Content-addressed identity of entries + semantic scan metadata; excludes scanAt. */
     readonly snapshotSha256?: string;
+    /** Digest of the shard directory stat manifest; lets read-only validation skip a redundant deep parse when unchanged. */
+    readonly shardManifestSha256?: string;
     /** Content identity of the complete governed source population at scan time. */
     readonly sourceSnapshotSha256?: string;
     /** Content identity of .openarch/config.yml at scan time (P2-1: config changes force full rebuild). */
@@ -65,6 +70,8 @@ export interface BaselineIndex {
     readonly calibration?: StructuralCalibrationState;
     /** Independent P95 epochs for explicitly configured structural policy populations. */
     readonly policyCalibrations?: Readonly<Record<string, StructuralCalibrationState>>;
+    /** Production file count per explicitly configured structural policy (scan-time population fact). */
+    readonly policyPopulations?: Readonly<Record<string, number>>;
     /** CRL_state P95 归一化基准（scan 时计算） */
     readonly p95?: {
       readonly branch: number; readonly nesting: number; readonly loc: number;
@@ -91,6 +98,8 @@ export interface StoredHistoryEntry {
   readonly deltas: readonly FileDelta[];
   readonly diagnosis?: readonly MRDiagnosis[];
   readonly evidence?: readonly SemanticEvidence[];
+  /** Report-only scale evidence persisted with the entry (校准 2026-08-15). */
+  readonly scale?: { readonly severityBudget: number; readonly intensity: number };
 }
 
 /** Replaceable worktree candidate; only a matching staged snapshot may seal it into history. */
@@ -139,10 +148,13 @@ export interface StorageService {
   readonly clearFileMetrics: () => Effect.Effect<void, IoError>;
   // history
   /** diagnosis 是可选扩展；旧 history 保持可读，CRL replay 仍只消费 deltaI。 */
-  readonly writeHistory: (entryId: string, deltas: readonly FileDelta[], timestamp: string, diagnosis?: readonly MRDiagnosis[], evidence?: readonly SemanticEvidence[]) => Effect.Effect<void, IoError>;
+  readonly writeHistory: (entryId: string, deltas: readonly FileDelta[], timestamp: string, diagnosis?: readonly MRDiagnosis[], evidence?: readonly SemanticEvidence[], scale?: StoredHistoryEntry["scale"]) => Effect.Effect<void, IoError>;
   /** Content-addressed entry lookup lets repeated diffs replay their original report without rewriting state. */
   readonly readHistoryEntry: (entryId: string) => Effect.Effect<StoredHistoryEntry | null, IoError>;
   readonly readAllHistory: () => Effect.Effect<ReadonlyArray<readonly [string, readonly FileDelta[]]>, IoError>;
+  /** Optional report-only scale facts for project-relative impact routing (compaction-safe).
+   *  Legacy/test adapters may omit it; callers then skip the project-relative percentile. */
+  readonly readHistoryImpactFacts?: () => Effect.Effect<ReadonlyArray<HistoryImpactFact>, IoError>;
   /** Optional for legacy test adapters; production storage compacts only sealed entries through this authority. */
   readonly compactHistory?: (rawWindowDays: number, now?: Date) => Effect.Effect<HistoryCompactionResult, IoError>;
   /** Optional only for legacy test adapters; production JSON storage must provide pending evidence lifecycle. */

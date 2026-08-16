@@ -5,7 +5,7 @@ import type { AnalysisScope } from "../domain/analysisScope";
 import { METRIC_CONTRACT_VERSION } from "../domain/metricCatalog";
 import { p95 } from "../domain/p95";
 import { createStructuralCalibrationProfile, nextStructuralCalibrationState, type NextStructuralCalibrationState, type StructuralCalibrationState } from "../domain/calibration";
-import { DEFAULT_CRL_STATE_WEIGHTS, type P95Values, type CRLStateWeights } from "../domain/crlState";
+import { DEFAULT_CRL_STATE_WEIGHTS, localBurdenInputsOf, type P95Values, type CRLStateWeights } from "../domain/crlState";
 import { participatesInPopulation } from "../domain/fileParticipation";
 import { matchesStructuralPolicy, policiesForSubject, type StructuralPolicy, type StructuralPolicySubject } from "../domain/structuralPolicy";
 
@@ -46,7 +46,8 @@ export const buildScanMeta = (input: {
     p95: input.p95Values,
     population: input.entries.filter((entry) => participatesInPopulation(entry.fileKind, "production-governance")).map((entry) => ({
       path: entry.path, maxFuncBranch: entry.maxFuncBranch, nestingDepth: entry.nestingDepth, loc: entry.loc,
-      alphaStruct: entry.alphaStruct, connectedness: entry.connectedness, externalPassthroughCalls: entry.externalPassthroughCalls,
+      declarationLoc: entry.declarationLoc, alphaStruct: entry.alphaStruct, connectedness: entry.connectedness,
+      externalPassthroughCalls: entry.externalPassthroughCalls, passthroughCalls: entry.passthroughCalls,
     })),
     weights: input.options.calibrationWeights ?? DEFAULT_CRL_STATE_WEIGHTS,
   });
@@ -64,26 +65,41 @@ export const buildScanMeta = (input: {
       && policiesForSubject(input.options.structuralPolicies ?? [], subject).length > 1;
   });
   const policyCalibrations = computePolicyCalibrations(input.options, input.entries, input.scope, input.previousIndex);
+  const policyPopulations = computePolicyPopulations(input.options, input.entries);
   const meta = buildBaselineIndexMeta({
     nFiles: input.nFiles, nProductionFiles: input.nProductionFiles, nTestFiles: input.nTestFiles,
     languages: input.languages, useMaxDepth: input.useMaxDepth, performanceMode: input.performanceMode,
-    p95Values: input.p95Values, scope: input.scope, calibrationUpdate, policyCalibrations, options: input.options,
+    p95Values: input.p95Values, scope: input.scope, calibrationUpdate, policyCalibrations, policyPopulations, options: input.options,
   });
   return { meta, calibrationUpdate, ambiguousPolicyEntry };
 };
 
 const p95ForPopulation = (entries: readonly {
   readonly branchCount: number; readonly weightedBranchTotal?: number; readonly maxFuncBranch?: number;
-  readonly nestingDepth: number; readonly loc?: number; readonly alphaStruct: number;
-  readonly connectedness?: number; readonly externalPassthroughCalls?: number;
-}[]) => ({
-  branch: p95(entries.map((entry) => entry.maxFuncBranch ?? entry.weightedBranchTotal ?? entry.branchCount)),
-  nesting: p95(entries.map((entry) => entry.nestingDepth)),
-  loc: p95(entries.map((entry) => entry.loc ?? 0)),
-  alpha: p95(entries.map((entry) => entry.alphaStruct)),
-  oneMinusConnectedness: p95(entries.map((entry) => 1 - (entry.connectedness ?? 0))),
-  externalPassthrough: p95(entries.map((entry) => entry.externalPassthroughCalls ?? 0)),
-});
+  readonly nestingDepth: number; readonly loc?: number; readonly declarationLoc?: number; readonly alphaStruct: number;
+  readonly connectedness?: number; readonly externalPassthroughCalls?: number; readonly passthroughCalls?: number;
+}[]) => {
+  const locals = entries.map((entry) => localBurdenInputsOf(entry));
+  return ({
+    branch: p95(entries.map((entry) => entry.maxFuncBranch ?? entry.weightedBranchTotal ?? entry.branchCount)),
+    nesting: p95(entries.map((entry) => entry.nestingDepth)),
+    loc: p95(locals.map((entry) => entry.implementationLoc)),
+    alpha: p95(entries.map((entry) => entry.alphaStruct)),
+    oneMinusConnectedness: p95(entries.map((entry) => 1 - (entry.connectedness ?? 0))),
+    externalPassthrough: p95(locals.map((entry) => entry.externalPassthroughCalls)),
+  });
+};
+
+/** 独立策略人群的生产文件数（scan 时持久化，context/gate 复用同一口径）。 */
+const productionPolicyPopulation = (
+  options: ScanCalibrationOptions,
+  entries: readonly IndexEntry[],
+  policy: StructuralPolicy,
+): readonly IndexEntry[] => entries.filter((entry) =>
+  participatesInPopulation(entry.fileKind, "production-governance")
+  && structuralPolicySubject(entry) !== undefined
+  && matchesStructuralPolicy(policy, structuralPolicySubject(entry)!),
+);
 
 /** 独立策略人群的 P95 校准 epoch。 */
 export const computePolicyCalibrations = (
@@ -93,11 +109,7 @@ export const computePolicyCalibrations = (
   previousIndex: BaselineIndex | null,
 ): Readonly<Record<string, StructuralCalibrationState>> => Object.fromEntries(
   (options.structuralPolicies ?? []).flatMap((policy) => {
-    const population = entries.filter((entry) =>
-      participatesInPopulation(entry.fileKind, "production-governance")
-      && structuralPolicySubject(entry) !== undefined
-      && matchesStructuralPolicy(policy, structuralPolicySubject(entry)!),
-    );
+    const population = productionPolicyPopulation(options, entries, policy);
     if (population.length === 0) return [];
     const observed = createStructuralCalibrationProfile({
       analysisScopeFingerprint: `${scope.fingerprint}:policy:${policy.id}`,
@@ -115,11 +127,22 @@ export const computePolicyCalibrations = (
   }),
 );
 
+/** 每策略生产文件数：小样本校准提示与外部只读合同的持久化事实。 */
+export const computePolicyPopulations = (
+  options: ScanCalibrationOptions,
+  entries: readonly IndexEntry[],
+): Readonly<Record<string, number>> => Object.fromEntries(
+  (options.structuralPolicies ?? [])
+    .map((policy) => [policy.id, productionPolicyPopulation(options, entries, policy).length] as const)
+    .filter(([, count]) => count > 0),
+);
+
 /** baseline index meta 组装。 */
 export const buildBaselineIndexMeta = (input: {
   readonly nFiles: number; readonly nProductionFiles: number; readonly nTestFiles: number; readonly languages: readonly string[];
   readonly useMaxDepth: number; readonly performanceMode: "normal" | "reduced"; readonly p95Values: unknown; readonly scope: AnalysisScope;
   readonly calibrationUpdate: unknown; readonly policyCalibrations: Readonly<Record<string, StructuralCalibrationState>>;
+  readonly policyPopulations: Readonly<Record<string, number>>;
   readonly options: ScanCalibrationOptions;
 }): BaselineIndex["meta"] => ({
   scanAt: new Date().toISOString(), nFiles: input.nFiles, nProductionFiles: input.nProductionFiles, nTestFiles: input.nTestFiles,
@@ -127,6 +150,7 @@ export const buildBaselineIndexMeta = (input: {
   analysisScope: { fingerprint: input.scope.fingerprint, complete: input.options.completeScope ?? true }, metricContractVersion: METRIC_CONTRACT_VERSION,
   calibration: (input.calibrationUpdate as { state: StructuralCalibrationState }).state,
   ...(Object.keys(input.policyCalibrations).length > 0 ? { policyCalibrations: input.policyCalibrations } : {}),
+  ...(Object.keys(input.policyPopulations).length > 0 ? { policyPopulations: input.policyPopulations } : {}),
   ...((input.options.completeScope ?? true) && input.options.sourceSnapshotSha256 ? { sourceSnapshotSha256: input.options.sourceSnapshotSha256 } : {}),
   ...(input.options.configSnapshotSha256 ? { configSnapshotSha256: input.options.configSnapshotSha256 } : {}),
 });

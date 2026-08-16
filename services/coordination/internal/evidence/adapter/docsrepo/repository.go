@@ -102,6 +102,47 @@ func (r *Repository) ListFilesAtHead(ctx context.Context, prefix string) ([]stri
 	return paths, nil
 }
 
+// HeadFileSnapshot is one file read from a single synchronized HEAD. List-based
+// projections use ReadListedFilesAtHead so they never mix files from different
+// remote heads or pay one `ls-remote`/`ls-tree` per document.
+type HeadFileSnapshot struct {
+	Path    string
+	Content []byte
+}
+
+// ReadListedFilesAtHead lists and reads every file under prefix from one HEAD
+// snapshot with a single synchronization and one path listing. Callers must
+// treat missing entries as impossible: files enumerated from HEAD are read
+// from the same HEAD under the repository mutex.
+func (r *Repository) ReadListedFilesAtHead(ctx context.Context, prefix string) ([]HeadFileSnapshot, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := validateRelativePath(prefix); err != nil {
+		return nil, err
+	}
+	if err := r.git.ensureSynchronized(ctx); err != nil {
+		return nil, err
+	}
+	output, err := r.git.run(ctx, "ls-tree", "-r", "--name-only", "HEAD", "--", filepath.ToSlash(prefix))
+	if err != nil {
+		return nil, err
+	}
+	snapshots := make([]HeadFileSnapshot, 0)
+	for _, line := range strings.Split(output, "\n") {
+		path := strings.TrimSpace(line)
+		if path == "" {
+			continue
+		}
+		path = filepath.ToSlash(path)
+		payload, err := r.git.run(ctx, "show", "HEAD:"+path)
+		if err != nil {
+			return nil, err
+		}
+		snapshots = append(snapshots, HeadFileSnapshot{Path: path, Content: []byte(payload)})
+	}
+	return snapshots, nil
+}
+
 func validateRelativePath(path string) error {
 	canonical := filepath.ToSlash(path)
 	if canonical == "" || canonical != strings.TrimSpace(canonical) || strings.HasPrefix(canonical, "/") || strings.Contains(canonical, "\x00") {

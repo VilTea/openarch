@@ -5,7 +5,7 @@ import type { BaselineSnapshot } from "../../port/StorageService";
 import { atomicWriteJson } from "./AtomicWriter";
 import { retryTransientFileOperation } from "./TransientFileRetry";
 import { baselineShardFileName } from "./BaselineShard";
-import { normalizeBaselineSnapshot, readBaselineGenerationDirectory, snapshotIdentity } from "./BaselineGenerationValidation";
+import { normalizeBaselineSnapshot, readBaselineGenerationDirectory, shardManifestDigest, snapshotIdentity } from "./BaselineGenerationValidation";
 
 export const baselineDirFor = (root: string) => join(root, "baseline");
 
@@ -93,7 +93,14 @@ const writeStagingGeneration = async (staging: string, active: string, snapshot:
   } else {
     for (const entry of snapshot.entries) await atomicWriteJson(join(staging, baselineShardFileName(entry.path)), entry);
   }
-  await atomicWriteJson(join(staging, "_index.json"), snapshot.index);
+  // 发布时把「index 内容指纹 + 分片目录 stat manifest」摘要写进 index：
+  // 后续只读校验可先比较 manifest，一致时跳过重复深解析；任何 index 或分片
+  // 变化都会使摘要失配并回退完整身份校验，不伪造事实。
+  const indexWithManifest = {
+    ...snapshot.index,
+    meta: { ...snapshot.index.meta, shardManifestSha256: shardManifestDigest(staging, snapshot.index) },
+  };
+  await atomicWriteJson(join(staging, "_index.json"), indexWithManifest);
 };
 
 const publishGeneration = async (paths: ReturnType<typeof stagingPaths>): Promise<void> => {

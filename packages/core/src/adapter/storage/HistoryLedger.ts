@@ -9,6 +9,7 @@ import {
   type SealedHistoryRecord,
 } from "../../domain/historyRetention";
 import type { FileDelta } from "../../domain/crl";
+import type { HistoryImpactFact } from "../../domain/impactCalibration";
 import { atomicWriteJson } from "./AtomicWriter";
 
 const CHECKPOINT_FILE = "_checkpoint.v1.json";
@@ -107,6 +108,21 @@ export const readHistoryReplayRecords = (directory: string): readonly (readonly 
   const { checkpoint, records } = readableLedger(directory);
   const raw = records.map((record) => [record.timestamp, record.deltas] as const);
   return checkpoint ? [[checkpoint.compactedAt, checkpoint.deltas] as const, ...raw] : raw;
+};
+
+/** 冲击量规模参照事实（compaction-safe）：checkpoint 携带 sourceEntryCount 权重，
+ *  供项目内同规模分位使用；该投影只服务 report-only 路由证据，不改变 CRL replay。 */
+export const readHistoryImpactFacts = (directory: string): readonly HistoryImpactFact[] => {
+  const { checkpoint, records } = readableLedger(directory);
+  const toFact = (timestamp: string, deltas: readonly FileDelta[], entryCount: number): HistoryImpactFact => ({
+    timestamp,
+    iPush: deltas.reduce((sum, delta) => sum + delta.deltaI, 0),
+    // 与当前 history 写入口径一致：只统计非零 deltaI 的变更文件（校准 2026-08-15）
+    fileCount: deltas.filter((delta) => delta.deltaI !== 0).length,
+    entryCount,
+  });
+  const raw = records.map((record) => toFact(record.timestamp, record.deltas, 1));
+  return checkpoint ? [toFact(checkpoint.compactedAt, checkpoint.deltas, checkpoint.sourceEntryCount), ...raw] : raw;
 };
 
 /** Completes a previously published logical compaction without ever exposing double-counted CRL. */

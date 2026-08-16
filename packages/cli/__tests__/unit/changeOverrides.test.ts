@@ -24,6 +24,11 @@ describe("file-scoped semantic overrides", () => {
     ]);
   });
 
+  it("accepts an all-path batch override without treating it as a file path", () => {
+    const overrides = parseChangeOverrides(["--change-override", "all=function_body"]);
+    expect([...overrides!]).toEqual([["all", "function_body"]]);
+  });
+
   it("renders all missing overrides as one retryable command", () => {
     expect(missingOverridesMessage("staged", [
       { path: "src/__init__.py", reason: "changed top-level syntax has no semantic classifier" },

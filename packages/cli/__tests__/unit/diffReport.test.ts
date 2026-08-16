@@ -31,6 +31,28 @@ describe("renderDiffReport", () => {
     expect(renderDiffReport(report({ summary: { iPush: 12, dMR: 0, deltas: [], historyEntryId: "history-id", evidenceState: "sealed" }, evidence: { mrDetail: [], crl: new Map() } })).join("\n")).toContain("无局部负担恶化（0.00，不参与 gate）");
   });
 
+  it("renders intensity and the project-relative scale as routing evidence", () => {
+    const lines = renderDiffReport(report({
+      summary: {
+        iPush: 40, dMR: 0, deltas: [{ file: "src/api.ts", alphaStruct: 0.4, deltaI: 40 }],
+        historyEntryId: "pending-id", evidenceState: "pending",
+        severityBudget: 100, intensity: 0.4,
+        impactScale: { percentile: 62.5, bucket: "2-3", sampleEntries: 8 },
+      },
+      evidence: { mrDetail: [], crl: new Map() },
+    })).join("\n");
+    expect(lines).toContain("I_push 强度: 0.40/λ_ast（severity budget 100.0）");
+    expect(lines).toContain("本次冲击高于同规模（2-3 文件）sealed 变更的 62.5%（样本 8 条");
+  });
+
+  it("never presents a missing same-size sample as a zero percentile", () => {
+    const lines = renderDiffReport(report({
+      summary: { iPush: 40, dMR: 0, deltas: [], historyEntryId: "pending-id", evidenceState: "pending", severityBudget: 100, intensity: 0.4 },
+      evidence: { mrDetail: [], crl: new Map() },
+    })).join("\n");
+    expect(lines).toContain("暂无同规模 sealed 变更样本（不是 0 分位）");
+  });
+
   it("shows pending evidence and a public-contract verification plan", () => {
     const lines = renderDiffReport(report({ summary: { iPush: 40, dMR: 0, deltas: [], historyEntryId: "pending-id", evidenceState: "pending" }, evidence: { mrDetail: [], crl: new Map(), impactPlan: [{ file: "src/api.ts", publicContracts: ["Api (interface_add_remove)"], implementationUnits: [], dependencyUnits: [], directConsumers: ["src/client.ts"], symbolConsumers: [], actions: [{ kind: "verify_direct_consumers", consumers: ["src/client.ts"] }] }] } })).join("\n");
     expect(lines).toContain("验证计划 src/api.ts: 公共合同 Api (interface_add_remove)");
@@ -103,6 +125,72 @@ describe("renderDiffReport", () => {
     expect(english).toContain("signal[file-heavy] src/hot.ts");
     expect(english).toContain("C_push=10.0");
     expect(english).not.toMatch(/[\p{Script=Han}]/u);
+  });
+
+  it("suppresses file-heavy when C_push is a confirmed zero-consumer surface, keeps it when unconfirmed", () => {
+    const confirmedZero = renderDiffReport(report({
+      summary: { iPush: 40, dMR: 0, deltas: [{ file: "src/hot.ts", alphaStruct: 0.4, deltaI: 40 }], historyEntryId: "pending-id", evidenceState: "pending" },
+      evidence: {
+        mrDetail: [], crl: new Map(),
+        changeSurfaces: {
+          availability: "available",
+          surfaces: [{
+            file: "src/hot.ts", language: "typescript", staticBound: 0,
+            result: {
+              provenance: "static-bound-empty",
+              contributions: [{ anchor: "compact", kind: "function_body", lambdaAst: 10, consumers: [], reachFactor: 0, layerWeight: 0, contribution: 0, unconfirmed: false }],
+              total: 0,
+              consumersByAnchor: new Map([["compact", []]]),
+            },
+          }],
+          unavailableLanguages: [],
+        },
+      },
+    })).join("\n");
+    expect(confirmedZero).not.toContain("信号[file-heavy]");
+
+    const missingUnconfirmed = renderDiffReport(report({
+      summary: { iPush: 40, dMR: 0, deltas: [{ file: "src/hot.ts", alphaStruct: 0.4, deltaI: 40 }], historyEntryId: "pending-id", evidenceState: "pending" },
+      evidence: {
+        mrDetail: [], crl: new Map(),
+        changeSurfaces: {
+          availability: "available",
+          surfaces: [{
+            file: "src/hot.ts", language: "typescript", staticBound: 3,
+            result: {
+              provenance: "symbol",
+              // 缺少 unconfirmed 字段的旧 surface 也必须 fail-closed：不得当作确认零消费者。
+              contributions: [{ anchor: "compact", kind: "function_body", lambdaAst: 10, consumers: [], reachFactor: 0, layerWeight: 0, contribution: 0 }] as never,
+              total: 0,
+              consumersByAnchor: new Map([["compact", []]]),
+            },
+          }],
+          unavailableLanguages: [],
+        },
+      },
+    })).join("\n");
+    expect(missingUnconfirmed).toContain("信号[file-heavy]");
+
+    const unconfirmedZero = renderDiffReport(report({
+      summary: { iPush: 40, dMR: 0, deltas: [{ file: "src/hot.ts", alphaStruct: 0.4, deltaI: 40 }], historyEntryId: "pending-id", evidenceState: "pending" },
+      evidence: {
+        mrDetail: [], crl: new Map(),
+        changeSurfaces: {
+          availability: "available",
+          surfaces: [{
+            file: "src/hot.ts", language: "typescript", staticBound: 3,
+            result: {
+              provenance: "symbol",
+              contributions: [{ anchor: "compact", kind: "function_body", lambdaAst: 10, consumers: [], reachFactor: 0, layerWeight: 0, contribution: 0, unconfirmed: true }],
+              total: 0,
+              consumersByAnchor: new Map([["compact", []]]),
+            },
+          }],
+          unavailableLanguages: [],
+        },
+      },
+    })).join("\n");
+    expect(unconfirmedZero).toContain("信号[file-heavy]");
   });
 
   it("renders unavailable languages without emitting any C_push value", () => {

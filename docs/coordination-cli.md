@@ -159,6 +159,25 @@ openarch coordination status                       # available（本地路径匹
 # A 登记 scope → commit（共享目录 B 即见）→ refresh → task 流程
 ```
 
+### 4.3 多项目共用一个 docs-repo
+
+同一个远端仓库/分支可以承载多个项目，事实按 `repositoryId` 命名空间隔离；不需要每个项目一个仓库。要点：
+
+```bash
+# 项目 A 与项目 B 各自登记不同 repositoryId，服务校验引用完整性
+openarch coordination scope register --repository-id repo-a --service-id svc-a
+openarch coordination scope register --repository-id repo-b --service-id svc-b
+# 各自 commit + push 后 refresh；若另一方先推进了同一分支，
+# refresh 仍只快进不回退，输出会显示服务实际到达的最新 head：
+openarch coordination refresh --repository-id repo-a --branch main --head-sha <a已push的sha>
+
+# 实时视图可按项目过滤，避免多项目噪声：
+openarch coordination lease list --repository-id repo-a
+openarch coordination session list --repository-id repo-b
+```
+
+**边界**：`projectToken` 在共享仓内必须由各项目保证唯一（重复 token 会互相覆盖同一校准槽位）；`task submit` 对提交 head 的绑定比 refresh 更严，混入其他 Agent-owned 提交时 fail-closed；`projects/<basename>` 遗留位置只在服务端 `legacyProjects` 中列出，必须显式迁移为新的 `repositoryId`。
+
 ## 5. 离线/在线分支（前提不满足时）
 
 | 状态 | coordination 命令 | 本地治理 |

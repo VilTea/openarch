@@ -23,6 +23,7 @@ export const recordCommand: CommandHandler = async (args, context) => {
   const outcome = await Effect.runPromise(record({
     title, ...(store ? { docsDir: store.scopeRoot } : {}),
     ...(category ? { category: category as RecordCategory } : {}),
+    locale: context.locale,
   }).pipe(Effect.provide(LiveLayer), Effect.either));
   if (outcome._tag === "Left") {
     printAnalysisError(outcome.left);

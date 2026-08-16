@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { Effect } from "effect";
 import type { BaselineIndex, BaselineSnapshot, IndexEntry, StorageService } from "../../port/StorageService";
 import { IoError } from "../../errors/errors";
@@ -7,12 +7,14 @@ import { BaselineIndexSchema, IndexEntrySchema } from "../../validation/schemas"
 import { atomicWriteJsonIfChanged } from "./AtomicWriter";
 import { baselineDirFor, publishBaselineSnapshot, readableBaselineDirFor } from "./BaselineGeneration";
 import { baselineShardFileName } from "./BaselineShard";
+import { toPosixPath } from "../../infra/paths";
 import {
   assertMutableLegacyState,
   assertNoPendingBaselineRecovery,
   createBaselineGenerationReadCache,
   deleteLegacyShardIfOwned,
   invalidateBaselineGenerationReadCache,
+  requestedBaselinePaths,
 } from "./BaselineStoreAccess";
 import { createJsonBaselineReadStore } from "./JsonBaselineReadStore";
 
@@ -84,9 +86,14 @@ export const createJsonBaselineStore = (rootDir: () => string): JsonBaselineStor
           assertNoPendingBaselineRecovery(rootDir());
           const directory = writableDir();
           for (const path of paths) {
-            const shard = join(directory, baselineShardFileName(path));
-            if (existsSync(shard)) unlinkSync(shard);
-            deleteLegacyShardIfOwned(directory, path);
+            // 分片名由 entry.path（项目相对路径）派生；调用方可能传绝对路径。
+            // 绝对路径同时尝试相对与绝对两种 key，确保删除命中 canonical 分片。
+            const candidates = isAbsolute(path) ? requestedBaselinePaths(path) : [toPosixPath(path)];
+            for (const candidate of candidates) {
+              const shard = join(directory, baselineShardFileName(candidate));
+              if (existsSync(shard)) unlinkSync(shard);
+              deleteLegacyShardIfOwned(directory, candidate);
+            }
           }
         },
         catch: (error) => new IoError({ path: writableDir(), cause: error }),

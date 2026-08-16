@@ -24,7 +24,7 @@ const readModuleContext = (startDir: string): GoModuleContext | null => {
     if (parent === current) break;
     current = parent;
   }
-  moduleCache.set(startDir, null);
+  // 不缓存 null：长驻进程中项目稍后新增 go.mod 时应重新解析成功。
   return null;
 };
 

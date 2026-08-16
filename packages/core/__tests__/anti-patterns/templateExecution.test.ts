@@ -56,6 +56,21 @@ describe("cross-language placeholder templates", () => {
     });
   });
 
+  it("keeps empty TypeScript constructors outside the placeholder finding", async () => {
+    const service = await parser();
+
+    await withTemporaryDirectory("constructor-no-op", async (cwd) => {
+      const file = join(cwd, "holder.ts");
+      writeFileSync(file, "class Holder { constructor(private value: string) {} }\n");
+      const result = await executeAntiPatternRule(template("typescript-no-empty-function"), [file], service, undefined, {
+        facts: createProjectFacts({ files: [file], projectRoot: cwd }),
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.unavailable).toBeUndefined();
+      expect(result.hits).toEqual([]);
+    });
+  });
+
   it("uses the declared language target before AST execution in a mixed-language project", async () => {
     const service = await parser();
 

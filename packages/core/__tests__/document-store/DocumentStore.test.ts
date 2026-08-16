@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { capabilityAssetPath, configureSharedDocumentStore, documentScopeRegistryPath, initializeProjectDocumentStore, installDocumentAdvisoryHook, resolveDocumentStore, resolveDocumentStores } from "../../src/document-store/DocumentStore";
+import { capabilityAssetPath, configureSharedDocumentStore, documentRelationsPath, documentScopeRegistryPath, initializeProjectDocumentStore, installDocumentAdvisoryHook, resolveDocumentStore, resolveDocumentStores } from "../../src/document-store/DocumentStore";
+import { capabilityDriftSignal } from "../../src/document-store/CapabilityDrift";
+import { recordDocumentDisposition, unresolvedSimilarityCandidates } from "../../src/document-store/DocumentDispositions";
+import { documentStoreObservability } from "../../src/document-store/DocumentObservability";
 import { checkDocuments } from "../../src/document-store/DocumentSimilarity";
 import { readGovernanceObservation, recordGovernanceObservation } from "../../src/document-store/GovernanceObservation";
 import { withTemporaryDirectory } from "../support/temporaryDirectory";
@@ -85,6 +88,94 @@ describe("project-local DocumentStore", () => {
     });
 
     expect(readFileSync(join(scopeRoot, ".openarch", ".gitignore"), "utf8")).toBe("document-index.v1.json\ngovernance-observations.v1.json\n");
+  }));
+
+  it("reports generated record templates whose required sections are still placeholders", () => withTemporaryDirectory("document-store", (cwd) => {
+    const store = initializeProjectDocumentStore(cwd);
+    const template = join(store.root, "wisdom", "patterns", "open.md");
+    writeFileSync(template, "# Open question\n来源: openarch docs record\n\n## 背景\n<!-- 必填：什么改动触发了这条记录？ -->\n");
+
+    const opened = checkDocuments({ store, changedPaths: [template] });
+
+    expect(opened.unfilled).toEqual(["wisdom/patterns/open.md"]);
+    writeFileSync(template, "# Open question\n来源: openarch docs record\n\n## 背景\n模型替换了权威解析器。\n");
+    const filled = checkDocuments({ store, changedPaths: [template] });
+    expect(filled.unfilled).toEqual([]);
+  }));
+
+  it("detects unfilled English record templates by their localized markers", () => withTemporaryDirectory("document-store", (cwd) => {
+    const store = initializeProjectDocumentStore(cwd);
+    const template = join(store.root, "wisdom", "patterns", "localized.md");
+    writeFileSync(template, "# Open question\nSource: openarch docs record\n\n## Background\n<!-- REQUIRED: what change triggered this record? -->\n");
+
+    expect(checkDocuments({ store, changedPaths: [template] }).unfilled).toEqual(["wisdom/patterns/localized.md"]);
+    writeFileSync(template, "# Open question\nSource: openarch docs record\n\n## Background\nThe parser authority moved to one module.\n");
+    expect(checkDocuments({ store, changedPaths: [template] }).unfilled).toEqual([]);
+  }));
+
+  it("never flags capability assets that merely quote the record markers", () => withTemporaryDirectory("document-store", (cwd) => {
+    const store = initializeProjectDocumentStore(cwd);
+    const capabilities = capabilityAssetPath(store);
+    writeFileSync(capabilities, "# Capabilities\n\nRecords use `<!-- 必填/REQUIRED -->` and a provenance line like `来源/Source: openarch docs record`.\n");
+
+    expect(checkDocuments({ store, changedPaths: [capabilities] }).unfilled).toEqual([]);
+  }));
+
+  it("persists similarity dispositions and exposes only unresolved candidates", () => withTemporaryDirectory("document-store", (cwd) => {
+    const store = initializeProjectDocumentStore(cwd);
+    const first = join(store.root, "wisdom", "patterns", "first.md");
+    const second = join(store.root, "wisdom", "patterns", "second.md");
+    writeFileSync(first, "# Parser boundary\n\nUse one parser authority for every language.");
+    writeFileSync(second, "# Parser boundary\n\nUse one parser authority for every supported language.");
+    checkDocuments({ store });
+
+    expect(unresolvedSimilarityCandidates(store).length).toBeGreaterThan(0);
+    const outcome = recordDocumentDisposition(store, {
+      left: "wisdom/patterns/first.md",
+      right: "wisdom/patterns/second.md",
+      decision: "merged",
+      note: "same boundary, one authority",
+      at: "2026-08-16T00:00:00.000Z",
+    });
+    expect("error" in outcome).toBe(false);
+    expect(unresolvedSimilarityCandidates(store)).toEqual([]);
+    expect(JSON.parse(readFileSync(documentRelationsPath(store), "utf8")).dispositions).toHaveLength(1);
+  }));
+
+  it("surfaces document-store observability without writing state", () => withTemporaryDirectory("document-store", (cwd) => {
+    const store = initializeProjectDocumentStore(cwd);
+    const before = documentStoreObservability(store);
+    expect(before.scopeId).toBe("repository-local");
+    expect(before.indexed).toBe(0);
+    expect(before.openCandidates).toBe(0);
+    expect(before.unfilled).toEqual([]);
+    checkDocuments({ store });
+    const after = documentStoreObservability(store);
+    expect(after.indexed).toBeGreaterThanOrEqual(1);
+  }));
+
+  it("derives report-only capability drift from governance.capability_watch", async () => withTemporaryDirectory("document-store", async (cwd) => {
+    const store = initializeProjectDocumentStore(cwd);
+    writeFileSync(join(cwd, ".openarch", "config.yml"), "governance:\n  persistence: tracked\n  capability_watch:\n    - packages/core/src/**/*.ts\n");
+
+    expect(await capabilityDriftSignal(cwd, ["packages/core/src/index.ts"])).toEqual({
+      watch: ["packages/core/src/**/*.ts"],
+      matched: ["packages/core/src/index.ts"],
+    });
+    const asset = capabilityAssetPath(store);
+    const assetPath = asset.replace(/\\/g, "/").replace(`${cwd.replace(/\\/g, "/")}/`, "");
+    expect((await capabilityDriftSignal(cwd, [assetPath])).matched).toEqual([]);
+    expect((await capabilityDriftSignal(cwd, [])).matched).toEqual([]);
+  }));
+
+  it("keeps invalid capability_watch configuration report-only", async () => withTemporaryDirectory("document-store", async (cwd) => {
+    initializeProjectDocumentStore(cwd);
+    writeFileSync(join(cwd, ".openarch", "config.yml"), "governance:\n  capability_watch: not-a-list\n");
+    expect(await capabilityDriftSignal(cwd, ["packages/core/src/index.ts"])).toMatchObject({
+      watch: [],
+      matched: [],
+      error: expect.stringContaining("capability_watch"),
+    });
   }));
 });
 

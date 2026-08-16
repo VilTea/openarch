@@ -13,7 +13,12 @@ export const auditCommand: CommandHandler = (args, context) => {
     console.log(message(context.locale, "audit.drift"));
     return 1;
   }
-  if (result.status === "uninitialized" || result.status === "missing_config") {
+  if (result.status === "uninitialized") {
+    console.log(message(context.locale, "audit.uninitialized"));
+    return 3;
+  }
+  if (result.status === "missing_config") {
+    console.log(message(context.locale, "audit.missingConfig"));
     return 3;
   }
   return 0;

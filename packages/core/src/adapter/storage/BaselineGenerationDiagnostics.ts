@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { readBaselineGenerationDirectory } from "./BaselineGenerationValidation";
+import { readBaselineGenerationDirectory, validateBaselineGenerationDirectory } from "./BaselineGenerationValidation";
 
 export type BaselineGenerationArtifactKind = "staging" | "backup";
 export type BaselineGenerationArtifactState = "valid" | "invalid";
@@ -22,6 +22,18 @@ export interface BaselineGenerationDiagnostics {
 
 const temporaryGeneration = /^baseline\.(staging|backup)-.+$/;
 const baselineDirFor = (root: string): string => join(root, "baseline");
+
+/** Fast path for `context`: index parses and the canonical shard count matches `nFiles`. It does not recompute the content-addressed snapshot identity; full validation stays in scan/review/gate read paths. */
+const shallowActiveState = (directory: string): "valid" | "invalid" => {
+  try {
+    const index = JSON.parse(readFileSync(join(directory, "_index.json"), "utf8"));
+    if (!index || typeof index !== "object" || typeof index.meta?.nFiles !== "number") return "invalid";
+    const shards = readdirSync(directory).filter((name) => /^sha256-[0-9a-f]{64}\.json$/.test(name));
+    return shards.length === index.meta.nFiles ? "valid" : "invalid";
+  } catch {
+    return "invalid";
+  }
+};
 
 const generationArtifact = (
   root: string,
@@ -47,12 +59,17 @@ const generationArtifact = (
 };
 
 /** Read-only facts for interrupted publication; never promotes or removes state. */
-export const inspectBaselineGenerations = (root: string, now = Date.now()): BaselineGenerationDiagnostics => {
+export const inspectBaselineGenerations = (root: string, now = Date.now(), options: { readonly deep?: boolean } = {}): BaselineGenerationDiagnostics => {
+  const deep = options.deep !== false;
   const active = baselineDirFor(root);
   let activeState: BaselineGenerationDiagnostics["active"] = "missing";
   if (existsSync(active)) {
-    try { readBaselineGenerationDirectory(active); activeState = "valid"; }
-    catch { activeState = "invalid"; }
+    if (deep) {
+      try { validateBaselineGenerationDirectory(active); activeState = "valid"; }
+      catch { activeState = "invalid"; }
+    } else {
+      activeState = shallowActiveState(active);
+    }
   }
   const artifacts = !existsSync(root) ? [] : readdirSync(root, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && temporaryGeneration.test(entry.name))

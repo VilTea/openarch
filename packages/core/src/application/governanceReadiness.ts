@@ -9,6 +9,10 @@ import { readCoordinationConfig } from "./coordinationConfig";
 
 export type GovernanceReadinessState = "ready" | "not_configured" | "unavailable" | "not_observed";
 
+/** 就绪项对插件渲染的语义分级：enforcing 未就绪影响提交门禁；
+ *  advisory 未就绪影响治理证据但不阻断提交；optional 未配置是产品常态，不是故障。 */
+export type GovernanceReadinessKind = "enforcing" | "advisory" | "optional";
+
 export type GovernanceReadinessReasonCode =
   | "readiness.capabilityAssetMissing"
   | "readiness.capabilityAsset"
@@ -44,6 +48,8 @@ export interface GovernanceReadinessReason {
 export interface GovernanceReadinessItem {
   readonly id: string;
   readonly state: GovernanceReadinessState;
+  /** 渲染语义：插件不要把所有非 ready 项都渲染成 ⚠。 */
+  readonly kind: GovernanceReadinessKind;
   readonly reason: GovernanceReadinessReason;
 }
 
@@ -51,12 +57,25 @@ export interface GovernanceReadinessReport {
   readonly items: readonly GovernanceReadinessItem[];
 }
 
+const READINESS_KINDS: Readonly<Record<string, GovernanceReadinessKind>> = {
+  "code-hook": "enforcing",
+  "code-hook-runtime": "enforcing",
+  "coordination-service": "optional",
+  "document-hook": "advisory",
+  "document-hook-runtime": "advisory",
+  "document-store": "advisory",
+  "document-scope": "advisory",
+  "capability-asset": "advisory",
+  "capability-maintenance": "advisory",
+  "document-similarity": "advisory",
+};
+
 const item = (
   id: string,
   state: GovernanceReadinessState,
   code: GovernanceReadinessReasonCode,
   params: Readonly<Record<string, string>> = {},
-): GovernanceReadinessItem => ({ id, state, reason: { code, params } });
+): GovernanceReadinessItem => ({ id, state, kind: READINESS_KINDS[id] ?? "advisory", reason: { code, params } });
 
 const capabilityItems = (store: DocumentStore): readonly GovernanceReadinessItem[] => {
   const path = capabilityAssetPath(store);

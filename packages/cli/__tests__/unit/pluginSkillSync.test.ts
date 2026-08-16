@@ -1,8 +1,9 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const repositoryRoot = resolve(process.cwd(), "..", "..");
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 const developmentSkillRoots = {
   zh: resolve(repositoryRoot, ".agents", "skills", "openarch"),
   en: resolve(repositoryRoot, ".agents", "skills", "openarch-locales", "en"),

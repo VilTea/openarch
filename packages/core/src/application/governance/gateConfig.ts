@@ -8,7 +8,7 @@ import { parsePathClasses } from "../pathClass";
 import { DEFAULT_CRL_STATE_WEIGHTS, type P95Values, type CRLStateWeights } from "../../domain/crlState";
 import { baselineIndex, configPath, toPosixPath } from "../../infra/paths";
 import { createAnalysisScope, type AnalysisScope } from "../../domain/analysisScope";
-import { nonGateMetricsInCondition } from "../../domain/metricCatalog";
+import { unsupportedCelVariablesInCondition } from "../../domain/metricCatalog";
 import { isFileKindRule } from "../../domain/testGovernance";
 import type { StructuralPolicy, StructuralPolicyMode, StructuralPolicyRule, StructuralPolicyScope } from "../../domain/structuralPolicy";
 
@@ -41,9 +41,10 @@ export class GateConfigurationError extends Error {
   }
 }
 
-/** 这些字段可用于兼容读取或报告，不能成为现行 gate 的裁决依据。 */
+/** gate 条件只能引用 authority 中 role=gate 的指标与 classifier（path_class/language）。
+ *  report_only、retired、复合变量与未登记标识符一律拒绝——不按字符串黑名单猜测。 */
 export const unsupportedMetricRules = (rules: readonly GateRule[]): GateRule[] =>
-  rules.filter((rule) => nonGateMetricsInCondition(rule.condition).length > 0);
+  rules.filter((rule) => unsupportedCelVariablesInCondition(rule.condition).length > 0);
 
 const defaultGateConfig = (): GateConfig => ({
   allRules: [], structuralPolicies: [], explicitStructuralPolicies: false,

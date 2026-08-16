@@ -4,8 +4,8 @@ import type { IndexEntry } from "../../port/StorageService";
 import { participatesInPopulation } from "../../domain/fileParticipation";
 
 type CalibrationEntry = Pick<IndexEntry,
-  "path" | "fileKind" | "maxFuncBranch" | "nestingDepth" | "loc" | "alphaStruct" | "connectedness"
-  | "externalPassthroughCalls" | "localBurdenFingerprint" | "previousLocalBurdenFingerprint">;
+  "path" | "fileKind" | "maxFuncBranch" | "nestingDepth" | "loc" | "declarationLoc" | "alphaStruct" | "connectedness"
+  | "externalPassthroughCalls" | "passthroughCalls" | "localBurdenFingerprint" | "previousLocalBurdenFingerprint">;
 
 export interface CalibrationShiftCandidate {
   readonly path: string;

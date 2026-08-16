@@ -25,7 +25,7 @@ export const assembleGovernanceEvaluation = (diagnostics: GovernanceDiagnosticsR
     signals.push({ id: `CALIBRATION_SHIFT:${shift.path}`, state: "observed", domains: ["architecture-policy"], factIds: ["architecture-policy.v1"], message: `sealed local burden ${shift.gateLocalBurden.toFixed(3)} -> observed ${shift.observedLocalBurden.toFixed(3)}; policy ${shift.gateRules.join(",") || "none"} -> ${shift.observedRules.join(",") || "none"}` });
   }
   if (!diagnostics.review.hasData) {
-    signals.push({ id: "STRUCTURE_REVIEW_COLLECTION", state: "unavailable", domains: ["structure-review"], factIds: ["structure-review.v1"], message: "review has no structural data" });
+    signals.push({ id: "STRUCTURE_REVIEW_COLLECTION", state: "unavailable", domains: ["structure-review"], factIds: ["structure-review.v1"], message: diagnostics.review.reason ?? "review has no structural data" });
   }
   return {
     snapshot: { scope: facts.scope, facts: { ...facts.facts, ...tests.facts } },

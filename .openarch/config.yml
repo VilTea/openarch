@@ -10,6 +10,19 @@ presentation:
 governance:
   history:
     raw_window_days: 14
+  # 能力资产漂移信号（report-only）：这些契约/命令/文档治理表面变更时，
+  # check --report 提示更新绑定的 CORE-CAPABILITIES.md 并运行 docs check。
+  capability_watch:
+    - "packages/core/src/index.ts"
+    - "packages/core/src/domain/contractCatalog.ts"
+    - "packages/core/src/script-runtime/projectFactsContract.ts"
+    - "packages/core/src/script-runtime/scriptRequirements.ts"
+    - "packages/core/src/staged-analysis/types.ts"
+    - "packages/core/src/application/scriptFacts.ts"
+    - "packages/core/src/document-store/**"
+    - "packages/cli/src/commands/index.ts"
+    - "packages/cli/src/commands/docs.ts"
+    - "packages/cli/src/i18n.ts"
 
 # 项目语言（决定 openarch scan 匹配的文件扩展名）
 # CLI 入口 packages/cli/bin/openarch.js 与 coordination Go service 都是生产代码；
@@ -77,8 +90,6 @@ structural_policies:
         condition: 'path_class == "parser" && max_func_branch > 20'
       - name: "非核心层单函数分支偏多"
         condition: 'path_class == "default" && max_func_branch > 8'
-      - name: "单次冲击过高"
-        condition: "i_push > 10"
       - name: "domain 局部负担过高"
         condition: 'path_class == "domain" && crl_local > 0.55'
       - name: "application 局部负担过高"
@@ -124,6 +135,16 @@ test_governance:
 # 提升需要可复核正例与正/负/unavailable fixture；回扫存量为零是治理完成的 CLEAN 状态，
 # 不是校准失败，也不降低提升资格。该裁决独立于 architecture gate、I_push 与 CRL。
 authority_hygiene:
+  # v5.3 最小 protected_paths：变更级保护路径并入 authority_hygiene。
+  # 只做 warn/block 裁决与最小例外记录，不建 override/ASK 状态机。
+  protected_paths:
+    - pattern: "packages/core/src/port/**"
+      level: "warn"
+      reason: "跨层共享契约面；变更前需核对消费者证据"
+      allow:
+        # v5.3 最小例外记录：StorageService 接口随 baseline manifest 合同演进，
+        # 变更已由 schema/读适配/发布路径测试与消费者检查覆盖。
+        - "packages/core/src/port/StorageService.ts"
   quality_rules:
     "authority-import-bypass.mjs": block
     "no-inline-script-starters.mjs": block

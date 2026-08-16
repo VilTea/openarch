@@ -18,6 +18,7 @@
     --glow: rgba(42,120,214,0.22); --particle: rgba(42,120,214,0.40); --link: rgba(11,11,11,0.08);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
   body {
     font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
     background: var(--page); color: var(--ink-2); line-height: 1.65;
@@ -62,7 +63,7 @@
     padding: 30px 30px 26px; transition: transform .3s ease, border-color .3s ease, box-shadow .3s ease;
   }
   .portal-card::after { content: ""; position: absolute; top: -50px; right: -50px; width: 180px; height: 180px; border-radius: 50%; background: radial-gradient(circle, var(--glow), transparent 70%); opacity: .6; }
-  .portal-card:hover { transform: translateY(-5px); border-color: var(--series-1); box-shadow: 0 22px 50px rgba(0,0,0,.4); }
+  .portal-card:hover { transform: translateY(-5px); border-color: var(--series-1); box-shadow: 0 20px 46px var(--glow); }
   .pc-top { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; position: relative; }
   .pc-icon { width: 50px; height: 50px; border-radius: 13px; display: grid; place-items: center; font-size: 1.5rem; background: rgba(57,135,229,0.14); border: 1px solid rgba(57,135,229,0.3); }
   .pc-tag { font-size: 0.72rem; color: var(--series-1); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
@@ -77,7 +78,7 @@
   .feats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 28px; }
   .feat { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 11px; padding: 18px 20px; }
   .feat .fk { color: var(--series-1); font-weight: 700; font-size: 0.92rem; display: flex; align-items: center; gap: 8px; }
-  .feat .fv { color: var(--ink-3); font-size: 0.82rem; margin-top: 6px; }
+  .feat .fv { color: var(--ink-3); font-size: 0.82rem; margin-top: 6px; overflow-wrap: anywhere; }
 
   /* value cards (before -> after) */
   .val-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin-top: 28px; }
@@ -114,6 +115,38 @@
   .cta-end h2 { font-size: clamp(1.5rem, 3vw, 2rem); margin-bottom: 12px; }
   .cta-end p { color: var(--ink-3); margin-bottom: 18px; }
   .cta-end pre.code { text-align: left; max-width: 520px; margin: 0 auto 24px; }
+
+  /* ── micro polish (tokens / layout unchanged) ── */
+  ::selection { background: rgba(57,135,229,0.30); }
+  :focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+  pre.code { scrollbar-width: thin; scrollbar-color: var(--baseline) transparent; }
+  pre.code::-webkit-scrollbar { height: 8px; }
+  pre.code::-webkit-scrollbar-thumb { background: var(--baseline); border-radius: 4px; }
+  pre.code::-webkit-scrollbar-track { background: transparent; }
+
+  header.hero { position: relative; }
+  header.hero::before {
+    content: ""; position: absolute; top: -120px; right: -140px; width: 480px; height: 480px;
+    border-radius: 50%; background: radial-gradient(circle, var(--glow), transparent 70%);
+    opacity: .55; pointer-events: none; z-index: -1;
+  }
+  .val, .feat, .stage { transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease; }
+  .val:hover { transform: translateY(-3px); border-color: var(--series-1); box-shadow: 0 12px 30px var(--glow); }
+  .val .vicon { transition: transform .22s ease; }
+  .val:hover .vicon { transform: scale(1.08); }
+  .feat:hover { transform: translateY(-3px); border-color: var(--series-1); }
+  .stage:hover { border-color: var(--series-1); }
+  .stage:hover .sn { text-shadow: 0 0 14px var(--glow); }
+
+  .cta-end { position: relative; }
+  .cta-end::before {
+    content: ""; position: absolute; left: 50%; top: -30px; transform: translateX(-50%);
+    width: 640px; max-width: 92vw; height: 320px;
+    background: radial-gradient(ellipse, var(--glow), transparent 70%);
+    opacity: .45; pointer-events: none; z-index: -1;
+  }
+  .cta-end .btn { margin: 8px 6px 0; }
+
   /* scroll reveal */
   .wrap > section { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s ease; }
   .wrap > section.in { opacity: 1; transform: none; }
@@ -195,11 +228,11 @@ export default {
       <a class="portal-card" href="openarch-analysis-report.html">
         <div class="pc-top">
           <div class="pc-icon">📊</div>
-          <div><div class="pc-tag">源码审计</div></div>
+          <div><div class="pc-tag">架构分析</div></div>
         </div>
-        <h3>源码哲学实践分析报告</h3>
-        <p class="q">"OpenArch 是否践行了它自己的哲学？"</p>
-        <p class="d">八维度评分 · 11 道 fail-closed 守卫 · 两处诚实张力。用 OpenArch 自己的标准审视 OpenArch 自己的源码，全部基于逐行核对与 openarch context/review 自审。</p>
+        <h3>源码架构与结构分析报告</h3>
+        <p class="q">"解剖一条防线：源码与功能。"</p>
+        <p class="d">PART Ⅰ 源码：六边形分层、Top-3 结构信号与契约候选散点。PART Ⅱ 功能：八个能力位面、六步治理闭环与指标罗盘。全部数值来自 openarch 自审与 Git 统计，可复现。</p>
         <span class="go">进入报告 <span class="arrow">→</span></span>
       </a>
       <a class="portal-card" href="openarch-usage-guide.html">
@@ -222,18 +255,38 @@ export default {
       <div class="feat"><div class="fk">🏠 本地优先</div><div class="fv">代码不出楼。结构分析、变更冲击、规则执行全部本地运行，可复现。</div></div>
       <div class="feat"><div class="fk">🚫 门禁无 LLM</div><div class="fv">裁决靠 tree-sitter / 编译器 / LSP 符号级分析，不是云端的黑箱判断。</div></div>
       <div class="feat"><div class="fk">🔒 Fail-closed</div><div class="fv">证据缺失或模糊时返回 PARTIAL / UNAVAILABLE，绝不假装通过。</div></div>
-      <div class="feat"><div class="fk">🌐 五语言符号级</div><div class="fv">TypeScript · Python · Rust · Java · Go，下探到确认的消费者。</div></div>
+      <div class="feat"><div class="fk">🌐 五语言符号级</div><div class="fv">TypeScript · Python · Rust · Java · Go，下探到确认的消费者。complete 是语言级校准边界（单 crate / 单 module / 标准布局等），越界保持 PARTIAL，不降级伪造零。</div></div>
+    </div>
+  </section>
+
+  <section>
+    <span class="sec-num">演进主线</span>
+    <h2>机器契约 · 测试治理 · 插件生态</h2>
+    <div class="feats">
+      <div class="feat"><div class="fk">📜 机器契约目录</div><div class="fv"><code>openarch contract --json</code> 列出 context / test-governance / provider-list / rules-facts / docs-check 五份 JSON 契约的 id/version/status；破坏性变更 bump version，插件对未知版本 fail-closed。</div></div>
+      <div class="feat"><div class="fk">🔌 context --json</div><div class="fv">顶层 <code>schema</code> 自识别版本；readiness 三级分级 enforcing / advisory / optional——code-hook 未装是 ⚠，协调服务未配置是常态不是故障。</div></div>
+      <div class="feat"><div class="fk">🧪 测试治理</div><div class="fv"><code>openarch test</code>：Vitest / node:test / Go / Rust / JUnit / pytest 六框架适配器，逐 provider 覆盖边界与适配器建议，只建议不自动启用。</div></div>
+      <div class="feat"><div class="fk">🧩 DSH 插件</div><div class="fv">治理状态看板、<code>openarch_context/check/review/scan/test/contract</code> 模型工具与机器契约消费，由同一版本化契约驱动。</div></div>
     </div>
   </section>
 
   <section class="cta-end">
     <h2>现在就让你的代码库停止静默腐化</h2>
-    <p>三条命令，从克隆到 Agent 真正用上：</p>
-<pre class="code"><span class="c"># 克隆并安装（或直接让 Agent 读 INSTALL.md 代你执行）</span>
+    <p>可复现路径（npm 发行暂缓，源码构建是当前正式安装方式；也可以直接把 INSTALL.md 交给 Agent 执行）：</p>
+<pre class="code"><span class="c"># 1. 构建并安装 CLI（前置：Node 20+、pnpm 9、bun、Git）</span>
 git clone https://github.com/VilTea/openarch
+cd openarch
+corepack enable
+pnpm install
+pnpm release:binary
+pnpm release:local-command
+
+<span class="c"># 2. 在你的项目里初始化（新终端已可直接使用 openarch）</span>
+cd /path/to/your-project
 openarch init --agent claude
 openarch context</pre>
-    <a class="btn primary" href="https://github.com/VilTea/openarch" target="_blank" rel="noopener">在 GitHub 开始 ↗</a>
+    <a class="btn primary" href="openarch-usage-guide.html">打开完整手册 →</a>
+    <a class="btn ghost" href="https://github.com/VilTea/openarch" target="_blank" rel="noopener">在 GitHub 开始 ↗</a>
   </section>
 
   <footer>

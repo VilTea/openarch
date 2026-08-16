@@ -1,0 +1,15 @@
+# 隐式依赖（由 openarch rules discover 生成；可手改——删误报、加备注、source 改 manual 保护不被覆盖）
+# 重新 discover 时按 source 合并：同来源的旧边替换，其他来源/手改边保留。
+- from: packages/openarch-plugin/dsh/client/openarch-dashboard.mjs
+  to: packages/openarch-plugin/dsh/host/openarch-tools.mjs
+  via: cordis:rpc:openarch/governance-state
+  type: cordis_declarative
+  source: cordis-declarative-deps.mjs
+  confidence: low
+- from: packages/openarch-plugin/dsh/client/openarch-dashboard.mjs
+  to: packages/openarch-plugin/dsh/host/openarch-tools.mjs
+  via: cordis:http:/api/openarch/governance-state
+  type: cordis_declarative
+  source: cordis-declarative-deps.mjs
+  confidence: low
+

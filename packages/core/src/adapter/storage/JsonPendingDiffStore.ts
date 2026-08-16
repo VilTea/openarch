@@ -61,6 +61,7 @@ export const createJsonPendingDiffStore = (rootDir: () => string): JsonPendingDi
               timestamp: pending.timestamp, entryId: pending.entryId, deltas: pending.deltas,
               ...(pending.diagnosis ? { diagnosis: pending.diagnosis } : {}),
               ...(pending.evidence ? { evidence: pending.evidence } : {}),
+              ...(pending.scale ? { scale: pending.scale } : {}),
             });
           }
           unlinkSync(path);

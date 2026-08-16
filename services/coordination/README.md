@@ -28,6 +28,22 @@ The current evidence `projectToken` is deliberately opaque and only supports cal
 
 When Phase 3 adds collaboration, a product Task may coordinate a goal but must materialize repository-bound service subtasks. Claim, Session, branch, verification, and semantic lock apply to those subtasks; a product Task cannot acquire a cross-repository lock. Locks are AST-node semantic locks, with a function implementation as the ordinary minimum target; type/file targets are explicit wider operations, and signature/internal-behaviour changes may expand through the local repository call graph. Debt remains a deferred decision record without claim or lock and becomes work only through an explicit Task creation. The complete planned contract is in [`docs/collaboration-scope-design.md`](../../docs/collaboration-scope-design.md).
 
+## 多项目共用一个文档仓
+
+共享模式只有一个远端仓库和一个分支，但这一个分支可以承载多个项目的登记与事实。当前实现已按 `repositoryId` 命名空间化，并有针对性的多项目并发行为：
+
+| 表面 | 多项目行为 |
+|---|---|
+| scope 登记 | `repositories/<id>/scope.json`、`services/<repo>/<svc>/scope.json`、`products/<id>/scope.json` 均按身份命名；`ScopeRegistry.Validate` 强制服务引用已登记仓库、产品引用已登记服务。 |
+| Task 提案/事件 | `tasks/<repo>/<svc>/<task>/proposal.json`（Agent-owned）与 `coordination/tasks/<repo>/<svc>/<task>/events.ndjson`（service-owned）按仓库/服务/任务隔离；`publishOwnedFile` 白名单同样按该路径校验。 |
+| 校准证据 | 共享 `evidence/validation.ndjson` 的槽位指纹含 `projectToken`，不同项目不互相覆盖；校准聚合按 `provider/rule/authority` 跨项目计数 `projects`。`projectToken` 必须由各项目保证在共享仓内唯一（重复 token 会被视为同一项目的槽位并替换）。 |
+| 租约 / 会话 | 键均含 `repositoryId`；`GET /v1/leases`、`GET /v1/sessions`、`GET /v1/events` 支持可选 `?repositoryId=` 过滤实时视图。 |
+| 并发 refresh | 推送后若另一个项目已把同一分支推进，refresh 只要求广告 head 是远端 head 的祖先即可（只快进、不回退），响应返回实际 head 并据此重建投影。 |
+| Task 提交 | 保持更严的绑定：`task submit` 要求广告 head 等于远端 head，或其后仅有 service-owned 提交；若中间混入 Agent-owned 提交则 fail-closed，必须按错误原因重试/换新提交版本，不静默放宽任务身份。 |
+| 遗留 `projects/<basename>` | 服务在 `GET /v1/docs-repo` 的 `legacyProjects` 中列出未迁移位置，但绝不把 basename 隐式提升为 `repositoryId`；迁移由 `openarch coordination scope register --repository-id <新稳定id>` 显式完成。 |
+
+仍然不在多项目信任域内的能力：认证/授权、按项目配额/限流、以及多实例部署下的跨进程 Git 写串行化与 TTL 原子租约（当前内存 LeaseStore/SessionStore 只承诺单实例语义，多实例必须换成 TTL 原子存储或单路由 coordinator）。
+
 ## Architectural consequence
 
 The important early choice is not a heavy Go framework. The high-leverage choice is to model the service as:
@@ -62,12 +78,12 @@ Examples:
 
 - service upserts a calibration evidence batch
 - agent registers / updates a repository, service, or product scope, then notifies refresh
-- agent writes a Task, Debt, or final meeting consensus decision, then notifies refresh
-- service appends an owned meeting exchange/event record
+- agent writes a Task, Debt, or final consensus decision document, then notifies refresh
+- service appends an owned append-only coordination record（v5.3：会议房间/交流事件记录已 cut）
 
 Task proposals are Agent-owned Git documents. The service verifies one pushed
-proposal/scope/head snapshot and appends a signed `verified` event under
-`coordination/tasks/`. Task event routes are disabled unless
+proposal/scope/head snapshot and appends signed `verified → claimed → completed`
+events under `coordination/tasks/`. Task event routes are disabled unless
 `--task-signing-key` supplies a base64 Ed25519 seed or private-key file; a path
 prefix alone is not treated as authorization.
 
@@ -145,7 +161,7 @@ Responsibilities:
 - explicit repository/service/product scope identity
 - session registry
 - semantic lock lifecycle
-- meeting lifecycle
+- meeting lifecycle（v5.3 cut：以 SSE + docs-repo 共识文档替代，不建房间状态机）
 - timely notifications
 
 Not responsible for:
@@ -166,7 +182,7 @@ Examples:
 - `ValidationEvidence`
 - `Calibration`
 - `RepositoryRef`, `ServiceRef`, `ProductRef`
-- lock/session/meeting value objects and invariants
+- lock/session/debt value objects and invariants（v5.3：meeting 已 cut）
 - recommendation rules
 
 ### Application
@@ -183,7 +199,7 @@ Phase 3 examples:
 - `AcquireLock`
 - `ReleaseLock`
 - `RegisterSession`
-- `OpenMeeting`
+- `RecordDebt`（v5.3 revised：版本化 Debt 文档 + 校验，先于状态机）
 
 Application code should accept `context.Context`, call ports, and return typed results/errors. It should not know whether the backing projection is NDJSON, SQLite, or memory.
 
@@ -342,10 +358,22 @@ The root multi-language policy preserves this same Go trial instead of inheritin
 1. Keep NDJSON only as a temporary projection/cache mechanism, not as the authority abstraction.
 2. Keep repeated calibration exports idempotent; introduce retention/compaction only through a reviewed authority schema once real sample cadence establishes a need.
 3. Collect matching records from real CI, including human-reviewed false-positive/false-negative labels, before treating recommendations as portable calibration input.
-4. Phase 3 M0 now starts with the domain-only scope identity contract. The shared `internal/identity` validator is reused by evidence and collaboration; it does not infer IDs from paths.
-5. Add Git-backed scope registration and an explicit migration for legacy `projects/<basename>` before opening Task or Session endpoints.
-6. After scope registration is auditable and rebuildable, add the domain-only `LeaseStore` contract and an in-memory TTL adapter; do not write lock renewals to Git.
-7. Only after lease lifecycle tests pass should a repository-bound Session and function-level semantic lock transport be exposed.
+4. ~~Phase 3 M0 domain-only scope identity contract~~ done: Git-backed `repositories/services/products` scope registration, referential validation, and an explicit `LegacyProjectRef`/`MigrateLegacyProject` contract are implemented and surfaced via `legacyProjects`.
+5. ~~Git-backed scope registration and explicit migration contract~~ done at the domain/read boundary; the remaining migration gap is an explicit `scope migrate-legacy` command and tests, not identity inference.
+6. ~~Domain-only LeaseStore contract and in-memory TTL adapter~~ done with epoch + fencing.
+7. ~~Repository-bound live Session and SSE transport~~ done: register/heartbeat/close/list, bounded event fan-out, and `?repositoryId=` filtering for live views.
+
+Next gaps, in order（design v5.3 §1.6 收敛）：
+
+- ~~`scope migrate-legacy` command and Task list/query endpoints~~ done: `coordination scope migrate-legacy`、`GET /v1/tasks` + `coordination task list`。
+- ~~Versioned Debt documents with scope references~~ done: `debts/<repo>/<svc>/<debt>.json` Agent-owned 文档、`GET /v1/debts` 只读投影、`coordination debt register/list`。
+- ~~Minimal `protected_paths` inside `authority_hygiene`~~ done: 变更级 warn/block 政策并入 `openarch check`。
+- Append-only replay protection (`prevEventHash`/sequence) and retention policy for service-owned streams.
+- Multi-instance TTL-backed Lease/Session store or single routed coordinator; cross-process Git write serialization（conditional：真实多项目共仓上线前）。
+- Authn/z, per-project quotas/rate limits, and access/metrics logs for a real multi-project trust domain.
+- e2e smoke/load tests for multi-project shared-branch pushes.
+
+Cut by v5.3：meeting room lifecycle、product Task automatic decomposition、SQLite projection（推迟到多实例需求出现）。
 
 ## 生成文件治理
 
@@ -376,3 +404,17 @@ func main() {
 ```
 
 Agent 提交流程：在 docs-repo 写 `tasks/<repositoryId>/<serviceId>/<taskId>/proposal.json`（含 `requestedBy`/`title`/`hypothesis`，`requestedBy` 必须是合法 identifier）→ commit → push（远端模式）或直接 commit（本地共享模式）→ `openarch coordination task submit --repository-id <id> --service-id <id> --task-id <id> --branch <b> --head-sha <sha>`。服务校验 proposal 在指定 head 存在、`requestedBy` 合法，追加 Ed25519 签名的 `verified` 事件到 `coordination/tasks/**/events.ndjson`；相同 proposal+head 重提幂等返回"已存在"，不同 head 重提拒绝（防重放）。
+
+## 本机验证（2026-08-15）
+
+- Go 工具链：`E:\workspace\llm\.tools\go\bin\go.exe`（go1.26.5）
+- C 编译器（race detector 依赖 cgo）：`E:\workspace\llm\.tools\w64devkit\w64devkit\bin\gcc.exe`（w64devkit 2.9.1）
+- 验证命令：
+
+```powershell
+$env:CGO_ENABLED = '1'
+$env:PATH = 'E:\workspace\llm\.tools\w64devkit\w64devkit\bin;E:\workspace\llm\.tools\go\bin;' + $env:PATH
+go test -race ./...
+```
+
+结果：`go vet ./...`、`go build ./...`、`go test ./...`、`go test -race ./...` 全部通过。

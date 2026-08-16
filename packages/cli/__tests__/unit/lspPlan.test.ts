@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest";
 import { planLspStart, type LspStartPlan } from "../../src/commands/lsp";
 
 const javaState = { configured: ["java"], detected: [], configExists: true };
+const goState = { configured: ["go"], detected: [], configExists: true };
 const unconfiguredState = { configured: undefined, detected: ["java"], configExists: true };
 const noJavaState = { configured: undefined, detected: ["typescript"], configExists: true };
+const noGoState = { configured: undefined, detected: ["typescript"], configExists: true };
 const bareState = { configured: undefined, detected: [], configExists: false };
 
 describe("planLspStart（语言门禁 / 提醒 / fail-soft 纯决策）", () => {
-  it("拒绝非 java 的 --lang", () => {
-    const plan = planLspStart({ lang: "rust", languageState: javaState, daemonRunning: false, launchAvailable: true, owner: "manual" });
+  it("拒绝非 java/go 的 --lang", () => {
+    const plan = planLspStart({ lang: "rust" as never, languageState: javaState, daemonRunning: false, launchAvailable: true, owner: "manual" });
     expect(plan).toMatchObject({ outcome: "unsupported-lang", exit: 3 });
   });
 
@@ -48,5 +50,13 @@ describe("planLspStart（语言门禁 / 提醒 / fail-soft 纯决策）", () => 
     const plan: LspStartPlan = planLspStart({ lang: "java", languageState: javaState, daemonRunning: false, launchAvailable: true, owner: "manual" });
     expect(plan.outcome).toBe("start");
     expect(plan.exit).toBe(0);
+  });
+
+  it("go 项目使用同一决策语义", () => {
+    const ready = planLspStart({ lang: "go", languageState: goState, daemonRunning: false, launchAvailable: true, owner: "manual" });
+    expect(ready.outcome).toBe("start");
+    const skip = planLspStart({ lang: "go", languageState: noGoState, daemonRunning: false, launchAvailable: true, owner: "manual" });
+    expect(skip.outcome).toBe("skip-lang");
+    expect(skip.message).toContain("项目未使用 go");
   });
 });

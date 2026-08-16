@@ -83,6 +83,58 @@ describe("context command", () => {
     expect(JSON.parse(chinese).readiness[0]).toHaveProperty("reason.code");
   });
 
+  it("exposes machine-readable languages, baseline identity, and policy populations in context --json", async () => {
+    const output = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const cwd = tempProject();
+    mkdirSync(join(cwd, ".openarch", "baseline"), { recursive: true });
+    writeFileSync(join(cwd, ".openarch", "config.yml"), [
+      "languages: [typescript]",
+      "structural_policies:",
+      "  - id: alpha-ts",
+      "    mode: enforce",
+      "    languages: [typescript]",
+      "    rules_warn:",
+      "      - name: branch",
+      "        condition: max_func_branch > 6",
+    ].join("\n"));
+    writeFileSync(join(cwd, ".openarch", "baseline", "_index.json"), JSON.stringify({
+      meta: {
+        nFiles: 9,
+        languages: ["typescript"],
+        snapshotSha256: "snapshot-abc",
+        metricContractVersion: "metric-contract-v4",
+        policyCalibrations: { "alpha-ts": { gate: { id: "sealed-1" } } },
+        policyPopulations: { "alpha-ts": 38 },
+      },
+    }));
+    writeFileSync(join(cwd, ".openarch", "scan-status.json"), JSON.stringify({
+      status: "failed", phase: "parsing", completed: 1, total: 3, reason: "ParseError",
+    }));
+
+    await expect(contextCommand(["--json"], { cwd, rawArgv: [], locale: "zh" })).resolves.toBe(0);
+    const json = JSON.parse(String(output.mock.calls[0][0]));
+
+    expect(json.schema).toBe("context-json-v1");
+    expect(json.contract).toEqual({ id: "context-json", version: "context-json-v1" });
+    expect(json.languages).toEqual(["typescript"]);
+    expect(json.baseline).toMatchObject({
+      languages: ["typescript"],
+      snapshotSha256: "snapshot-abc",
+      metricContractVersion: "metric-contract-v4",
+      policyPopulations: [{ id: "alpha-ts", productionFiles: 38, calibration: "sealed" }],
+    });
+    expect(json.architecturePolicy.policies).toEqual([
+      { id: "alpha-ts", mode: "enforce", languages: ["typescript"], rules: 1 },
+    ]);
+    expect(json.scan.status).toMatchObject({ status: "failed", phase: "parsing", reason: "ParseError" });
+    expect(json.scan.exclusions.segments).toContain("/node_modules/");
+    expect(json.scan.exclusions.directoryNames).toContain("target");
+    const coordination = json.readiness.find((item: { id: string }) => item.id === "coordination-service");
+    expect(coordination).toMatchObject({ state: "not_configured", kind: "optional" });
+    const codeHook = json.readiness.find((item: { id: string }) => item.id === "code-hook");
+    expect(codeHook?.kind).toBe("enforcing");
+  });
+
   it("reports an explicitly configured coordinator without claiming connectivity", async () => {
     const cwd = tempProject();
     mkdirSync(join(cwd, ".openarch"), { recursive: true });

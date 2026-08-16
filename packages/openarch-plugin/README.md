@@ -21,7 +21,7 @@ npm install --global @openarch/plugin
 openarch-agent-install --target codex --locale en
 ```
 
-`--locale` is optional and defaults from the host locale. Supported targets are `codex`, `cursor`, `opencode`, and `claude`. The standalone installer deliberately has no project scope; use `openarch init --agent <target>` for each project.
+`--locale` is optional and defaults from the host locale. Supported targets are `codex`, `cursor`, `opencode`, `claude`, and `dsh` (DeepSeek Harness). For `dsh` the installer writes to `${DSH_HOME:-~/.dsh}/skills/openarch`; adding `--preset` also installs an OpenArch agent preset into `${DSH_HOME:-~/.dsh}/.agent-presets/openarch` with localized `openarch-zh`/`openarch-en` preset skills. The standalone installer deliberately has no project scope; use `openarch init --agent <target>` for each project (`--agent dsh` writes `.dsh/skills/openarch`).
 
 For source or offline use, create local tarballs, install the CLI tarball into the governed project, then run the same CLI initialization:
 

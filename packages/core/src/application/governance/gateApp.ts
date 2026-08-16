@@ -5,7 +5,7 @@ import { gatePerFile, type GateVerdict } from "./gate";
 import { loadGateConfigStrict, unsupportedMetricRules } from "./gateConfig";
 import { gateReportFacts, type GateFileMetric, type GateReportFacts } from "./gateReport";
 import { isPathInAnalysisScope, type AnalysisScope } from "../../domain/analysisScope";
-import { METRIC_CONTRACT_VERSION, nonGateMetricsInCondition } from "../../domain/metricCatalog";
+import { METRIC_CONTRACT_VERSION, unsupportedCelVariablesInCondition } from "../../domain/metricCatalog";
 import { baselineIndex } from "../../infra/paths";
 import { calibrationThresholdShifts, type CalibrationShift } from "./calibrationGate";
 import { gateCalibrationProfile } from "../../domain/calibration";
@@ -16,12 +16,14 @@ import { StorageService, type BaselineIndex, type CurrentMetricsProjection, type
 import { participatesInPopulation } from "../../domain/fileParticipation";
 import { currentFileMetrics } from "../currentMetrics";
 import { matchesStructuralPolicy, policiesForSubject } from "../../domain/structuralPolicy";
+import type { P95Values } from "../../domain/crlState";
 
 export interface GateAppOptions { report?: boolean; projection?: CurrentMetricsProjection }
 export type GateUnavailableReason =
   | "languages_empty"
   | "missing_baseline_index"
   | "baseline_scope_incompatible"
+  | "missing_snapshot_identity"
   | "metric_contract_incompatible"
   | "unsupported_gate_metric"
   | "missing_max_function_branch"
@@ -51,6 +53,8 @@ export interface GateAppOutput {
   readonly evaluatedFiles?: number;
   /** Report-only threshold crossings caused by a changed P95 sample with unchanged local inputs. */
   readonly calibrationShifts?: readonly CalibrationShift[];
+  /** 小样本校准保护（report-only，校准 2026-08-15）：生产文件 <50 的策略 P95 不稳定。 */
+  readonly smallSamplePolicies?: readonly { id: string; files: number; calibration: "sealed" | "bootstrapped" }[];
   /** Controlled failure context for CLI and governance diagnostics; never a raw stack/cause. */
   readonly diagnostic?: GateDiagnostic;
 }
@@ -67,7 +71,7 @@ const collectMetric = (m: IndexEntry): FileMetric => ({
   topLevelWeightedBranch: m.topLevelWeightedBranch,
   nestingDepth: m.nestingDepth,
   alphaStruct: m.alphaStruct,
-  cohesion: m.cohesion ?? 1, loc: m.loc, declarationLoc: m.declarationLoc,
+  loc: m.loc, declarationLoc: m.declarationLoc,
   passthroughCalls: m.passthroughCalls,
   maxFuncBranch: m.maxFuncBranch,
   externalPassthroughCalls: m.externalPassthroughCalls,
@@ -84,6 +88,7 @@ export const filterMetricsForScope = <T extends { path: string }>(metrics: reado
 const baselineReadiness = (index: BaselineIndex | null, scope: AnalysisScope): GateUnavailableReason | undefined => {
   if (index === null) return "missing_baseline_index";
   if (index.meta.analysisScope?.fingerprint !== scope.fingerprint || index.meta.analysisScope?.complete !== true) return "baseline_scope_incompatible";
+  if (!index.meta.snapshotSha256) return "missing_snapshot_identity";
   if (index.meta.metricContractVersion !== METRIC_CONTRACT_VERSION) return "metric_contract_incompatible";
   return undefined;
 };
@@ -121,7 +126,7 @@ export const gateApp = (opts: GateAppOptions = {}) =>
     if (readiness) return unavailable(readiness, { category: "baseline", operation: "validate_baseline", message: readiness, path: baselineIndex() });
     const unsupported = unsupportedMetricRules(config.structuralPolicies.flatMap((policy) => policy.rules));
     if (unsupported.length > 0) {
-      const detail = unsupported.map((rule) => `${rule.name}(${nonGateMetricsInCondition(rule.condition).map((metric) => metric.id).join(",")})`).join(", ");
+      const detail = unsupported.map((rule) => `${rule.name}(${[...new Set(unsupportedCelVariablesInCondition(rule.condition))].join(",")})`).join(", ");
       return unavailable("unsupported_gate_metric", { category: "configuration", operation: "validate_rules", message: detail });
     }
     const metrics = (yield* currentFileMetrics(storage, opts.projection)).map(([, metric]) => collectMetric(metric));
@@ -153,6 +158,8 @@ export const gateApp = (opts: GateAppOptions = {}) =>
     const triggered: { name: string; level: string; condition: string; file?: string }[] = [];
     const policyFacts: { id: string; mode: "observe" | "enforce"; languages: readonly string[]; evaluatedFiles: number }[] = [];
     const calibrationShifts: CalibrationShift[] = [];
+    const smallSamplePolicies: { id: string; files: number; calibration: "sealed" | "bootstrapped" }[] = [];
+    let legacyReportP95: P95Values | undefined;
     let blocked = false;
     let warned = false;
     for (const policy of config.structuralPolicies) {
@@ -163,11 +170,18 @@ export const gateApp = (opts: GateAppOptions = {}) =>
       const calibrationProfiles = config.explicitStructuralPolicies
         ? index.meta.policyCalibrations?.[policy.id]
         : index.meta.calibration;
+      if (selected.length < 50) {
+        smallSamplePolicies.push({
+          id: policy.id, files: selected.length,
+          calibration: calibrationProfiles?.gate ? "sealed" : "bootstrapped",
+        });
+      }
       const p95 = gateCalibrationProfile(calibrationProfiles)?.p95
         ?? (!config.explicitStructuralPolicies ? index.meta.p95 : undefined);
       if (!p95) {
         return unavailable("policy_calibration_missing", { category: "baseline", operation: "validate_policy_calibration", message: `policy ${policy.id} has no sealed calibration; run a complete scan` });
       }
+      if (!config.explicitStructuralPolicies) legacyReportP95 = p95;
       const result = yield* gatePerFile(policy.rules, selected, config.pathEntries, { p95, weights: policy.crlStateWeights });
       triggered.push(...result.triggered);
       blocked ||= result.verdict === "BLOCK";
@@ -180,10 +194,11 @@ export const gateApp = (opts: GateAppOptions = {}) =>
     const result = { verdict: blocked ? "BLOCK" as const : warned ? "WARN" as const : "PASS" as const, triggered };
     return {
       code: code(result.verdict), verdict: result.verdict,
-      report: gateReportFacts(result, productionMetrics, opts.report === true, undefined, config.crlStateWeights, policyFacts),
+      report: gateReportFacts(result, productionMetrics, opts.report === true, legacyReportP95, config.crlStateWeights, policyFacts),
       configuredRules: config.structuralPolicies.flatMap((policy) => policy.rules).length, evaluatedFiles: productionMetrics.length,
       analysisScopeFingerprint: config.analysisScope.fingerprint,
       calibrationShifts,
+      ...(smallSamplePolicies.length > 0 ? { smallSamplePolicies } : {}),
     };
   }).pipe(
     Effect.catchAll((error) => Effect.succeed(unavailable("execution_failed", gateDiagnosticFromError(error)))),

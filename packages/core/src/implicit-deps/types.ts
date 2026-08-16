@@ -12,6 +12,20 @@ export interface DiscoveredEdge {
   readonly type: string;
 }
 
+/** link 的非破坏观测（report-only，不落边）：未解析键、动态键或说明。 */
+export interface DiscoveredObservation {
+  readonly kind: "unresolved_key" | "dynamic_key" | "note";
+  /** 相关键/通道（如 cordis:service:timer 或 ctx.get）。 */
+  readonly via: string;
+  readonly files: readonly string[];
+  readonly message?: string;
+}
+
+/** 兼容旧契约：link 可返回边数组，也可返回 { edges, observations }。 */
+export type ImplicitDependencyLinkResult =
+  | readonly DiscoveredEdge[]
+  | { readonly edges: readonly DiscoveredEdge[]; readonly observations?: readonly DiscoveredObservation[] };
+
 /** 落地到 implicit-deps.yml 的边（含来源与置信度） */
 export interface StoredEdge extends DiscoveredEdge {
   readonly source: string;
@@ -20,4 +34,4 @@ export interface StoredEdge extends DiscoveredEdge {
 }
 
 /** Scripts describe syntax stages; the shared runtime owns traversal and invokes link last. */
-export type ImplicitDependencyRule = StagedRule<DiscoveredEdge>;
+export type ImplicitDependencyRule = StagedRule<ImplicitDependencyLinkResult>;

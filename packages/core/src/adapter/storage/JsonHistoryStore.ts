@@ -4,20 +4,20 @@ import { Effect } from "effect";
 import type { StorageService } from "../../port/StorageService";
 import { IoError } from "../../errors/errors";
 import { atomicWriteJson } from "./AtomicWriter";
-import { compactHistoryLedger, readHistoryReplayRecords } from "./HistoryLedger";
+import { compactHistoryLedger, readHistoryImpactFacts, readHistoryReplayRecords } from "./HistoryLedger";
 
 const safeEntryId = (value: string): boolean => /^[A-Za-z0-9._-]+$/.test(value);
 const assertEntryId = (entryId: string): void => {
   if (!safeEntryId(entryId)) throw new Error("history entry id must be a single safe filename component");
 };
 
-type JsonHistoryStore = Pick<StorageService, "writeHistory" | "readHistoryEntry" | "readAllHistory" | "compactHistory">;
+type JsonHistoryStore = Pick<StorageService, "writeHistory" | "readHistoryEntry" | "readAllHistory" | "readHistoryImpactFacts" | "compactHistory">;
 
 /** Owns immutable, content-addressed semantic history. */
 export const createJsonHistoryStore = (rootDir: () => string): JsonHistoryStore => {
   const historyDir = () => `${rootDir()}/history`;
   return {
-    writeHistory: (entryId, deltas, timestamp, diagnosis, evidence) =>
+    writeHistory: (entryId, deltas, timestamp, diagnosis, evidence, scale) =>
       Effect.tryPromise({
         try: async () => {
           assertEntryId(entryId);
@@ -25,7 +25,7 @@ export const createJsonHistoryStore = (rootDir: () => string): JsonHistoryStore 
           mkdirSync(directory, { recursive: true });
           const path = join(directory, `${entryId}.json`);
           if (existsSync(path)) return;
-          await atomicWriteJson(path, { timestamp, entryId, deltas, ...(diagnosis ? { diagnosis } : {}), ...(evidence ? { evidence } : {}) });
+          await atomicWriteJson(path, { timestamp, entryId, deltas, ...(diagnosis ? { diagnosis } : {}), ...(evidence ? { evidence } : {}), ...(scale ? { scale } : {}) });
         },
         catch: (error) => new IoError({ path: join(historyDir(), entryId), cause: error }),
       }),
@@ -47,6 +47,15 @@ export const createJsonHistoryStore = (rootDir: () => string): JsonHistoryStore 
         try: () => {
           const directory = historyDir();
           return existsSync(directory) ? readHistoryReplayRecords(directory) : [];
+        },
+        catch: (error) => new IoError({ path: historyDir(), cause: error }),
+      }),
+
+    readHistoryImpactFacts: () =>
+      Effect.try({
+        try: () => {
+          const directory = historyDir();
+          return existsSync(directory) ? readHistoryImpactFacts(directory) : [];
         },
         catch: (error) => new IoError({ path: historyDir(), cause: error }),
       }),

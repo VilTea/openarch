@@ -33,6 +33,7 @@ describe("CLI command registry", () => {
       "calibration",
       "check",
       "context",
+      "contract",
       "coordination",
       "docs",
       "init",

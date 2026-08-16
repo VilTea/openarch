@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { CRLStateInput, CRLStateWeights, P95Values } from "./crlState";
+import { localBurdenInputsOf, type CRLStateInput, type CRLStateWeights, type P95Values } from "./crlState";
 import type { CalibrationProfile } from "./governance";
 import type { PersistedVersionBoundary } from "./persistenceBoundary";
 
@@ -52,19 +52,26 @@ const hash = (value: unknown): string =>
 
 const numeric = (value: number | undefined): number => value ?? 0;
 
-/** Fingerprints exactly the four raw inputs used by the current crl_local gate metric. */
-export const localBurdenFingerprint = (entry: Pick<CRLStateInput, "maxFuncBranch" | "nestingDepth" | "loc" | "externalPassthroughCalls">): string =>
-  hash([numeric(entry.maxFuncBranch), entry.nestingDepth, numeric(entry.loc), numeric(entry.externalPassthroughCalls)]);
+/** Fingerprints exactly the four normalized inputs used by the current crl_local gate metric. */
+export const localBurdenFingerprint = (
+  entry: Pick<CRLStateInput, "maxFuncBranch" | "nestingDepth" | "loc" | "declarationLoc" | "externalPassthroughCalls" | "passthroughCalls">,
+): string => {
+  const local = localBurdenInputsOf(entry);
+  return hash([local.maxFuncBranch, local.nestingDepth, local.implementationLoc, local.externalPassthroughCalls]);
+};
 
 export const calibrationWeightsFingerprint = (weights: CRLStateWeights): string =>
   hash([weights.branch, weights.nesting, weights.loc, weights.alpha, weights.connectedness, weights.externalPassthrough]);
 
 /** The population includes every P95 numerator, not merely paths or the resulting percentile. */
 export const calibrationPopulationFingerprint = (entries: readonly CalibrationPopulationEntry[]): string =>
-  hash(entries.map((entry) => [
-    entry.path, numeric(entry.maxFuncBranch), entry.nestingDepth, numeric(entry.loc), entry.alphaStruct,
-    numeric(entry.connectedness), numeric(entry.externalPassthroughCalls),
-  ]).sort((left, right) => String(left[0]).localeCompare(String(right[0]))));
+  hash(entries.map((entry) => {
+    const local = localBurdenInputsOf(entry);
+    return [
+      entry.path, local.maxFuncBranch, local.nestingDepth, local.implementationLoc, entry.alphaStruct,
+      numeric(entry.connectedness), local.externalPassthroughCalls,
+    ];
+  }).sort((left, right) => String(left[0]).localeCompare(String(right[0]))));
 
 export const createStructuralCalibrationProfile = (input: {
   readonly analysisScopeFingerprint: string;

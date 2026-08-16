@@ -56,6 +56,42 @@ describe("scan application", () => {
     expect(result.nFiles).toBe(2);
   });
 
+  it("legacy baseline（无 contentSha256）退化全量后整体发布，不残留旧分片", async () => {
+    const publishes = { baseline: 0, shard: 0, canonicalIndex: 0 };
+    const previous = [
+      ["a.ts", { path: "a.ts", branchCount: 1, nestingDepth: 1, inDegree: 0, outDegree: 0, alphaStruct: 0.1 }],
+      ["gone.ts", { path: "gone.ts", branchCount: 1, nestingDepth: 1, inDegree: 0, outDegree: 0, alphaStruct: 0.1 }],
+    ];
+    const ParserTest = Layer.succeed(ParserService, {
+      parse: (p) => Effect.succeed(mockAst(p)),
+      query: () => Effect.succeed([]),
+      supportedLanguages: Effect.succeed(["typescript"]),
+    });
+    const StorageTest = Layer.succeed(StorageService, {
+      readBaseline: () => Effect.fail(new Error("not used") as never),
+      writeBaseline: () => { publishes.baseline += 1; return Effect.void; },
+      readIndex: () => Effect.succeed(null),
+      writeIndex: () => Effect.void,
+      writeCanonicalIndex: () => { publishes.canonicalIndex += 1; return Effect.void; },
+      writeFileMetrics: () => { publishes.shard += 1; return Effect.void; },
+      deleteFileMetrics: () => Effect.void,
+      readFileMetrics: () => Effect.succeed(null),
+      listAllFileMetrics: () => Effect.succeed(previous as never),
+      clearFileMetrics: () => Effect.void,
+      writeHistory: () => Effect.void, readHistoryEntry: () => Effect.succeed(null),
+      readAllHistory: () => Effect.succeed([]),
+    });
+
+    const result = await Effect.runPromise(
+      scan(["a.ts"], undefined, { incremental: true }).pipe(
+        Effect.provide(Layer.mergeAll(ParserTest, StorageTest, LockTest, ScanProgressTest))
+      )
+    );
+
+    expect(result.nFiles).toBe(1);
+    expect(publishes).toEqual({ baseline: 1, shard: 0, canonicalIndex: 0 });
+  });
+
   it("零文件 → nFiles=0，不写 index（防 nFiles=0 污染）", async () => {
     const writeIndexCalls: unknown[] = [];
     const StorageTest = Layer.succeed(StorageService, {
@@ -165,7 +201,7 @@ describe("scan application", () => {
     expect(indexes[0].meta.p95?.branch).toBe(2);
   });
 
-  it("重建基线时保留既有的测试 provider 指标", async () => {
+  it("退役 testMetrics 持久化：重建基线不再复制既有 provider 指标", async () => {
     const written: Array<Record<string, unknown>> = [];
     const previous = {
       path: "src/__tests__/a.test.ts", fileKind: "test" as const, branchCount: 0, nestingDepth: 0,
@@ -182,7 +218,7 @@ describe("scan application", () => {
       writeHistory: () => Effect.void, readHistoryEntry: () => Effect.succeed(null), readAllHistory: () => Effect.succeed([]),
     });
     await Effect.runPromise(scan([previous.path]).pipe(Effect.provide(Layer.mergeAll(ParserTest, StorageTest, LockTest, ScanProgressTest))));
-    expect(written[0].testMetrics).toEqual(previous.testMetrics);
+    expect(written[0].testMetrics).toBeUndefined();
   });
 
   it("重复 scan 保留 calibration 对，避免吞掉 denominator-only shift", async () => {
@@ -212,7 +248,7 @@ describe("scan application", () => {
   });
 
   it("calibrates independent same-language policy scopes instead of collapsing them", async () => {
-    const indexes: Array<{ meta: { languages: readonly string[]; policyCalibrations?: Record<string, unknown> } }> = [];
+    const indexes: Array<{ meta: { languages: readonly string[]; policyCalibrations?: Record<string, unknown>; policyPopulations?: Record<string, number> } }> = [];
     const ParserTest = Layer.succeed(ParserService, {
       parse: (path) => Effect.succeed({ ...mockAst(path), language: "go" as const }),
       query: () => Effect.succeed([]),
@@ -238,6 +274,7 @@ describe("scan application", () => {
     }).pipe(Effect.provide(Layer.mergeAll(ParserTest, StorageTest, LockTest, ScanProgressTest))));
     expect(indexes[0].meta.languages).toEqual(["go"]);
     expect(Object.keys(indexes[0].meta.policyCalibrations ?? {})).toEqual(["alpha", "beta"]);
+    expect(indexes[0].meta.policyPopulations).toEqual({ alpha: 1, beta: 1 });
   });
 
   it("写入完整分析范围和 metric contract，手动子集显式标不完整", async () => {
@@ -273,6 +310,50 @@ describe("scan application", () => {
     });
     await Effect.runPromise(scan(["a.ts"], undefined, { configSnapshotSha256: "b".repeat(64) }).pipe(Effect.provide(Layer.mergeAll(ParserTest, StorageTest, LockTest, ScanProgressTest))));
     expect(indexes[0].meta.configSnapshotSha256).toBe("b".repeat(64));
+  });
+
+  it("--rebuild recovers from an unreadable baseline generation", async () => {
+    const indexes: Array<{ meta: { snapshotSha256?: string } }> = [];
+    const ParserTest = Layer.succeed(ParserService, { parse: (path) => Effect.succeed(mockAst(path)), query: () => Effect.succeed([]), supportedLanguages: Effect.succeed(["typescript"]) });
+    const StorageTest = Layer.succeed(StorageService, {
+      writeBaseline: (snapshot) => Effect.sync(() => { indexes.push(snapshot.index); }),
+      readIndex: () => Effect.succeed(null),
+      writeIndex: (index) => Effect.sync(() => { indexes.push(index); }),
+      writeFileMetrics: () => Effect.void, deleteFileMetrics: () => Effect.void,
+      readFileMetrics: () => Effect.succeed(null),
+      listAllFileMetrics: () => Effect.fail(new Error("baseline generation snapshot identity does not match its contents") as never),
+      clearFileMetrics: () => Effect.void,
+      writeHistory: () => Effect.void, readHistoryEntry: () => Effect.succeed(null),
+      readAllHistory: () => Effect.succeed([]),
+    });
+    const result = await Effect.runPromise(scan(["a.ts"], undefined, { incremental: false })
+      .pipe(Effect.provide(Layer.mergeAll(ParserTest, StorageTest, LockTest, ScanProgressTest))));
+    expect(result.nFiles).toBe(1);
+    expect(result.baselineRecovered).toBe(true);
+    expect(indexes).toHaveLength(1);
+    // 未显式传 incremental 的默认全量路径同样具备自愈能力。
+    const defaultResult = await Effect.runPromise(scan(["a.ts"], undefined)
+      .pipe(Effect.provide(Layer.mergeAll(ParserTest, StorageTest, LockTest, ScanProgressTest))));
+    expect(defaultResult.baselineRecovered).toBe(true);
+    expect(indexes).toHaveLength(2);
+  });
+
+  it("incremental scan stays fail-closed when the baseline generation is unreadable", async () => {
+    const ParserTest = Layer.succeed(ParserService, { parse: (path) => Effect.succeed(mockAst(path)), query: () => Effect.succeed([]), supportedLanguages: Effect.succeed(["typescript"]) });
+    const StorageTest = Layer.succeed(StorageService, {
+      writeBaseline: () => Effect.void,
+      readIndex: () => Effect.succeed(null),
+      writeIndex: () => Effect.void,
+      writeFileMetrics: () => Effect.void, deleteFileMetrics: () => Effect.void,
+      readFileMetrics: () => Effect.succeed(null),
+      listAllFileMetrics: () => Effect.fail(new Error("baseline generation snapshot identity does not match its contents") as never),
+      clearFileMetrics: () => Effect.void,
+      writeHistory: () => Effect.void, readHistoryEntry: () => Effect.succeed(null),
+      readAllHistory: () => Effect.succeed([]),
+    });
+    const program = scan(["a.ts"], undefined, { incremental: true })
+      .pipe(Effect.provide(Layer.mergeAll(ParserTest, StorageTest, LockTest, ScanProgressTest)));
+    await expect(Effect.runPromise(program)).rejects.toThrow(/snapshot identity/);
   });
 
   it("file-kind policy 属于分析范围，策略变更会改变 fingerprint", () => {

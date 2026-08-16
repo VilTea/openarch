@@ -9,7 +9,7 @@ export const reviewCommand: CommandHandler = async (args, context) => {
     const gitHistory = collectGitCommitHistory(context.cwd);
     if (gitHistory.availability === "unavailable") {
       for (const line of renderEvolutionUnavailable(gitHistory.reason, context.locale)) console.log(line);
-      return 0;
+      return 3;
     }
     const result = await Effect.runPromise(evolutionReview(context.cwd, gitHistory.changeSets).pipe(Effect.provide(LiveLayer), Effect.either));
     if (result._tag === "Left") {

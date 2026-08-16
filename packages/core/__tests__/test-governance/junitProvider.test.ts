@@ -9,9 +9,14 @@ import { junitProvider } from "../../src/test-governance/providers/junit";
 
 const dir = join(tmpdir(), `openarch-junit-provider-${Date.now()}`);
 const file = join(dir, "src", "test", "java", "demo", "SampleTest.java");
+const mockitoFile = join(dir, "src", "test", "java", "demo", "MockitoSampleTest.java");
 const collect = () => Effect.gen(function* () {
   const parser = yield* ParserService;
   return yield* Effect.promise(() => junitProvider.collect(file, parser));
+}).pipe(Effect.provide(TreeSitterParserLive));
+const collectMockito = () => Effect.gen(function* () {
+  const parser = yield* ParserService;
+  return yield* Effect.promise(() => junitProvider.collect(mockitoFile, parser));
 }).pipe(Effect.provide(TreeSitterParserLive));
 
 beforeAll(() => {
@@ -25,6 +30,15 @@ beforeAll(() => {
     "  @Test void hamcrest() { assertThat(1 + 1, equalTo(2)); }",
     "  void validateUserCreated(User u) { assertNotNull(u); assertEquals(\"active\", u.status); }",
     "  @Test void customHelper() { validateUserCreated(user); }",
+    "}",
+  ].join("\n"));
+  writeFileSync(mockitoFile, [
+    "package demo;", "import org.junit.jupiter.api.Test;",
+    "import static org.mockito.Mockito.verify;", "import static org.mockito.Mockito.atLeastOnce;",
+    "import static org.mockito.ArgumentMatchers.eq;", "import static org.mockito.ArgumentMatchers.argThat;",
+    "class MockitoSampleTest {",
+    "  @Test void verifyArgs() { verify(proxyService, atLeastOnce()).post(eq(path), argThat(params -> params.id == 1)); }",
+    "  @Test void noMockitoAssertion() { helper(); }",
     "}",
   ].join("\n"));
 });
@@ -45,6 +59,16 @@ describe("junitProvider", () => {
       expect.objectContaining({ ruleId: "java-junit.disabled-test", testName: "disabled", confidence: "high" }),
       expect.objectContaining({ ruleId: "java-junit.missing-known-assertion", testName: "noAssertion", confidence: "low" }),
     ]));
+  });
+
+  it("counts Mockito verify as an assertion when org.mockito is imported", async () => {
+    const result = await Effect.runPromise(collectMockito());
+    expect(result.tests.find((test) => test.name === "verifyArgs")?.assertionCount).toBeGreaterThan(0);
+    const missing = result.findings
+      .filter((finding) => finding.ruleId === "java-junit.missing-known-assertion")
+      .map((finding) => finding.testName);
+    expect(missing).not.toContain("verifyArgs");
+    expect(missing).toContain("noMockitoAssertion");
   });
 
   it("counts cross-file helper calls as assertions via provider context", async () => {

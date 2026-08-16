@@ -1,6 +1,6 @@
 {
   "name": "openarch",
-  "version": "0.1.0+codex.20260711182754",
+  "version": "0.1.2+codex.20260711182754",
   "description": "OpenArch architecture governance for evidence-based coding-agent workflows.",
   "author": {
     "name": "OpenArch"

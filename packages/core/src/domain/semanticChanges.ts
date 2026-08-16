@@ -92,7 +92,10 @@ const mapsFor = (before: FileAst | undefined, after: FileAst | undefined): Decla
   const beforeDeclarations = declarationMap(normalizeReexportIdentity(rawBefore, byUniqueId(rawAfter)));
   const afterDeclarations = declarationMap(normalizeReexportIdentity(rawAfter, byUniqueId(rawBefore)));
   if (!beforeDeclarations || !afterDeclarations) return "declaration identities are ambiguous";
-  if (!same(beforeSurface?.unsupportedTopLevel ?? [], afterSurface?.unsupportedTopLevel ?? [])) {
+  // Only a real before/after pair can prove that unclassified top-level syntax
+  // changed. Added or deleted revisions have no counterpart surface, so their
+  // supported declarations stay classifiable instead of failing the whole file.
+  if (beforeSurface && afterSurface && !same(beforeSurface.unsupportedTopLevel, afterSurface.unsupportedTopLevel)) {
     return "changed top-level syntax has no semantic classifier";
   }
   return { before: beforeDeclarations, after: afterDeclarations };

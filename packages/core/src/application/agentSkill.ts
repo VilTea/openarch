@@ -3,7 +3,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { load } from "js-yaml";
 import { runtimeResourcePath } from "../runtimeAssets";
 
-export const AGENT_SKILL_TARGETS = ["claude", "codex", "cursor", "opencode", "reasonix"] as const;
+export const AGENT_SKILL_TARGETS = ["claude", "codex", "cursor", "opencode", "reasonix", "dsh"] as const;
 export type AgentSkillTarget = typeof AGENT_SKILL_TARGETS[number];
 export type AgentSkillLocale = "zh" | "en";
 
@@ -13,6 +13,7 @@ const targetRoots: Record<AgentSkillTarget, string> = {
   cursor: ".cursor/skills",
   opencode: ".opencode/skills",
   reasonix: ".reasonix/skills",
+  dsh: ".dsh/skills",
 };
 
 export interface AgentSkillInstallInput {

@@ -31,7 +31,7 @@ export interface CommandContext {
 export type CommandHandler = (args: readonly string[], context: CommandContext) => number | Promise<number>;
 
 export const LiveLayer = Layer.merge(
-  Layer.merge(Layer.merge(Layer.merge(TreeSitterParserLive, JsonFileStorageLive), ScanProgressFileLive), Layer.merge(SymbolUseServiceLive.pipe(Layer.provide(SemanticToolchainDiscoveryLive)), SemanticRelationServiceLive)),
+  Layer.merge(Layer.merge(Layer.merge(TreeSitterParserLive, JsonFileStorageLive), ScanProgressFileLive), Layer.merge(SymbolUseServiceLive.pipe(Layer.provide(SemanticToolchainDiscoveryLive)), SemanticRelationServiceLive.pipe(Layer.provide(SemanticToolchainDiscoveryLive)))),
   Layer.merge(CelAdapterLive, AdvisoryLockAdapterLive),
 );
 

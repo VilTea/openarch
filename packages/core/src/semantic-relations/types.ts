@@ -8,7 +8,7 @@ import type { SemanticEvidenceEnvelope } from "../semantic-evidence/types";
 export interface SemanticRelationSymbol {
   readonly id: string;
   readonly name: string;
-  readonly kind: "class" | "interface" | "type_alias";
+  readonly kind: "class" | "interface" | "type_alias" | "struct" | "enum" | "trait";
   readonly scope: "repository" | "external";
   readonly file?: string;
   readonly line?: number;
@@ -18,6 +18,7 @@ export interface SemanticRelationSymbol {
 export type SemanticRelationKind =
   | "extends"
   | "implements"
+  | "embeds"
   | "field_type"
   | "parameter_type"
   | "return_type"

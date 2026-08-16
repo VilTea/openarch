@@ -74,7 +74,7 @@ OpenArch 是面向编码 Agent 的本地、可审计约束，不替用户编排�
 |---|---|
 | `I_push`、CRL、D_MR、P95、校准、WARN 解释 | [metrics-and-evidence.md](./references/metrics-and-evidence.md) |
 | init、hook、个人/团队模式、evidence、文档库、record | [governance-lifecycle.md](./references/governance-lifecycle.md) 和需要时 [record-guide.md](./record-guide.md) |
-| 编写、修改、校准项目脚本或 authority | [script-authoring.md](./references/script-authoring.md) |
+| 编写、修改、校准项目脚本或 authority；查询事实能力/消费数、AST facts 与脚本观测 | [script-authoring.md](./references/script-authoring.md) |
 | 默认资产、反模式/安全/测试 finding、策略提升 | [project-defenses.md](./references/project-defenses.md) |
 | Agent 路由、摘要合同、用户选择、子 Agent 与停止条件 | [agent-workflow.md](./references/agent-workflow.md) |
 | 多仓库、多服务、Task/Debt、`review --evolution` | [collaboration-and-evolution.md](./references/collaboration-and-evolution.md) |
@@ -83,4 +83,4 @@ OpenArch 是面向编码 Agent 的本地、可审计约束，不替用户编排�
 
 ## 完成条件
 
-对改动范围运行相称的语言检查、测试和 OpenArch 验证。项目已配置 `quality_rules` 时运行 `openarch rules scan --check`；文档或经验改动按实际 `DocumentStore` 做相似检查。不要手工删除 `pending evidence` 或 `baseline` 分片来获得干净提交；先调查内容身份、可达性和协调边界。
+对改动范围运行相称的语言检查、测试和 OpenArch 验证。项目已配置 `quality_rules` 时运行 `openarch rules scan --check`；要观察事实目录健康度时可用 `openarch rules check --unused`（零消费者事实为 WARN 提示）；文档或经验改动按实际 `DocumentStore` 做相似检查。不要手工删除 `pending evidence` 或 `baseline` 分片来获得干净提交；先调查内容身份、可达性和协调边界。

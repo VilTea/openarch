@@ -184,4 +184,39 @@ describe("engine.executeRule", () => {
     expect(malformed.error).toContain("from/to/via/type");
     expect(outside.error).toContain("项目内");
   });
+
+  it("accepts the non-breaking { edges, observations } link contract", async () => {
+    const { edges, observations, error } = await executeRule("observed.mjs", [fixture("eventbus-demo.ts")], mockParser, async () => ({
+      default: {
+        stages: {},
+        link: () => ({
+          edges: [{ from: "a.ts", to: "b.ts", via: "service:jobs", type: "declarative" }],
+          observations: [
+            { kind: "unresolved_key", via: "service:timer", files: ["a.ts"], message: "runtime service" },
+            { kind: "dynamic_key", via: "ctx.get", files: ["b.ts"] },
+          ],
+        }),
+      },
+    }));
+
+    expect(error).toBeUndefined();
+    expect(edges).toEqual([expect.objectContaining({ via: "service:jobs" })]);
+    expect(observations).toEqual([
+      { kind: "unresolved_key", via: "service:timer", files: ["a.ts"], message: "runtime service" },
+      { kind: "dynamic_key", via: "ctx.get", files: ["b.ts"] },
+    ]);
+  });
+
+  it("rejects malformed observations without weakening edge validation", async () => {
+    const { edges, observations, error } = await executeRule("bad-observed.mjs", [], mockParser, async () => ({
+      default: {
+        stages: {},
+        link: () => ({ edges: [], observations: [{ kind: "unknown", via: "x", files: [] }] }),
+      },
+    }));
+
+    expect(edges).toEqual([]);
+    expect(observations).toEqual([]);
+    expect(error).toContain("observations");
+  });
 });

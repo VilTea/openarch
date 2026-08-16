@@ -8,11 +8,12 @@ import { Effect } from "effect";
 import { resolve } from "node:path";
 import type { IndexEntry, StorageService, BaselineIndex } from "../port/StorageService";
 import { ParserService } from "../port/ParserService";
-import { projectRoot } from "../infra/paths";
+import { openarchBase, projectRoot } from "../infra/paths";
 import { contentHashesOf } from "../projectFiles";
 import { buildDependencyGraphFromEdges, type ImplicitEdge } from "../domain/graph";
 import { DEFAULT_ANALYSIS_CONCURRENCY } from "../infra/boundedConcurrency";
-import { snapshotIdentity, normalizeBaselineSnapshot } from "../adapter/storage/BaselineGenerationValidation";
+import { baselineDirFor } from "../adapter/storage/BaselineGeneration";
+import { snapshotIdentity, normalizeBaselineSnapshot, shardManifestDigest } from "../adapter/storage/BaselineGenerationValidation";
 import { IoError } from "../errors/errors";
 import { absolutePathKey } from "../infra/paths";
 
@@ -110,10 +111,18 @@ export const publishIncrementalEntries = (
       if (entry) yield* storage.writeFileMetrics(resolve(ast.path), entry);
     }
     if (deletedPaths.length > 0) {
-      yield* storage.deleteFileMetrics(deletedPaths.map((path) => resolve(projectRoot(), path)));
+      yield* storage.deleteFileMetrics(deletedPaths);
     }
     const normalized = normalizeBaselineSnapshot({ entries, index });
-    yield* storage.writeCanonicalIndex({ ...index, meta: { ...index.meta, snapshotSha256: snapshotIdentity(normalized) } });
+    const directory = baselineDirFor(openarchBase());
+    yield* storage.writeCanonicalIndex({
+      ...index,
+      meta: {
+        ...index.meta,
+        snapshotSha256: snapshotIdentity(normalized),
+        shardManifestSha256: shardManifestDigest(directory, index),
+      },
+    });
   });
 };
 // touch

@@ -29,53 +29,53 @@ func New(repository *docsrepo.Repository) (*Store, error) {
 
 func (s *Store) Read(ctx context.Context) (domain.ScopeRegistry, error) {
 	registry := domain.ScopeRegistry{}
-	repositoryPaths, err := s.repository.ListFilesAtHead(ctx, "repositories")
+	repositories, err := s.repository.ReadListedFilesAtHead(ctx, "repositories")
 	if err != nil {
 		return registry, err
 	}
-	for _, path := range repositoryPaths {
-		if !isScopeDocument(path, "repositories", 3) {
+	for _, snapshot := range repositories {
+		if !isScopeDocument(snapshot.Path, "repositories", 3) {
 			continue
 		}
 		var document domain.RepositoryDocument
-		if err := s.readJSON(ctx, path, &document); err != nil {
+		if err := decodeScopePayload(snapshot.Content, snapshot.Path, &document); err != nil {
 			return registry, err
 		}
-		if err := verifyRepositoryPath(path, document); err != nil {
+		if err := verifyRepositoryPath(snapshot.Path, document); err != nil {
 			return registry, err
 		}
 		registry.Repositories = append(registry.Repositories, document)
 	}
-	servicePaths, err := s.repository.ListFilesAtHead(ctx, "services")
+	services, err := s.repository.ReadListedFilesAtHead(ctx, "services")
 	if err != nil {
 		return registry, err
 	}
-	for _, path := range servicePaths {
-		if !isScopeDocument(path, "services", 4) {
+	for _, snapshot := range services {
+		if !isScopeDocument(snapshot.Path, "services", 4) {
 			continue
 		}
 		var document domain.ServiceDocument
-		if err := s.readJSON(ctx, path, &document); err != nil {
+		if err := decodeScopePayload(snapshot.Content, snapshot.Path, &document); err != nil {
 			return registry, err
 		}
-		if err := verifyServicePath(path, document); err != nil {
+		if err := verifyServicePath(snapshot.Path, document); err != nil {
 			return registry, err
 		}
 		registry.Services = append(registry.Services, document)
 	}
-	productPaths, err := s.repository.ListFilesAtHead(ctx, "products")
+	products, err := s.repository.ReadListedFilesAtHead(ctx, "products")
 	if err != nil {
 		return registry, err
 	}
-	for _, path := range productPaths {
-		if !isScopeDocument(path, "products", 3) {
+	for _, snapshot := range products {
+		if !isScopeDocument(snapshot.Path, "products", 3) {
 			continue
 		}
 		var document domain.ProductDocument
-		if err := s.readJSON(ctx, path, &document); err != nil {
+		if err := decodeScopePayload(snapshot.Content, snapshot.Path, &document); err != nil {
 			return registry, err
 		}
-		if err := verifyProductPath(path, document); err != nil {
+		if err := verifyProductPath(snapshot.Path, document); err != nil {
 			return registry, err
 		}
 		registry.Products = append(registry.Products, document)
@@ -119,14 +119,7 @@ func (s *Store) ListLegacyProjects(ctx context.Context) ([]domain.LegacyProjectR
 	return legacy, nil
 }
 
-func (s *Store) readJSON(ctx context.Context, path string, target any) error {
-	payload, exists, err := s.repository.ReadFileAtHead(ctx, path)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return fmt.Errorf("scope document %q is missing", path)
-	}
+func decodeScopePayload(payload []byte, path string, target any) error {
 	if err := decodeStrictJSON(payload, target); err != nil {
 		return fmt.Errorf("decode scope document %q: %w", path, err)
 	}

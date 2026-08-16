@@ -1,0 +1,3 @@
+name: OpenArch Governance (experimental)
+description: Standard DeepSeek Harness agent with OpenArch governance skills (openarch-zh/openarch-en) registered as preset skills.
+order: 7

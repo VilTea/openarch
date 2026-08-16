@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -124,6 +125,26 @@ func (s *Store) Get(ctx context.Context, key domain.LeaseKey) (domain.Lease, boo
 	s.removeExpired(now)
 	lease, ok := s.leases[key]
 	return lease, ok, nil
+}
+
+func (s *Store) List(ctx context.Context) ([]domain.Lease, error) {
+	if err := contextError(ctx); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.removeExpired(s.clock())
+	leases := make([]domain.Lease, 0, len(s.leases))
+	for _, lease := range s.leases {
+		leases = append(leases, lease)
+	}
+	sort.Slice(leases, func(i, j int) bool {
+		if leases[i].Key.RepositoryID != leases[j].Key.RepositoryID {
+			return leases[i].Key.RepositoryID < leases[j].Key.RepositoryID
+		}
+		return leases[i].Key.Target < leases[j].Key.Target
+	})
+	return leases, nil
 }
 
 func (s *Store) validateTTL(ttl time.Duration) error {

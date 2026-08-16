@@ -41,4 +41,10 @@ describe("project agent Skill installation", () => {
     expect(result).toMatchObject({ action: "installed", locale: "en" });
     expect(readFileSync(join(dir, ".codex", "skills", "openarch", "SKILL.md"), "utf8")).toContain("OpenArch Governance Constitution");
   }));
+
+  it("installs the DeepSeek Harness project skill into .dsh/skills", () => withTemporaryDirectory("agent-skill-dsh", async (dir) => {
+    const result = installAgentSkill({ cwd: dir, target: "dsh" });
+    expect(result).toMatchObject({ action: "installed", locale: "en" });
+    expect(existsSync(join(dir, ".dsh", "skills", "openarch", "SKILL.md"))).toBe(true);
+  }));
 });

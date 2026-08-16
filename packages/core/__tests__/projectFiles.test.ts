@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isAnalyzableProjectFile, listProjectSourceFiles, readProjectLanguageState, readProjectLanguages, sourceSnapshotSha256, configSnapshotSha256 } from "../src/projectFiles";
 import { withTemporaryDirectory } from "./support/temporaryDirectory";
@@ -46,6 +46,45 @@ describe("projectFiles", () => {
 
     expect(readProjectLanguages(cwd)).toEqual([]);
     expect(listProjectSourceFiles({ cwd })).toEqual([]);
+  }));
+
+  it("无 projectIndicators 的 TS/Vue 项目按源码扩展名回退检测", () => withTemporaryDirectory("project-files", (cwd) => {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(join(cwd, "src", "main.ts"), "export const main = true;\n");
+    writeFileSync(join(cwd, "src", "App.vue"), "<script>export default {};</script>\n");
+
+    expect(readProjectLanguages(cwd)).toEqual(["typescript", "vue"]);
+    expect(listProjectSourceFiles({ cwd, population: "production-governance" })).toEqual([
+      join(cwd, "src", "App.vue"),
+      join(cwd, "src", "main.ts"),
+    ]);
+  }));
+
+  it("构建与依赖目录是固定扫描边界，不能重新纳入", () => withTemporaryDirectory("project-files", (cwd) => {
+    mkdirSync(join(cwd, ".openarch"), { recursive: true });
+    for (const directory of ["src", "target", "build", ".venv", "node_modules"]) {
+      mkdirSync(join(cwd, directory), { recursive: true });
+    }
+    writeFileSync(join(cwd, ".openarch", "config.yml"), 'languages: ["typescript"]\n');
+    writeFileSync(join(cwd, "src", "main.ts"), "export const main = true;\n");
+    for (const directory of ["target", "build", ".venv", "node_modules"]) {
+      writeFileSync(join(cwd, directory, "generated.ts"), "export const generated = true;\n");
+    }
+
+    expect(listProjectSourceFiles({ cwd })).toEqual([join(cwd, "src", "main.ts")]);
+  }));
+
+  it("symlink 别名去重，保留真实路径", () => withTemporaryDirectory("project-files", (cwd) => {
+    mkdirSync(join(cwd, ".openarch"), { recursive: true });
+    writeFileSync(join(cwd, ".openarch", "config.yml"), 'languages: ["typescript"]\n');
+    mkdirSync(join(cwd, "real"), { recursive: true });
+    writeFileSync(join(cwd, "real", "lib.ts"), "export const lib = true;\n");
+    try {
+      symlinkSync(join(cwd, "real"), join(cwd, "alias"), "dir");
+    } catch {
+      return; // 无符号链接权限时跳过该平台断言
+    }
+    expect(listProjectSourceFiles({ cwd })).toEqual([join(cwd, "real", "lib.ts")]);
   }));
 
   it("按配置语言扫描任意项目结构，而不是写死 packages 目录", () => withTemporaryDirectory("project-files", (cwd) => {

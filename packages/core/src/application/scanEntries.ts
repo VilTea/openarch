@@ -8,6 +8,7 @@ import { reach } from "../domain/reach";
 import { confidence } from "../domain/confidence";
 import { alphaStruct } from "../domain/alpha";
 import { weightedBranchTotalOf } from "../domain/branchMetrics";
+import { localBurdenInputsOf } from "../domain/crlState";
 import { participatesInPopulation } from "../domain/fileParticipation";
 import { projectRoot, toRelative, absolutePathKey } from "../infra/paths";
 import { findLanguageForFile } from "../adapter/parser/LanguageRegistry";
@@ -75,12 +76,13 @@ export const computeEntries = (
   for (const entry of reusedEntries) {
     entries.push(entry);
     if (participatesInPopulation(entry.fileKind, "production-governance")) {
+      const local = localBurdenInputsOf(entry);
       p95Inputs.branch.push(entry.maxFuncBranch ?? 0);
       p95Inputs.nesting.push(entry.nestingDepth);
-      p95Inputs.loc.push(entry.loc ?? 0);
+      p95Inputs.loc.push(local.implementationLoc);
       p95Inputs.alpha.push(entry.alphaStruct);
       p95Inputs.oneMinusConn.push(1 - (entry.connectedness ?? 0));
-      p95Inputs.externalPassthrough.push(entry.externalPassthroughCalls ?? 0);
+      p95Inputs.externalPassthrough.push(local.externalPassthroughCalls);
     }
   }
   for (const ast of asts) {
@@ -89,12 +91,13 @@ export const computeEntries = (
     entries.push(entry);
     if (participatesInPopulation(fileKind, "production-governance")) {
       const weightedControlFlow = weightedBranchTotalOf(ast);
+      const local = localBurdenInputsOf(entry);
       p95Inputs.branch.push(entry.maxFuncBranch ?? weightedControlFlow);
       p95Inputs.nesting.push(ast.nestingDepth);
-      p95Inputs.loc.push(ast.loc ?? 0);
+      p95Inputs.loc.push(local.implementationLoc);
       p95Inputs.alpha.push(entry.alphaStruct);
       p95Inputs.oneMinusConn.push(1 - (entry.connectedness ?? 0));
-      p95Inputs.externalPassthrough.push(entry.externalPassthroughCalls ?? 0);
+      p95Inputs.externalPassthrough.push(local.externalPassthroughCalls);
     }
   }
   return { entries, p95Inputs };

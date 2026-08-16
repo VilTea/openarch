@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { Effect } from "effect";
 import type { QueryMatch, ParserService } from "../port/ParserService";
-import { isStaticImportsAstStage, type StageExecution, type StagedAnalysis, type StageRecord, type AstChangeContext } from "./types";
+import { isStaticImportsAstStage, isStringKeyCallsAstStage, type QueryAstStage, type StringKeyCallsFact, type StageExecution, type StagedAnalysis, type StageRecord, type AstChangeContext } from "./types";
 import { staticImportRecords } from "./staticImports";
+import { STRING_KEY_CALLS_QUERY, stringKeyCallRecords, supportsStringKeyCalls } from "./stringKeyCalls";
 import type { StagedRule } from "./types";
 import { emptyProjectFacts, normalizeRepositoryPath, selectScriptTargetFiles, targetRequiredCapabilities, unavailableRequiredFact, withRuleLocalAuthority, type ProjectFacts } from "../script-runtime/projectFacts";
 
@@ -41,6 +42,64 @@ export const queryWithCache = (
   return query;
 };
 
+const staticImportRecordsFor = async (files: readonly string[], parser: ParserService): Promise<{ readonly records: readonly StageRecord[]; readonly unavailable?: string }> => {
+  const records: StageRecord[] = [];
+  for (const file of files) {
+    try {
+      const ast = await Effect.runPromise(parser.parse(file));
+      records.push(...staticImportRecords(file, ast).map((record) => ({ ...record, _file: normalizeRepositoryPath(record._file) })));
+    } catch (error) {
+      return { records: [], unavailable: `static-imports.v1 unavailable for ${file}: ${error instanceof Error ? error.message : String(error)}` };
+    }
+  }
+  return { records };
+};
+
+const stringKeyRecordsFor = async (
+  files: readonly string[],
+  parser: ParserService,
+  queryCache: Map<string, Promise<readonly QueryMatch[]>> | undefined,
+  fact: StringKeyCallsFact,
+): Promise<{ readonly records: readonly StageRecord[]; readonly unavailable?: string }> => {
+  const records: StageRecord[] = [];
+  for (const file of files) {
+    if (!supportsStringKeyCalls(file)) {
+      return { records: [], unavailable: `${fact} unavailable for ${file}: only TypeScript/JavaScript syntax is supported` };
+    }
+    let matches: readonly QueryMatch[];
+    try {
+      matches = await queryWithCache(file, STRING_KEY_CALLS_QUERY, parser, queryCache);
+    } catch (error) {
+      return { records: [], unavailable: `${fact} unavailable for ${file}: ${error instanceof Error ? error.message : String(error)}` };
+    }
+    records.push(...stringKeyCallRecords(matches).map((record) => ({ ...record, _file: normalizeRepositoryPath(file) })));
+  }
+  return { records };
+};
+
+const queryRecordsFor = async (
+  files: readonly string[],
+  stage: QueryAstStage,
+  parser: ParserService,
+  queryCache: Map<string, Promise<readonly QueryMatch[]>> | undefined,
+  facts: ProjectFacts,
+): Promise<{ readonly records: readonly StageRecord[]; readonly unavailable?: string }> => {
+  const records: StageRecord[] = [];
+  for (const file of files) {
+    let matches: readonly QueryMatch[];
+    try {
+      matches = await queryWithCache(file, stage.pattern, parser, queryCache);
+    } catch (error) {
+      return { records: [], unavailable: `AST query unavailable for ${file}: ${error instanceof Error ? error.message : String(error)}` };
+    }
+    const extracted = stage.extract
+      ? stage.extract(matches, file, changeContextFor(file, facts))
+      : matches.map((match) => ({ captures: match.captures.map((capture) => capture.text) }));
+    for (const record of extracted) records.push({ ...record, _file: normalizeRepositoryPath(file) });
+  }
+  return { records };
+};
+
 /** Runs the fixed text -> AST sequence; callers own only their final semantic link step. */
 export interface StagedAnalysisExecution {
   readonly stages?: StageExecution;
@@ -63,35 +122,16 @@ export const executeStagedAnalysis = async (
   const candidateFiles = stages.text
     ? stages.text({ files: normalizedFiles, allFiles: normalizedAll, text: (path) => readFileSync(path, "utf8"), facts })
     : [...normalizedFiles];
-  let records: StageRecord[];
-  if (!stages.ast) {
-    records = candidateFiles.map((file) => ({ _file: normalizeRepositoryPath(file) }));
-  } else if (isStaticImportsAstStage(stages.ast)) {
-    records = [];
-    for (const file of candidateFiles) {
-      try {
-        const ast = await Effect.runPromise(parser.parse(file));
-        records.push(...staticImportRecords(file, ast).map((record) => ({ ...record, _file: normalizeRepositoryPath(record._file) })));
-      } catch (error) {
-        return { unavailable: `static-imports.v1 unavailable for ${file}: ${error instanceof Error ? error.message : String(error)}` };
-      }
-    }
-  } else {
-    records = [];
-    for (const file of candidateFiles) {
-      let matches: readonly QueryMatch[];
-      try {
-        matches = await queryWithCache(file, stages.ast.pattern, parser, queryCache);
-      } catch (error) {
-        return { unavailable: `AST query unavailable for ${file}: ${error instanceof Error ? error.message : String(error)}` };
-      }
-      const extracted = stages.ast.extract
-        ? stages.ast.extract(matches, file, changeContextFor(file, facts))
-        : matches.map((match) => ({ captures: match.captures.map((capture) => capture.text) }));
-      for (const record of extracted) records.push({ ...record, _file: normalizeRepositoryPath(file) });
-    }
-  }
-  return { stages: { inputFiles: files.length, targetFiles: [...normalizedFiles], candidateFiles, records } };
+
+  const outcome = !stages.ast
+    ? { records: candidateFiles.map((file) => ({ _file: normalizeRepositoryPath(file) })) as readonly StageRecord[] }
+    : isStaticImportsAstStage(stages.ast)
+      ? await staticImportRecordsFor(candidateFiles, parser)
+      : isStringKeyCallsAstStage(stages.ast)
+        ? await stringKeyRecordsFor(candidateFiles, parser, queryCache, stages.ast.fact)
+        : await queryRecordsFor(candidateFiles, stages.ast, parser, queryCache, facts);
+  if (outcome.unavailable) return { unavailable: outcome.unavailable };
+  return { stages: { inputFiles: files.length, targetFiles: [...normalizedFiles], candidateFiles, records: outcome.records } };
 };
 
 export interface StagedScriptExecution<Result> {

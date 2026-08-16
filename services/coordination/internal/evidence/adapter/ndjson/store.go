@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/openarch/openarch/services/coordination/internal/evidence/domain"
@@ -53,18 +54,29 @@ func (s *Store) listEvidence() ([]domain.ValidationEvidence, error) {
 func (s *Store) ReplaceEvidence(_ context.Context, evidence []domain.ValidationEvidence) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	file, err := os.OpenFile(s.path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	dir := filepath.Dir(s.path)
+	temporary, err := os.CreateTemp(dir, ".openarch-projection-*.ndjson")
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	encoder := json.NewEncoder(file)
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	encoder := json.NewEncoder(temporary)
 	for _, record := range evidence {
 		if err := encoder.Encode(record); err != nil {
+			temporary.Close()
 			return err
 		}
 	}
-	return nil
+	if err := temporary.Sync(); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	// 同目录 temp + rename：并发进程不会读到被截断一半的投影。
+	return os.Rename(temporaryPath, s.path)
 }
 
 func (s *Store) CalibrationByKey(_ context.Context, key domain.CalibrationKey) (domain.Calibration, error) {

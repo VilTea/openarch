@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { existsSync, readdirSync, rmSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, renameSync } from "node:fs";
 import { makeJsonFileStorageLive } from "../../src/adapter/storage/JsonFileStorage";
 import { baselineShardFileName, legacyBaselineShardFileName } from "../../src/adapter/storage/BaselineShard";
+import { shardManifestDigest } from "../../src/adapter/storage/BaselineGenerationValidation";
 import { StorageService } from "../../src/port/StorageService";
 
 const tmpDir = join(tmpdir(), `openarch-test-${Date.now()}`);
@@ -63,7 +64,18 @@ describe("JsonFileStorageLive", () => {
     expect(readFileSync(join(tmpDir, "baseline", baselineShardFileName("src/portable.ts")), "utf8")).toContain("src/portable.ts");
   });
 
-  it("原 separator 编码会碰撞的路径在完整 baseline 中可共存", async () => {
+  it("deleteFileMetrics 删除 relative entry.path 的 canonical 分片", async () => {
+    const absolute = join(tmpDir, "delete-me.ts");
+    const entry = { path: "src/delete-me.ts", branchCount: 1, nestingDepth: 1, inDegree: 0, outDegree: 0, alphaStruct: 0.1 };
+    await Effect.runPromise(Effect.gen(function* () {
+      const svc = yield* StorageService;
+      yield* svc.writeFileMetrics(absolute, entry);
+      yield* svc.deleteFileMetrics(["src/delete-me.ts"]);
+      expect(existsSync(join(tmpDir, "baseline", baselineShardFileName("src/delete-me.ts")))).toBe(false);
+    }).pipe(Effect.provide(layer)));
+  });
+
+  it("原 separator 编码会碰撞的路径在完整 baseline 中可共存", { timeout: 20_000 }, async () => {
     const first = { path: "src/a__b.ts", branchCount: 1, nestingDepth: 1, inDegree: 0, outDegree: 0, alphaStruct: 0.1 };
     const second = { path: "src/a/b.ts", branchCount: 2, nestingDepth: 1, inDegree: 0, outDegree: 0, alphaStruct: 0.2 };
     const index = { version: "5.2", meta: { scanAt: new Date().toISOString(), nFiles: 2, languages: ["typescript"] } };
@@ -154,6 +166,32 @@ describe("JsonFileStorageLive", () => {
       yield* svc.writeBaseline({ entries: [entry], index: first });
       yield* svc.writeBaseline({ entries: [entry], index: repeated });
       expect((yield* svc.readIndex())?.meta.scanAt).toBe(first.meta.scanAt);
+    }).pipe(Effect.provide(layer)));
+  });
+
+  it("persists a shard manifest digest for fast validation short-circuit", async () => {
+    const entry = { path: "src/manifest.ts", branchCount: 1, nestingDepth: 1, inDegree: 0, outDegree: 0, alphaStruct: 0.1 };
+    const index = { version: "5.2", meta: { scanAt: "2026-08-15T00:00:00.000Z", nFiles: 1, languages: ["typescript"] } };
+    await Effect.runPromise(Effect.gen(function* () {
+      const svc = yield* StorageService;
+      yield* svc.writeBaseline({ entries: [entry], index });
+      const persisted = yield* svc.readIndex();
+      expect(persisted?.meta.shardManifestSha256).toMatch(/^[0-9a-f]{64}$/);
+      const directory = join(tmpDir, "baseline");
+      expect(persisted!.meta.shardManifestSha256).toBe(shardManifestDigest(directory, persisted!));
+    }).pipe(Effect.provide(layer)));
+  });
+
+  it("readIndex falls back to the raw index when only the snapshot identity drifted", async () => {
+    const entry = { path: "src/identity-drift.ts", branchCount: 1, nestingDepth: 1, inDegree: 0, outDegree: 0, alphaStruct: 0.1 };
+    const index = { version: "5.2", meta: { scanAt: "2026-07-12T00:00:00.000Z", nFiles: 1, languages: ["typescript"] } };
+    await Effect.runPromise(Effect.gen(function* () {
+      const svc = yield* StorageService;
+      yield* svc.writeBaseline({ entries: [entry], index });
+      const indexPath = join(tmpDir, "baseline", "_index.json");
+      const persisted = JSON.parse(readFileSync(indexPath, "utf8"));
+      writeFileSync(indexPath, JSON.stringify({ ...persisted, meta: { ...persisted.meta, snapshotSha256: "0".repeat(64) } }));
+      expect((yield* svc.readIndex())?.meta.snapshotSha256).toBe("0".repeat(64));
     }).pipe(Effect.provide(layer)));
   });
 

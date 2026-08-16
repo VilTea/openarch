@@ -118,6 +118,8 @@ openarch toolchains
 
 `openarch test --list` 列出全部已注册的测试治理 provider（id 用于 `test_governance.providers` 配置）；直接运行 `openarch test` 执行测试治理评估。
 
+`openarch contract [--json]` 输出机器契约目录（契约 id/version/status），供外部插件启动时感知契约版本：破坏性变更会 bump version，插件对未知版本应 fail-closed（降级为文本或 unavailable），不得按旧版本静默解析。
+
 `openarch update` 是只读版本检查：对比已安装版本与远端 release 分支的最新版本，打印更新步骤；绝不自动安装。升级后重跑 `openarch init --agent <harness>` 刷新已安装的 Skill 树（退役文件被原子清除）。
 
 创建用户级配置，再按需填写外部可执行文件的绝对路径：
@@ -130,4 +132,4 @@ openarch init --toolchains user
 
 ## 6. 验证
 
-初始化后运行 `openarch context` 获取只读项目事实。实现过程中使用 `openarch check --worktree --report`；暂存后使用 `openarch check --staged --report`。公开命令为 `openarch init`、`context`、`scan`、`review`、`check`、`rules`、`docs`、`toolchains`（`coordination`、`lsp`、`calibration`、`anti-patterns` 为 advanced 可见）。
+初始化后运行 `openarch context` 获取只读项目事实。实现过程中使用 `openarch check --worktree --report`；暂存后使用 `openarch check --staged --report`。公开命令为 `openarch init`、`context`、`contract`、`scan`、`review`、`check`、`rules`、`docs`、`toolchains`、`test`、`update`（`coordination`、`lsp`、`calibration`、`anti-patterns` 为 advanced 可见）。

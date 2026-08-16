@@ -56,6 +56,8 @@ export interface ScanResult {
   readonly nFiles: number;
   readonly calibrationTransition?: GateCalibrationTransition;
   readonly gateCalibrationId?: string;
+  /** 全量重建前旧 baseline generation 不可读（如测试事实持久化导致的身份漂移）；本次 scan 从源码重建了结构事实。 */
+  readonly baselineRecovered?: boolean;
 }
 
 export const scan = (paths: readonly string[], implicitDeps?: readonly ImplicitEdge[], options: ScanOptions = {}) =>
@@ -78,7 +80,16 @@ export const scan = (paths: readonly string[], implicitDeps?: readonly ImplicitE
     yield* publishProgress("running", "preparing", 0);
 
     // Provider test facts survive structural re-analysis, but publication waits for a complete snapshot.
-    const previousEntries = yield* storage.listAllFileMetrics();
+    // 全量重建是损坏 generation 的自愈路径：旧分片身份校验失败时（如测试事实持久化
+    // 曾写入 overlay 结构值），允许从源码重新计算，而不是让 --rebuild 也无法启动。
+    let baselineRecovered = false;
+    const previousEntries = yield* storage.listAllFileMetrics().pipe(
+      Effect.catchAll((error) => {
+        if (options.incremental === true) return Effect.fail(error);
+        baselineRecovered = true;
+        return Effect.succeed([] as ReadonlyArray<readonly [string, IndexEntry]>);
+      }),
+    );
     const previousIndex = yield* storage.readIndex().pipe(Effect.catchAll(() => Effect.succeed(null)));
     const previousByPath = new Map(previousEntries);
 
@@ -88,7 +99,7 @@ export const scan = (paths: readonly string[], implicitDeps?: readonly ImplicitE
     let reusedEntries: IndexEntry[] = [];
     let incrementalEdges = new Map<string, string[]>();
     let incrementalDeleted: readonly string[] = [];
-    const incremental = (options.incremental ?? false) && previousEntries.length > 0;
+    let incremental = (options.incremental ?? false) && previousEntries.length > 0;
     if (incremental) {
       const prepared = yield* prepareIncrementalScan(parser, previousEntries, implicitDeps, paths);
       if (prepared) {
@@ -105,6 +116,9 @@ export const scan = (paths: readonly string[], implicitDeps?: readonly ImplicitE
           return { nFiles: prepared.reusedEntries.length, calibrationTransition: undefined, gateCalibrationId: previousIndex?.meta.calibration?.gate?.id };
         }
       } else {
+        // Legacy baseline（无 per-file contentSha256）无法增量：必须整体重建并整体发布，
+        // 否则旧分片（已删除文件）不会被清理，分片数与 _index.json 计数漂移。
+        incremental = false;
         asts = yield* Effect.forEach(paths, (path) => parser.parse(path).pipe(Effect.tap(() => Effect.sync(() => { parsed += 1; })), Effect.tap(() => publishProgress("running", "parsing", parsed))), { concurrency: DEFAULT_ANALYSIS_CONCURRENCY }).pipe(Effect.catchAll(failProgress));
       }
     } else {
@@ -166,7 +180,7 @@ export const scan = (paths: readonly string[], implicitDeps?: readonly ImplicitE
     if (storage.clearPendingDiff) yield* storage.clearPendingDiff().pipe(Effect.catchAll(failProgress));
 
         yield* publishProgress("completed", phase, parsed, { nFiles });
-        return { nFiles, calibrationTransition: calibrationUpdate.transition, gateCalibrationId: calibrationUpdate.state.gate?.id };
+        return { nFiles, calibrationTransition: calibrationUpdate.transition, gateCalibrationId: calibrationUpdate.state.gate?.id, ...(baselineRecovered ? { baselineRecovered: true } : {}) };
       }),
     );
   });

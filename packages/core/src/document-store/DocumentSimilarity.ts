@@ -5,6 +5,7 @@ import { writeDocumentIndex } from "./DocumentIndex";
 import { recordGovernanceObservation } from "./GovernanceObservation";
 import { documentStoreRelativePath, updateDocumentIndex, type DocumentCheckInput } from "./DocumentIndexUpdate";
 import { findDocumentSimilarityCandidates, type DocumentSimilarityCandidate } from "./DocumentSimilarityCandidates";
+import { unfilledDocuments } from "./DocumentFill";
 
 export type { DocumentCheckInput } from "./DocumentIndexUpdate";
 export type { DocumentSimilarityCandidate } from "./DocumentSimilarityCandidates";
@@ -16,10 +17,12 @@ export interface DocumentCheckReport {
   readonly indexed: number;
   readonly updated: number;
   readonly candidates: readonly DocumentSimilarityCandidate[];
+  /** Generated record templates that still contain required-placeholder sections. */
+  readonly unfilled: readonly string[];
 }
 
 export const checkDocuments = (input: DocumentCheckInput): DocumentCheckReport => {
-  if (!input.store.scopeConfigured) return { availability: "unavailable", reason: "shared document scope 未登记", scopeId: input.store.scopeId, indexed: 0, updated: 0, candidates: [] };
+  if (!input.store.scopeConfigured) return { availability: "unavailable", reason: "shared document scope 未登记", scopeId: input.store.scopeId, indexed: 0, updated: 0, candidates: [], unfilled: [] };
   const updated = updateDocumentIndex(input);
   writeDocumentIndex(input.store, { version: INDEX_VERSION, scopeId: input.store.scopeId, entries: Object.fromEntries(updated.entries) });
   const fingerprint = contentSha256([...updated.changed].sort().map((path) => `${path}:${updated.entries.get(path)?.contentSha256 ?? "deleted"}`).join("\n"));
@@ -33,7 +36,14 @@ export const checkDocuments = (input: DocumentCheckInput): DocumentCheckReport =
       inputFingerprint: capabilityFingerprint,
     });
   }
-  return { availability: "available", scopeId: input.store.scopeId, indexed: updated.entries.size, updated: [...updated.changed].filter((path) => updated.entries.has(path)).length, candidates: findDocumentSimilarityCandidates(updated.entries, updated.changed, input.store.scopeId) };
+  return {
+    availability: "available",
+    scopeId: input.store.scopeId,
+    indexed: updated.entries.size,
+    updated: [...updated.changed].filter((path) => updated.entries.has(path)).length,
+    candidates: findDocumentSimilarityCandidates(updated.entries, updated.changed, input.store.scopeId),
+    unfilled: unfilledDocuments(input.store, updated.changed, input.stagedContent),
+  };
 };
 
 export { documentStoreRelativePath } from "./DocumentIndexUpdate";

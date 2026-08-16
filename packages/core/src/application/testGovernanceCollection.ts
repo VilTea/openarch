@@ -7,7 +7,7 @@ import { resolveTestModuleAssociations } from "./testAssociationResolver";
 import { resolveCrossFileAssertionScope } from "../test-governance/assertionContext";
 import type { TestFrameworkProvider } from "../test-governance/provider";
 import type { ParserService } from "../port/ParserService";
-import type { IndexEntry, StorageService } from "../port/StorageService";
+import type { IndexEntry } from "../port/StorageService";
 
 export interface ProviderCollection {
   readonly findings: readonly TestFinding[];
@@ -22,14 +22,13 @@ export interface ProviderCollection {
   readonly errors: readonly string[];
 }
 
-/** Runs framework-specific collection; persistence is explicitly owned by the calling workflow. */
+/** Runs framework-specific collection. testMetrics 持久化已退役（校准 2026-08-15），
+ *  本函数与写入 canonical 分片解耦，测试治理恒为只读采集。 */
 export const collectProviderFacts = (
   parser: ParserService,
-  storage: StorageService,
   testEntries: ReadonlyArray<readonly [string, IndexEntry]>,
   providers: readonly TestFrameworkProvider[],
   productionPaths: ReadonlySet<string>,
-  options: { readonly persist: boolean },
 ) => Effect.gen(function* () {
   const findings: TestFinding[] = [];
   const testCaseSpans: TestCaseSpanFact[] = [];
@@ -77,13 +76,6 @@ export const collectProviderFacts = (
         : undefined;
       if (moduleAssociations === undefined) associationUnavailableTestFiles.push(path);
       else staticModuleAssociations.push(...moduleAssociations.map((association) => ({ testFile: path, association })));
-      if (options.persist) {
-        yield* storage.writeFileMetrics(path, {
-          ...entry,
-          fileKind: "test",
-          testMetrics: { schemaVersion: "4", providerId: provider.id, tests: collected.tests, findings: providerFindings, moduleAssociations },
-        });
-      }
     } catch (error) {
       failedTestFiles.push(path);
       providerCoverage.failedTestFiles.push(path);

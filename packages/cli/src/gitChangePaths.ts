@@ -21,8 +21,8 @@ export const gitChangePathResult = (cwd: string, source: GitChangeSource): GitCh
     const tracked = splitPaths(execFileSync(
       "git",
       source === "staged"
-        ? ["diff", "--cached", "--relative", "--name-only", "-z", "--diff-filter=ACM"]
-        : ["diff", "--relative", "--name-only", "-z", "--diff-filter=ACM"],
+        ? ["diff", "--cached", "--relative", "--name-only", "-z", "--find-renames", "--diff-filter=ACMRD"]
+        : ["diff", "--relative", "--name-only", "-z", "--find-renames", "--diff-filter=ACMRD"],
       { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5000 },
     ));
     if (source === "staged") return { availability: "available", paths: tracked };

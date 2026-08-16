@@ -12,12 +12,14 @@ import type { ImplicitEdge } from "../domain/graph";
 import { rebuildGraph } from "./diffGraph";
 import { computeFileImpact, type ImpactOutput } from "./diffImpact";
 import { loadGateConfig } from "./governance/gateConfig";
+import { calibrationForSubject } from "../domain/structuralPolicy";
 import type { MRDiagnosis } from "../domain/mrDiagnosis";
 import type { SemanticEvidence } from "../domain/crl";
 import { toRelative, toPosixPath } from "../infra/paths";
-import type { SemanticFileProfile } from "./semanticDiff";
+import type { SemanticBeforeMetrics, SemanticBeforeState, SemanticFileProfile } from "./semanticDiff";
 import { buildImpactPlan, type ImpactPlanItem } from "./impactPlan";
 import { computeChangeSurfaceForProfiles, type ChangeSurfaceCollection } from "./changeSurface";
+import { impactIntensityOf, impactScaleOf, type HistoryImpactFact, type ImpactScale } from "../domain/impactCalibration";
 import type { SymbolUseReport } from "../symbol-use/types";
 import { replayHistoricalCrl } from "./governance/historyCrl";
 import { participatesInPopulation } from "../domain/fileParticipation";
@@ -54,6 +56,12 @@ export interface DiffSummary {
   readonly deltas: readonly FileRefDelta[];
   readonly historyEntryId: string;
   readonly evidenceState: "sealed" | "pending";
+  /** Σ λ_ast × branchMagnitude（report-only 规模参照分母）；sealed replay 可能省略。 */
+  readonly severityBudget?: number;
+  /** 每单位语义破坏度的结构冲击 I_push / severityBudget；sealed replay 可能省略。 */
+  readonly intensity?: number;
+  /** 项目内同规模 sealed 变更分位（compaction-safe）；无同规模样本或旧 adapter 时为 undefined。 */
+  readonly impactScale?: ImpactScale;
 }
 
 /** Optional drill-down evidence; it never changes the summary's policy meaning. */
@@ -83,6 +91,23 @@ const historyEntryId = (baselineIdentity: string, revisionKey: string, evidence:
   return `diff-v3-${createHash("sha256").update(source).digest("hex").slice(0, 24)}`;
 };
 
+const resolveSemanticBefore = (
+  profile: SemanticFileProfile | undefined,
+  coldStart: boolean,
+  parser: ParserService,
+  cwd: string,
+  filePath: string,
+) =>
+  Effect.gen(function* () {
+    const metrics = profile?.beforeMetrics;
+    const state: SemanticBeforeState | undefined = profile?.beforeState ?? (profile?.beforeMetrics ? "git" : undefined);
+    if (coldStart && !metrics) {
+      const gitBefore = yield* Effect.promise(() => buildGitBeforeMetrics(parser, cwd, filePath));
+      if (gitBefore) return { metrics: gitBefore, state: "git" as const };
+    }
+    return { metrics, state };
+  });
+
 export const diff = (input: DiffInput) =>
   Effect.gen(function* () {
     const parser = yield* ParserService;
@@ -101,7 +126,7 @@ export const diff = (input: DiffInput) =>
       return input.changeKind ? [{ anchor: "manual:file", kind: input.changeKind }] : [];
     };
     if (asts.some((ast) => changesFor(ast.path).length === 0)) {
-      return yield* Effect.dieMessage("semantic diff requires a profile or explicit change kind for every file");
+      return yield* Effect.fail(new Error("semantic diff requires a profile or explicit change kind for every file"));
     }
     const oldIndex = yield* storage.readIndex();
     const nFiles = (oldIndex?.meta?.nProductionFiles ?? oldIndex?.meta?.nFiles ?? asts.length) || input.changedFiles.length || 1;
@@ -111,7 +136,7 @@ export const diff = (input: DiffInput) =>
     const cwd = process.cwd();
     const gitBaselineSha = oldIndex?.meta.snapshotSha256 ?? gitHeadSha(cwd);
     if (!gitBaselineSha && !oldIndex?.meta.snapshotSha256) {
-      return yield* Effect.dieMessage("baseline lacks snapshotSha256 and git HEAD is unavailable; run openarch scan before diff");
+      return yield* Effect.fail(new Error("baseline lacks snapshotSha256 and git HEAD is unavailable; run openarch scan before diff"));
     }    const evidence: SemanticEvidence[] = asts.flatMap((ast) => {
       const afterText = input.afterTexts?.get(toRelative(ast.path));
       return (afterText !== undefined || existsSync(ast.path))
@@ -123,7 +148,7 @@ export const diff = (input: DiffInput) =>
     });
     const snapshotSha256 = oldIndex?.meta.snapshotSha256 ?? gitBaselineSha;
     if (!snapshotSha256) {
-      return yield* Effect.dieMessage("baseline lacks snapshotSha256; run openarch scan before diff");
+      return yield* Effect.fail(new Error("baseline lacks snapshotSha256; run openarch scan before diff"));
     }
     const baselineIdentity = `${snapshotSha256}:${oldIndex?.meta.analysisScope?.fingerprint ?? "git-cold-start"}`;
     const persistence = input.persistence ?? "history";
@@ -131,6 +156,7 @@ export const diff = (input: DiffInput) =>
     const entryId = historyEntryId(baselineIdentity, revisionKey, evidence);
     const existing = persistence === "history" ? yield* storage.readHistoryEntry(entryId) : null;
     const pending = persistence === "pending" && storage.readPendingDiff ? yield* storage.readPendingDiff() : null;
+    const impactFacts: readonly HistoryImpactFact[] = storage.readHistoryImpactFacts ? yield* storage.readHistoryImpactFacts() : [];
     const pendingBaseMetrics = pending?.revisionKey === revisionKey
       ? new Map(pending.baseMetrics.map(({ file, entry }) => [file, entry]))
       : new Map<string, import("../port/StorageService").IndexEntry | null>();
@@ -138,13 +164,17 @@ export const diff = (input: DiffInput) =>
       const allHistory = yield* storage.readAllHistory();
       const crl = replayHistoricalCrl(allHistory);
       const mrDetail = existing.diagnosis ?? [];
+      const iPush = existing.deltas.reduce((sum, delta) => sum + delta.deltaI, 0);
+      const impactScale = impactScaleOf(iPush, existing.deltas.filter((delta) => delta.deltaI !== 0).length, impactFacts);
       return {
         summary: {
-          iPush: existing.deltas.reduce((sum, delta) => sum + delta.deltaI, 0),
+          iPush,
           dMR: mrDetail.reduce((sum, diagnosis) => sum + diagnosis.localBurden.deterioration, 0),
           deltas: existing.deltas.map((delta) => ({ file: delta.file, deltaI: delta.deltaI, alphaStruct: delta.alphaStruct ?? 0 })),
           historyEntryId: entryId,
           evidenceState: "sealed",
+          ...(existing.scale ? { severityBudget: existing.scale.severityBudget, intensity: existing.scale.intensity } : {}),
+          ...(impactScale ? { impactScale } : {}),
         },
         evidence: { mrDetail, crl, impactPlan: [] },
       } as DiffReport;
@@ -154,6 +184,7 @@ export const diff = (input: DiffInput) =>
     const gateConfig = yield* Effect.promise(loadGateConfig);
     const pathClasses = gateConfig.pathEntries;
     const p95 = oldIndex?.meta.p95;
+    const policyCalibrations = oldIndex?.meta.policyCalibrations;
 
     // 3. 重建完整依赖图（diffGraph）
     const rb = yield* rebuildGraph(asts, storage, input.implicitDeps, gateConfig.analysisScope.fileKindRules);
@@ -167,24 +198,27 @@ export const diff = (input: DiffInput) =>
         ? pendingBaseMetrics.get(relPath) ?? null
         : yield* storage.readFileMetrics(ast.path);
       const profile = profilesByFile.get(relPath);
+      const fileCalibration = calibrationForSubject(ast.language ? { path: relPath, language: ast.language } : undefined, gateConfig.structuralPolicies, policyCalibrations, p95, gateConfig.crlStateWeights);
       // 冷启动：无 baseline 且无 semantic profile 时，从 git HEAD 重建 before 度量。
-      let semanticBefore = profile?.beforeMetrics;
-      let semanticBeforeState = profile?.beforeState ?? (profile?.beforeMetrics ? "git" : undefined);
-      if (coldStart && !semanticBefore) {
-        const gitBefore = yield* Effect.promise(() => buildGitBeforeMetrics(parser, cwd, ast.path));
-        if (gitBefore) { semanticBefore = gitBefore; semanticBeforeState = "git"; }
-      }
+      const resolvedBefore = yield* resolveSemanticBefore(profile, coldStart, parser, cwd, ast.path);
+      const semanticBefore = resolvedBefore.metrics;
+      const semanticBeforeState = resolvedBefore.state;
       impacts.push(computeFileImpact({
         ast, graph: rb.graph, inDegrees: rb.inDegrees, reverseEdges: rb.reverseEdges,
         changedSet: rb.changedSet, nFiles, changeKinds: changesFor(ast.path).map((change) => change.kind), pathClasses, oldEntry,
         semanticBefore,
         semanticBeforeState,
-        p95, crlStateWeights: gateConfig.crlStateWeights, fileKindRules: gateConfig.analysisScope.fileKindRules,
+        p95: fileCalibration.p95, crlStateWeights: fileCalibration.weights, fileKindRules: gateConfig.analysisScope.fileKindRules,
       }));
     }
     const iPush = impacts.reduce((s, imp) => s + imp.deltaI, 0);
     const dMR = impacts.reduce((s, imp) => s + imp.contributionMR, 0);
-    const deltas: FileRefDelta[] = impacts.map(imp => ({ file: imp.relPath, alphaStruct: imp.alphaStruct, deltaI: imp.deltaI }));
+    const severityBudget = impacts.reduce((s, imp) => s + imp.severityBudget, 0);
+    const intensity = impactIntensityOf(iPush, severityBudget);
+    // 只保留非零 deltaI：零冲击的测试/aux 文件不参与报告、CRL 与分桶。
+    const deltas: FileRefDelta[] = impacts.filter((imp) => imp.deltaI !== 0)
+      .map((imp) => ({ file: imp.relPath, alphaStruct: imp.alphaStruct, deltaI: imp.deltaI }));
+    const impactScale = impactScaleOf(iPush, deltas.length, impactFacts);
     // D_MR 是生产架构变化诊断；测试文件的结构事实不进入其报告或历史。
     const mrDetail = impacts
       .filter((imp) => participatesInPopulation(imp.writeEntry.fileKind, "production-governance"))
@@ -192,12 +226,12 @@ export const diff = (input: DiffInput) =>
 
     // 5. 历史 + CRL
     const ts = new Date().toISOString();
-    const historyDeltas = deltas.map((delta) => ({ file: delta.file, deltaI: delta.deltaI, alphaStruct: delta.alphaStruct }));
+    const scale = { severityBudget, intensity };
     if (persistence === "pending") {
       const writePending = storage.writePendingDiff;
-      if (!writePending) return yield* Effect.dieMessage("storage adapter does not support pending diff evidence");
+      if (!writePending) return yield* Effect.fail(new Error("storage adapter does not support pending diff evidence"));
       yield* writePending({
-        entryId, revisionKey, timestamp: ts, deltas: historyDeltas, diagnosis: mrDetail, evidence,
+        entryId, revisionKey, timestamp: ts, deltas, diagnosis: mrDetail, evidence, scale,
         baselineSnapshotSha256: snapshotSha256,
         overlayMetrics: impacts.map((imp) => imp.writeEntry),
         baseMetrics: impacts.map((imp) => ({
@@ -208,7 +242,7 @@ export const diff = (input: DiffInput) =>
         })),
       });
     } else {
-      yield* storage.writeHistory(entryId, historyDeltas, ts, mrDetail, evidence);
+      yield* storage.writeHistory(entryId, deltas, ts, mrDetail, evidence, scale);
     }
     const allHistory = yield* storage.readAllHistory();
     const crl = replayHistoricalCrl(allHistory);
@@ -225,7 +259,11 @@ export const diff = (input: DiffInput) =>
       ? assessSymbolScopeAdmissions(input.semanticProfiles, input.symbolUseReports, input.versionPairs, input.calibrationAvailable)
       : undefined;
     return {
-      summary: { iPush, dMR, deltas, historyEntryId: entryId, evidenceState: persistence === "pending" ? "pending" : "sealed" },
+      summary: {
+        iPush, dMR, deltas, historyEntryId: entryId,
+        evidenceState: persistence === "pending" ? "pending" : "sealed",
+        severityBudget, intensity, ...(impactScale ? { impactScale } : {}),
+      },
       evidence: {
         mrDetail, crl, impactPlan,
         ...(changeSurfaces ? { changeSurfaces } : {}),

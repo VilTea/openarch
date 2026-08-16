@@ -113,17 +113,17 @@ func (submission TaskSubmission) Validate() error {
 }
 
 type TaskLifecycleEvent struct {
-	SchemaVersion   string    `json:"schemaVersion"`
-	Task            TaskRef   `json:"task"`
-	Type            string    `json:"type"`
-	ProposalSHA256  string    `json:"proposalSha256"`
-	VerifiedHeadSHA string    `json:"verifiedHeadSha"`
-	RecordedAt      time.Time `json:"recordedAt"`
-	SignerKeyID     string    `json:"signerKeyId"`
-	Signature       string    `json:"signature"`
-	ClaimedBy       string    `json:"claimedBy,omitempty"`
-	CompletedBy     string    `json:"completedBy,omitempty"`
-	CompletedHeadSHA string   `json:"completedHeadSHA,omitempty"`
+	SchemaVersion    string    `json:"schemaVersion"`
+	Task             TaskRef   `json:"task"`
+	Type             string    `json:"type"`
+	ProposalSHA256   string    `json:"proposalSha256"`
+	VerifiedHeadSHA  string    `json:"verifiedHeadSha"`
+	RecordedAt       time.Time `json:"recordedAt"`
+	SignerKeyID      string    `json:"signerKeyId"`
+	Signature        string    `json:"signature"`
+	ClaimedBy        string    `json:"claimedBy,omitempty"`
+	CompletedBy      string    `json:"completedBy,omitempty"`
+	CompletedHeadSHA string    `json:"completedHeadSHA,omitempty"`
 }
 
 func (event TaskLifecycleEvent) Validate() error {
@@ -227,7 +227,9 @@ func (event TaskLifecycleEvent) SigningPayload() ([]byte, error) {
 
 // VerificationIdentity intentionally excludes the recording timestamp so a
 // retried submit is a content-addressed no-op instead of a second lifecycle
-// transition.
+// transition. Executor identity is deliberately excluded here: the authority
+// converges same-type events for one task, while the application layer
+// re-reads the persisted status and rejects a conflicting executor.
 func (event TaskLifecycleEvent) VerificationIdentity() string {
 	return string(event.Task.RepositoryID) + "\x00" + string(event.Task.ServiceID) + "\x00" + event.Task.TaskID + "\x00" + event.ProposalSHA256 + "\x00" + event.VerifiedHeadSHA
 }
@@ -240,6 +242,33 @@ type TaskStatus struct {
 	ClaimedBy        string  `json:"claimedBy,omitempty"`
 	CompletedBy      string  `json:"completedBy,omitempty"`
 	CompletedHeadSHA string  `json:"completedHeadSHA,omitempty"`
+}
+
+// TaskSummary is the read-only projection returned by task listing. It joins
+// the Agent-owned proposal with the latest service-owned lifecycle state.
+type TaskSummary struct {
+	Task           TaskRef    `json:"task"`
+	Title          string     `json:"title"`
+	Hypothesis     string     `json:"hypothesis"`
+	RequestedBy    string     `json:"requestedBy"`
+	ProposalSHA256 string     `json:"proposalSha256"`
+	Status         TaskStatus `json:"status"`
+}
+
+func (summary TaskSummary) Validate() error {
+	if err := summary.Task.Validate(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(summary.Title) == "" || strings.TrimSpace(summary.RequestedBy) == "" {
+		return errors.New("task summary title and requestedBy are required")
+	}
+	if err := validateSHA256(summary.ProposalSHA256, "task summary proposalSha256"); err != nil {
+		return err
+	}
+	if summary.Status.Task != summary.Task {
+		return errors.New("task summary status does not match task identity")
+	}
+	return nil
 }
 
 // TaskStatusOf rebuilds the latest lifecycle state from the append-only event

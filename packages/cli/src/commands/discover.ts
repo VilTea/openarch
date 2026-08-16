@@ -20,8 +20,15 @@ export const discoverCommand: CommandHandler = async (args) => {
     console.log(`- 本轮识别边: ${report.edgesFound}`);
     console.log(`- 落地变化: +${report.edgesAdded} / -${report.edgesRemoved}`);
     console.log(`- 落地总边: ${report.totalEdges} → ${implicitDepsPath()}`);
-    for (const stage of report.pruning) {
+    for (const stage of report.evidence.pruning) {
       console.log(`  - ${stage.source}: input=${stage.inputFiles} targets=${stage.targetFiles} candidates=${stage.candidateFiles} records=${stage.records}`);
+    }
+    if (report.evidence.observations.length > 0) {
+      console.log("- 观测（report-only，不落边）:");
+      for (const observation of report.evidence.observations) {
+        const message = observation.message ? ` — ${observation.message}` : "";
+        console.log(`  [${observation.kind.toUpperCase()}] ${observation.source}: ${observation.via} ← ${observation.files.join(", ")}${message}`);
+      }
     }
     for (const error of report.errors) {
       console.log(`  ⚠ ${error}`);

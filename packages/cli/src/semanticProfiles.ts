@@ -96,7 +96,7 @@ const fallbackProfiles = async (cwd: string, paths: readonly string[], overrides
       candidate.beforeStates.forEach((state, file) => beforeStates.set(file, state));
       continue;
     }
-    const kind = overrides.get(normalizePath(path));
+    const kind = overrides.get(normalizePath(path)) ?? overrides.get("all");
     if (!kind) {
       const reason = analysis._tag === "Left" ? "analysis failed" : analysis.right.reason ?? "semantic analysis unavailable";
       missing.push({ path, reason });
@@ -131,7 +131,7 @@ export const automaticSemanticProfiles = async (
   }
   if (initial.right.availability === "available") return logProfiles({ profiles: initial.right.profiles, afterTexts: candidate.afterTexts, beforeStates: candidate.beforeStates }, locale);
   const requested = new Set(paths.map(normalizePath));
-  const unused = [...overrides.keys()].filter((path) => !requested.has(path));
+  const unused = [...overrides.keys()].filter((path) => path !== "all" && !requested.has(path));
   if (unused.length > 0) {
     console.error(`--change-override 指向未参与本次 diff 的文件: ${unused.join(", ")}`);
     return undefined;

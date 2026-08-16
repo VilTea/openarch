@@ -15,7 +15,7 @@ describe("reviewCommand evolution view", () => {
     const log = vi.spyOn(console, "log").mockImplementation((line: string) => { output.push(line); });
     try {
       const result = await reviewCommand(["--evolution"], { cwd: "C:/not-a-repository", rawArgv: [], locale: "zh" });
-      expect(result).toBe(0);
+      expect(result).toBe(3);
       expect(output.join("\n")).toContain("状态: UNAVAILABLE");
     } finally {
       log.mockRestore();

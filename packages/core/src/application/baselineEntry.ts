@@ -3,7 +3,7 @@
 import type { FileAst } from "../domain/ast";
 import { weightedBranchTotalOf } from "../domain/branchMetrics";
 import { localBurdenFingerprint } from "../domain/calibration";
-import { computeCohesion, computeConnectedness } from "../domain/cohesion";
+import { computeConnectedness } from "../domain/cohesion";
 import type { FileKind } from "../domain/testGovernance";
 import { participatesInPopulation } from "../domain/fileParticipation";
 import { toRelative } from "../infra/paths";
@@ -31,7 +31,9 @@ export const projectBaselineEntry = ({ ast, fileKind, inDegree, alphaStruct, pre
     maxFuncBranch: ast.maxFuncBranch ?? weightedBranchTotal,
     nestingDepth: ast.nestingDepth,
     loc: ast.loc,
+    declarationLoc: ast.declarationLoc,
     externalPassthroughCalls,
+    passthroughCalls: ast.passthroughCalls,
   }) : undefined;
 
   return {
@@ -54,7 +56,6 @@ export const projectBaselineEntry = ({ ast, fileKind, inDegree, alphaStruct, pre
       .map((ref) => ref.resolvedPath)
       .filter((path): path is string => path !== null)
       .map(toRelative),
-    cohesion: computeCohesion(ast.functions),
     passthroughCalls: ast.passthroughCalls,
     loc: ast.loc,
     declarationLoc: ast.declarationLoc,
@@ -65,6 +66,5 @@ export const projectBaselineEntry = ({ ast, fileKind, inDegree, alphaStruct, pre
       localBurdenFingerprint: localFingerprint,
       previousLocalBurdenFingerprint: previous?.localBurdenFingerprint,
     } : {}),
-    ...(fileKind === "test" && previous?.testMetrics ? { testMetrics: previous.testMetrics } : {}),
   };
 };
