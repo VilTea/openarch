@@ -5,22 +5,21 @@ import { Effect } from "effect";
 import type { ParserService, QueryCapture, QueryMatch } from "../../port/ParserService";
 import type { LspLaunchSpec, LspSession } from "../lsp/NodeLspSession";
 import {
-  defaultRelationStartSession,
-  initializeRelationWorkspace,
-  openRelationDocuments,
   relationDefinitionLocations,
   relationLaunch,
   relationPositionForOffset,
   relationRelativeFile,
   relationRepositoryPath,
-  warmupRelationDocuments,
 } from "./relationLsp";
-import { listProjectSourceFiles } from "../../projectFiles";
+import {
+  runLspResolutionPipeline,
+  type CandidateResolutionResult,
+  type LspResolutionKernel,
+  type PipelineRuntime,
+} from "./semanticRelationPipeline";
+import { captureOf, DIAGNOSTIC_READINESS_TIMEOUT_MS, LSP_REQUEST_TIMEOUT_MS, unavailableFor } from "./semanticRelationShared";
 import type { SemanticRelationProvider, SemanticRelationRequest } from "../../semantic-relations/provider";
 import type { SemanticRelationFact, SemanticRelationReport, SemanticRelationSymbol } from "../../semantic-relations/types";
-
-const DIAGNOSTIC_READINESS_TIMEOUT_MS = Number(process.env.OPENARCH_LSP_INDEX_TIMEOUT_MS ?? 180_000);
-const LSP_REQUEST_TIMEOUT_MS = Number(process.env.OPENARCH_LSP_REQUEST_TIMEOUT_MS ?? 120_000);
 
 type RustSymbolKind = "struct" | "enum" | "trait";
 
@@ -40,6 +39,7 @@ interface RustImpl {
   readonly endLine: number;
   readonly typeRef: QueryCapture;
   readonly traitRef?: QueryCapture;
+  resolvedSource?: RustDeclaration | null;
 }
 
 interface TypeAnchor {
@@ -56,27 +56,15 @@ interface RelationCandidate {
   readonly sourceImpl?: RustImpl;
 }
 
+interface RustTarget {
+  readonly declaration: RustDeclaration;
+  readonly file: string;
+}
+
 interface RustModuleRange {
   readonly name: string;
   readonly startLine: number;
   readonly endLine: number;
-}
-
-interface RustCollection {
-  readonly declarations: RustDeclaration[];
-  readonly candidates: RelationCandidate[];
-  readonly workspaceRisks: string[];
-}
-
-interface RustResolutionContext {
-  readonly cwd: string;
-  readonly executable: string;
-  readonly files: readonly string[];
-  readonly sources: ReadonlyMap<string, string>;
-  readonly declarations: readonly RustDeclaration[];
-  readonly candidates: readonly RelationCandidate[];
-  readonly workspaceRisks: readonly string[];
-  readonly runtime: RustSemanticRelationRuntime;
 }
 
 interface RustResolutionStats {
@@ -84,14 +72,10 @@ interface RustResolutionStats {
   requestedCandidateTargets: number;
   skippedWithoutImplSource: number;
   skippedImplementsSourceKind: number;
-  readonly facts: SemanticRelationFact[];
 }
 
-export interface RustSemanticRelationRuntime {
+export interface RustSemanticRelationRuntime extends PipelineRuntime {
   readonly parser?: ParserService;
-  readonly executable?: string;
-  readonly environment?: NodeJS.ProcessEnv;
-  readonly startSession?: (launch: LspLaunchSpec, cwd: string) => LspSession | Promise<LspSession>;
 }
 
 const DECLARATION_QUERY = "[(struct_item name: (type_identifier) @name) @struct (enum_item name: (type_identifier) @name) @enum (trait_item name: (type_identifier) @name) @trait]";
@@ -105,9 +89,6 @@ const STRUCT_EXPRESSION_QUERY = "(struct_expression name: (type_identifier) @typ
 const MACRO_QUERY = "(macro_invocation) @macro";
 const ATTR_IDENTIFIER_QUERY = "(attribute_item (attribute (identifier) @name))";
 const ATTR_SCOPED_QUERY = "(attribute_item (attribute (scoped_identifier) @name))";
-
-const captureOf = (match: QueryMatch, name: string): QueryCapture | undefined =>
-  match.captures.find((capture) => capture.name === name);
 
 /**
  * Resolves the type name a definition request must point at. Rust type nodes
@@ -158,8 +139,6 @@ const declarationFor = (
 const implFor = (impls: readonly RustImpl[], file: string, line: number): RustImpl | undefined =>
   impls.find((impl) => impl.file === file && line >= impl.startLine && line <= impl.endLine);
 
-const relativeFile = (cwd: string, file: string): string => relationRelativeFile(cwd, file);
-
 const declarationSymbol = (declaration: RustDeclaration, file: string): SemanticRelationSymbol => ({
   id: `rust:repository:${file}:${declaration.qualifiedName}`,
   name: declaration.name,
@@ -169,24 +148,8 @@ const declarationSymbol = (declaration: RustDeclaration, file: string): Semantic
   line: declaration.startLine,
 });
 
-const uniqueFacts = (facts: readonly SemanticRelationFact[]): readonly SemanticRelationFact[] => {
-  const byIdentity = new Map<string, SemanticRelationFact>();
-  for (const fact of facts) {
-    byIdentity.set(`${fact.source.id}\0${fact.kind}\0${fact.target.id}\0${fact.evidence.file}\0${fact.evidence.line}`, fact);
-  }
-  return [...byIdentity.values()].sort((left, right) =>
-    left.evidence.file.localeCompare(right.evidence.file)
-    || left.evidence.line - right.evidence.line
-    || left.kind.localeCompare(right.kind)
-    || left.source.id.localeCompare(right.source.id)
-    || left.target.id.localeCompare(right.target.id));
-};
-
-const unavailable = (reason: string): SemanticRelationReport => ({
-  origin: { language: "rust", providerId: "rust-rust-analyzer-semantic-relations", evidenceSource: "lsp" },
-  state: { availability: "unavailable", coverage: { symbols: "unavailable", relations: "unavailable" }, reason },
-  facts: [],
-});
+const unavailable = (reason: string): SemanticRelationReport =>
+  unavailableFor({ language: "rust", providerId: "rust-rust-analyzer-semantic-relations", evidenceSource: "lsp" }, reason);
 
 const SOURCE_KINDS: readonly RustSymbolKind[] = ["struct", "enum", "trait"];
 const TARGET_KINDS: Readonly<Record<SemanticRelationFact["kind"], readonly RustSymbolKind[]>> = {
@@ -220,7 +183,7 @@ const collectRustWorkspaceRisks = (
   cwd: string,
   files: readonly string[],
   sources: ReadonlyMap<string, string>,
-): string[] => {
+): readonly string[] => {
   const risks: string[] = [];
   const cargoToml = join(cwd, "Cargo.toml");
   const cargoRisk = existsSync(cargoToml)
@@ -239,6 +202,35 @@ const collectRustWorkspaceRisks = (
   return risks;
 };
 
+const collectRustSyntaxWorkspaceRisks = async (
+  parser: ParserService,
+  cwd: string,
+  files: readonly string[],
+  sources: ReadonlyMap<string, string>,
+): Promise<readonly string[]> => {
+  const risks = [...collectRustWorkspaceRisks(cwd, files, sources)];
+  for (const file of files) {
+    const [macroMatches, attrIdentifierMatches, attrScopedMatches] = await Promise.all([
+      queryRust(parser, file, MACRO_QUERY),
+      queryRust(parser, file, ATTR_IDENTIFIER_QUERY),
+      queryRust(parser, file, ATTR_SCOPED_QUERY),
+    ]);
+    if (macroMatches.length > 0) {
+      risks.push("Rust macro expansion is outside the calibrated semantic-relations scope");
+    }
+    if (attrIdentifierMatches.some((match) => {
+      const name = captureOf(match, "name")?.text;
+      return name !== undefined && ["derive", "proc_macro", "proc_macro_attribute", "proc_macro_derive"].includes(name);
+    })) {
+      risks.push("Rust derive or proc-macro expansion is outside the calibrated semantic-relations scope");
+    }
+    if (attrScopedMatches.length > 0) {
+      risks.push("Rust path attribute macros are outside the calibrated semantic-relations scope");
+    }
+  }
+  return [...new Set(risks)];
+};
+
 const moduleRangesFromMatches = (matches: readonly QueryMatch[]): RustModuleRange[] => {
   const ranges: RustModuleRange[] = [];
   for (const match of matches) {
@@ -250,7 +242,7 @@ const moduleRangesFromMatches = (matches: readonly QueryMatch[]): RustModuleRang
   return ranges;
 };
 
-const collectRustDeclarations = (
+const declarationsFromRustMatches = (
   file: string,
   matches: readonly QueryMatch[],
   moduleRanges: readonly RustModuleRange[],
@@ -274,6 +266,21 @@ const collectRustDeclarations = (
       endLine: item.endLine,
       startIndex: name.startIndex,
     });
+  }
+  return declarations;
+};
+
+const collectRustDeclarations = async (
+  parser: ParserService,
+  files: readonly string[],
+): Promise<readonly RustDeclaration[]> => {
+  const declarations: RustDeclaration[] = [];
+  for (const file of files) {
+    const [moduleMatches, declarationMatches] = await Promise.all([
+      queryRust(parser, file, MODULE_QUERY),
+      queryRust(parser, file, DECLARATION_QUERY),
+    ]);
+    declarations.push(...declarationsFromRustMatches(file, declarationMatches, moduleRangesFromMatches(moduleMatches)));
   }
   return declarations;
 };
@@ -365,44 +372,22 @@ const pushRustImplementsTargets = (
 
 const collectRustCandidates = async (
   parser: ParserService,
-  cwd: string,
   files: readonly string[],
+  declarations: readonly RustDeclaration[],
   sources: ReadonlyMap<string, string>,
-): Promise<RustCollection> => {
-  const workspaceRisks = collectRustWorkspaceRisks(cwd, files, sources);
-  const declarations: RustDeclaration[] = [];
+): Promise<readonly RelationCandidate[]> => {
   const candidates: RelationCandidate[] = [];
   for (const file of files) {
-    const [moduleMatches, declarationMatches, implMatches, traitImplMatches, fieldMatches, parameterMatches, returnMatches, structExpressionMatches, macroMatches, attrIdentifierMatches, attrScopedMatches] = await Promise.all([
-      queryRust(parser, file, MODULE_QUERY),
-      queryRust(parser, file, DECLARATION_QUERY),
+    const [implMatches, traitImplMatches, fieldMatches, parameterMatches, returnMatches, structExpressionMatches] = await Promise.all([
       queryRust(parser, file, IMPL_QUERY),
       queryRust(parser, file, TRAIT_IMPL_QUERY),
       queryRust(parser, file, FIELD_QUERY),
       queryRust(parser, file, PARAMETER_QUERY),
       queryRust(parser, file, RETURN_QUERY),
       queryRust(parser, file, STRUCT_EXPRESSION_QUERY),
-      queryRust(parser, file, MACRO_QUERY),
-      queryRust(parser, file, ATTR_IDENTIFIER_QUERY),
-      queryRust(parser, file, ATTR_SCOPED_QUERY),
     ]);
 
-    if (macroMatches.length > 0) {
-      workspaceRisks.push("Rust macro expansion is outside the calibrated semantic-relations scope");
-    }
-    if (attrIdentifierMatches.some((match) => {
-      const name = captureOf(match, "name")?.text;
-      return name !== undefined && ["derive", "proc_macro", "proc_macro_attribute", "proc_macro_derive"].includes(name);
-    })) {
-      workspaceRisks.push("Rust derive or proc-macro expansion is outside the calibrated semantic-relations scope");
-    }
-    if (attrScopedMatches.length > 0) {
-      workspaceRisks.push("Rust path attribute macros are outside the calibrated semantic-relations scope");
-    }
-
-    const moduleRanges = moduleRangesFromMatches(moduleMatches);
-    const fileDeclarations = collectRustDeclarations(file, declarationMatches, moduleRanges);
-    declarations.push(...fileDeclarations);
+    const fileDeclarations = declarations.filter((declaration) => declaration.file === file);
     const fileImpls = collectRustImpls(file, implMatches, traitImplMatches);
     const sourceText = sources.get(file)!;
     const structDeclarations = fileDeclarations.filter((declaration) => declaration.kind === "struct");
@@ -415,7 +400,7 @@ const collectRustCandidates = async (
     pushRustImplTargets(candidates, file, sourceText, structExpressionMatches, "instantiates", (match) => enclosingImpl(captureOf(match, "typeRef")?.startLine ?? -1));
     pushRustImplementsTargets(candidates, file, sourceText, fileImpls, traitImplMatches);
   }
-  return { declarations, candidates, workspaceRisks };
+  return candidates;
 };
 
 const canonicalWorkspaceUri = (uri: string): string => {
@@ -464,7 +449,7 @@ const waitForRustDefinitionIndex = async (
 
 const resolveRustDefinition = async (
   session: LspSession,
-  ctx: RustResolutionContext,
+  ctx: { readonly cwd: string; readonly sources: ReadonlyMap<string, string>; readonly declarations: readonly RustDeclaration[] },
   stats: RustResolutionStats,
   file: string,
   anchor: TypeAnchor,
@@ -488,136 +473,106 @@ const resolveRustDefinition = async (
 
 const resolveRustImplSource = async (
   session: LspSession,
-  ctx: RustResolutionContext,
+  ctx: { readonly cwd: string; readonly sources: ReadonlyMap<string, string>; readonly declarations: readonly RustDeclaration[] },
   stats: RustResolutionStats,
-  cache: Map<string, RustDeclaration | undefined>,
   impl: RustImpl,
 ): Promise<RustDeclaration | undefined> => {
-  const key = `${impl.file}:${impl.typeRef.startIndex}:${impl.typeRef.endIndex}`;
-  if (cache.has(key)) return cache.get(key);
+  if (impl.resolvedSource !== undefined) return impl.resolvedSource ?? undefined;
   const anchor = typeAnchorFor(ctx.sources.get(impl.file)!, impl.typeRef);
   if (!anchor) {
-    cache.set(key, undefined);
+    impl.resolvedSource = null;
     return undefined;
   }
   const targets = await resolveRustDefinition(session, ctx, stats, impl.file, anchor);
   const declaration = targets.find((target) => SOURCE_KINDS.includes(target.kind));
-  cache.set(key, declaration);
+  impl.resolvedSource = declaration ?? null;
   return declaration;
 };
 
-const resolveRustCandidate = async (
+const resolveRustCandidateDetailed = async (
   session: LspSession,
-  ctx: RustResolutionContext,
-  stats: RustResolutionStats,
-  cache: Map<string, RustDeclaration | undefined>,
   candidate: RelationCandidate,
-): Promise<void> => {
-  const sourceDecl = candidate.source ?? await resolveRustImplSource(session, ctx, stats, cache, candidate.sourceImpl!);
+  ctx: { readonly cwd: string; readonly sources: ReadonlyMap<string, string>; readonly declarations: readonly RustDeclaration[] },
+): Promise<CandidateResolutionResult<RustTarget, RustDeclaration>> => {
+  const stats: RustResolutionStats = { failedRequests: 0, requestedCandidateTargets: 0, skippedWithoutImplSource: 0, skippedImplementsSourceKind: 0 };
+  const sourceDecl = candidate.source ?? (candidate.sourceImpl ? await resolveRustImplSource(session, ctx, stats, candidate.sourceImpl) : undefined);
   if (!sourceDecl) {
-    stats.skippedWithoutImplSource += 1;
-    return;
+    return {
+      targets: [],
+      skippedWithoutImplSource: 1,
+      ...(stats.failedRequests > 0 ? { failedRequests: stats.failedRequests } : {}),
+    };
   }
   if (candidate.kind === "implements" && !implementsSourceKinds.includes(sourceDecl.kind)) {
-    stats.skippedImplementsSourceKind += 1;
-    return;
+    return {
+      targets: [],
+      skippedImplementsSourceKind: 1,
+      ...(stats.failedRequests > 0 ? { failedRequests: stats.failedRequests } : {}),
+    };
   }
   stats.requestedCandidateTargets += 1;
   const targets = await resolveRustDefinition(session, ctx, stats, candidate.file, candidate.target);
-  const sourceFile = relativeFile(ctx.cwd, sourceDecl.file);
-  const source = declarationSymbol(sourceDecl, sourceFile);
-  for (const target of targets) {
-    if (!TARGET_KINDS[candidate.kind].includes(target.kind)) continue;
-    stats.facts.push({
-      language: "rust",
-      kind: candidate.kind,
-      source,
-      target: declarationSymbol(target, relativeFile(ctx.cwd, target.file)),
-      direct: true,
-      evidence: { file: relativeFile(ctx.cwd, candidate.file), line: candidate.line },
-    });
-  }
+  const filtered = targets.filter((target) => TARGET_KINDS[candidate.kind].includes(target.kind));
+  return {
+    targets: filtered.map((declaration) => ({ declaration, file: relationRelativeFile(ctx.cwd, declaration.file) })),
+    sourceDeclaration: sourceDecl,
+    ...(stats.failedRequests > 0 ? { failedRequests: stats.failedRequests } : {}),
+    ...(stats.skippedWithoutImplSource > 0 ? { skippedWithoutImplSource: stats.skippedWithoutImplSource } : {}),
+    ...(stats.skippedImplementsSourceKind > 0 ? { skippedImplementsSourceKind: stats.skippedImplementsSourceKind } : {}),
+    ...(stats.requestedCandidateTargets > 0 ? { requestedCandidateTargets: stats.requestedCandidateTargets } : {}),
+  };
 };
 
-const startRustSession = async (ctx: RustResolutionContext): Promise<LspSession | SemanticRelationReport> => {
-  const launch = { ...relationLaunch(ctx.executable), ...(ctx.runtime.environment ? { environment: ctx.runtime.environment } : {}) };
-  try {
-    return await (ctx.runtime.startSession ?? defaultRelationStartSession)(launch, ctx.cwd);
-  } catch (error) {
-    return unavailable(`failed to start rust-analyzer: ${error instanceof Error ? error.message : String(error)}`);
-  }
-};
-
-const initializeRustSession = async (session: LspSession, cwd: string): Promise<SemanticRelationReport | undefined> => {
-  try {
-    await initializeRelationWorkspace(session, cwd, "definitionProvider");
-    return undefined;
-  } catch (error) {
-    return unavailable(`failed to initialize rust-analyzer: ${error instanceof Error ? error.message : String(error)}`);
-  }
-};
-
-const collectWithRustSession = async (session: LspSession, ctx: RustResolutionContext): Promise<SemanticRelationReport> => {
-  try {
-    const initFailure = await initializeRustSession(session, ctx.cwd);
-    if (initFailure) return initFailure;
-    openRelationDocuments(session, ctx.files, "rust");
-    // rust-analyzer indexes opened files on documentSymbol requests; this
-    // mirrors the Python provider so diagnostics readiness observes a real index.
-    const warmupIncomplete = await warmupRelationDocuments(session, ctx.files, LSP_REQUEST_TIMEOUT_MS);
-    const uris = ctx.files.map((file) => pathToFileURL(file).href);
-    // Diagnostic readiness only gates an empty candidate set; with candidates,
-    // successful definition requests prove the index is usable.
-    let diagnosticsReady = true;
-    if (ctx.candidates.length === 0 && session.waitForDiagnostics) {
-      diagnosticsReady = await session.waitForDiagnostics(uris, DIAGNOSTIC_READINESS_TIMEOUT_MS).catch(() => false);
-    }
-    // rust-analyzer's publishDiagnostics arrives before the crate index can
-    // answer textDocument/definition; poll workspace/symbol until the exact
-    // probe declaration file appears so a not-ready empty result is never
-    // cached as a real "no target".
-    const definitionIndexReady = await waitForRustDefinitionIndex(session, ctx.declarations, ctx.candidates, warmupIncomplete);
-    const stats: RustResolutionStats = { failedRequests: 0, requestedCandidateTargets: 0, skippedWithoutImplSource: 0, skippedImplementsSourceKind: 0, facts: [] };
-    const implSourceCache = new Map<string, RustDeclaration | undefined>();
-    for (const candidate of ctx.candidates) {
-      await resolveRustCandidate(session, ctx, stats, implSourceCache, candidate);
-    }
-
-    const risks = [...new Set(ctx.workspaceRisks)];
-    const requestComplete = ctx.candidates.length === 0
+const rustKernel: LspResolutionKernel<RustDeclaration, RelationCandidate, RustTarget> = {
+  id: "rust-rust-analyzer-semantic-relations",
+  displayName: "rust-analyzer",
+  language: "rust",
+  providerId: "rust-rust-analyzer-semantic-relations",
+  languageId: "rust",
+  diagnosticsMode: "whenNoCandidates",
+  launch: (executable, runtime) => ({
+    ...relationLaunch(executable),
+    ...(runtime.environment ? { environment: runtime.environment } : {}),
+  }),
+  collectDeclarations: collectRustDeclarations,
+  collectCandidates: collectRustCandidates,
+  resolveCandidate: async (session, candidate, ctx) => (await resolveRustCandidateDetailed(session, candidate, ctx)).targets,
+  resolveCandidateDetailed: resolveRustCandidateDetailed,
+  sourceFileOf: (candidate) => candidate.file,
+  sourceDeclarationOf: (candidate) => candidate.source ?? (undefined as unknown as RustDeclaration),
+  offsetOf: (candidate) => candidate.target.startIndex,
+  lineOf: (candidate) => candidate.line,
+  targetFileOf: (target) => target.file,
+  sourceSymbol: (source, file) => declarationSymbol(source, file),
+  targetSymbol: (target, _file) => declarationSymbol(target.declaration, target.file),
+  factOf: (candidate, source, target, file, line): SemanticRelationFact => ({
+    language: "rust",
+    kind: candidate.kind,
+    source,
+    target,
+    direct: true,
+    evidence: { file, line },
+  }),
+  readinessProbe: (session, ctx) => waitForRustDefinitionIndex(session, ctx.declarations, ctx.candidates, ctx.warmupIncomplete),
+  workspaceRisks: (cwd, files, sources) => collectRustWorkspaceRisks(cwd, files, sources),
+  collectWorkspaceRisks: (parser, cwd, files, _declarations, _candidates, sources) =>
+    collectRustSyntaxWorkspaceRisks(parser, cwd, files, sources),
+  isComplete: (stats, diagnosticsReady, risks, warmupIncomplete, candidates, readinessReady) => {
+    const requestComplete = candidates.length === 0
       ? diagnosticsReady
-      : stats.failedRequests === 0 && stats.requestedCandidateTargets === ctx.candidates.length && stats.facts.length > 0;
-    const complete = requestComplete && definitionIndexReady && !warmupIncomplete && risks.length === 0;
-    return {
-      origin: { language: "rust", providerId: "rust-rust-analyzer-semantic-relations", evidenceSource: "lsp" },
-      state: {
-        availability: complete ? "available" : "partial",
-        coverage: {
-          symbols: complete ? "complete" : "partial",
-          relations: complete ? "complete" : "partial",
-        },
-        ...(complete ? {} : { reason: [
-          ...(ctx.candidates.length === 0 && !diagnosticsReady ? ["rust-analyzer diagnostics readiness did not complete"] : []),
-          ...(ctx.candidates.length > 0 && !definitionIndexReady ? ["rust-analyzer definition index readiness did not complete"] : []),
-          ...(warmupIncomplete ? ["some documentSymbol warmup requests failed"] : []),
-          ...risks,
-          ...(stats.failedRequests > 0 ? [`${stats.failedRequests} definition request(s) failed`] : []),
-          ...(stats.skippedWithoutImplSource > 0 ? [`${stats.skippedWithoutImplSource} candidate(s) skipped because their impl source did not resolve to a repository struct/enum/trait`] : []),
-          ...(stats.skippedImplementsSourceKind > 0 ? [`${stats.skippedImplementsSourceKind} implements candidate(s) skipped because the impl source is not a repository struct/enum`] : []),
-          ...(ctx.candidates.length > 0 && stats.facts.length === 0 ? ["no candidate definition resolved to a repository target"] : []),
-        ].join("; ") }),
-      },
-      facts: uniqueFacts(stats.facts),
-    };
-  } finally {
-    await Promise.resolve(session.close());
-  }
-};
-
-const resolveRustSemanticRelations = async (ctx: RustResolutionContext): Promise<SemanticRelationReport> => {
-  const session = await startRustSession(ctx);
-  if (!("request" in session)) return session;
-  return collectWithRustSession(session, ctx);
+      : (stats.failedRequests ?? 0) === 0 && (stats.requestedCandidateTargets ?? 0) === candidates.length && stats.factCount > 0;
+    return requestComplete && readinessReady && !warmupIncomplete && risks.length === 0;
+  },
+  partialReasons: (stats, diagnosticsReady, risks, warmupIncomplete, candidates, readinessReady) => [
+    ...(candidates.length === 0 && !diagnosticsReady ? ["rust-analyzer diagnostics readiness did not complete"] : []),
+    ...(candidates.length > 0 && !readinessReady ? ["rust-analyzer definition index readiness did not complete"] : []),
+    ...(warmupIncomplete ? ["some documentSymbol warmup requests failed"] : []),
+    ...risks,
+    ...((stats.failedRequests ?? 0) > 0 ? [`${stats.failedRequests} definition request(s) failed`] : []),
+    ...((stats.skippedWithoutImplSource ?? 0) > 0 ? [`${stats.skippedWithoutImplSource} candidate(s) skipped because their impl source did not resolve to a repository struct/enum/trait`] : []),
+    ...((stats.skippedImplementsSourceKind ?? 0) > 0 ? [`${stats.skippedImplementsSourceKind} implements candidate(s) skipped because the impl source is not a repository struct/enum`] : []),
+    ...(candidates.length > 0 && stats.factCount === 0 ? ["no candidate definition resolved to a repository target"] : []),
+  ],
 };
 
 export const collectRustSemanticRelations = (
@@ -626,15 +581,13 @@ export const collectRustSemanticRelations = (
 ): Effect.Effect<SemanticRelationReport, never> =>
   Effect.gen(function* () {
     const parser = runtime.parser;
-    const executable = runtime.executable;
     if (!parser) return unavailable("ParserService is unavailable");
-    if (!executable) return unavailable("rust-analyzer executable is unavailable; configure the rust toolchain");
-    const files = listProjectSourceFiles({ cwd: input.cwd, languages: ["rust"], population: "production-governance" });
-    if (files.length === 0) return unavailable("no governed Rust source files");
-
-    const sources = new Map(files.map((file) => [file, readFileSync(file, "utf8")]));
-    const { declarations, candidates, workspaceRisks } = yield* Effect.promise(() => collectRustCandidates(parser, input.cwd, files, sources));
-    return yield* Effect.promise(() => resolveRustSemanticRelations({ cwd: input.cwd, executable, files, sources, declarations, candidates, workspaceRisks, runtime }));
+    return yield* Effect.promise(() => runLspResolutionPipeline({
+      cwd: input.cwd,
+      parser,
+      runtime,
+      kernel: rustKernel,
+    }));
   });
 
 export const rustSemanticRelationProvider: SemanticRelationProvider = {

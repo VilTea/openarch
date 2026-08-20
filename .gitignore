@@ -6,6 +6,7 @@ artifacts/
 
 # 工具/plugin 产物（不属于 OpenArch）
 .reasonix/
+packages/openarch-plugin/lib/
 
 # 协调服务本地投影缓存（disposable，可从 Git 重建；默认在系统临时目录，显式 --projection 覆盖时可能落在工作区）
 coordination-projection.ndjson
@@ -21,18 +22,5 @@ coordination-projection.ndjson
 
 # 个人 agent 配置（机器本地；release 分支同样排除）
 .claude/
-
-# ── release 分支发布排除（main 开发分支保留这些文件）──
-# 内部文档（设计/校准/经验/审计；docs/README.md 为内部文档索引）
-docs/internal/
-docs/README.md
-# 个人笔记配置
-.obsidian/
-# agent 开发树与指南
-.agents/
-AGENTS.md
-CLAUDE.md
-# 运行时校准样本（seed 脚本可重建）
-.openarch/calibration/
-# 愿景模拟文档
-simulation.md
+packages/core/.tmp-bloat-test-*/
+.dsh-sessions-web-dev/

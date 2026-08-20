@@ -54,33 +54,15 @@ describe("standalone plugin Skill installer", () => {
     expect(readFileSync(skill, "utf8")).toContain("OpenArch Governance Constitution");
   }));
 
-  it("installs the DeepSeek Harness agent preset with localized skills under DSH_HOME", () => withTemporaryHome((home) => {
-    const dshHome = join(home, ".dsh");
-    const result = spawnSync(process.execPath, [installer, "--target", "dsh", "--locale", "zh", "--preset"], {
-      cwd: home,
-      encoding: "utf8",
-      env: { ...process.env, HOME: home, USERPROFILE: home, DSH_HOME: dshHome },
-    });
-    const preset = join(dshHome, ".agent-presets", "openarch");
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain("DSH preset");
-    expect(existsSync(join(preset, "agent.cordis.yml"))).toBe(true);
-    expect(existsSync(join(preset, "preset.yml"))).toBe(true);
-    expect(existsSync(join(preset, "skills", "openarch-zh", "SKILL.md"))).toBe(true);
-    expect(existsSync(join(preset, "skills", "openarch-en", "SKILL.md"))).toBe(true);
-    expect(readFileSync(join(preset, "agent.cordis.yml"), "utf8")).toContain("customSkillDirs");
-  }));
-
-  it("rejects --preset for targets other than dsh", () => withTemporaryHome((home) => {
-    const result = spawnSync(process.execPath, [installer, "--target", "codex", "--preset"], {
+  it("rejects the removed DSH preset flag for any target", () => withTemporaryHome((home) => {
+    const result = spawnSync(process.execPath, [installer, "--target", "dsh", "--preset"], {
       cwd: home,
       encoding: "utf8",
       env: { ...process.env, HOME: home, USERPROFILE: home },
     });
 
     expect(result.status).toBe(2);
-    expect(result.stderr).toContain("Usage:");
+    expect(result.stderr).toContain("DSH preset is not stable and has been removed");
   }));
 
   it("rejects the retired project scope instead of bypassing CLI locale selection", () => withTemporaryHome((home) => {

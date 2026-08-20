@@ -2,7 +2,7 @@
 // 被测资产是纯 JavaScript 模块（dsh/host/*.mjs）。
 import { describe, expect, it } from "vitest";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -17,13 +17,19 @@ import {
 
 /** 仓库根：__tests__ → dsh → openarch-plugin → packages → 根。 */
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
+const baselineIndexPath = resolve(repoRoot, ".openarch", "baseline", "_index.json");
+const hasBaseline = existsSync(baselineIndexPath);
 
-/** 以当前真实 baseline 的 meta.nFiles 作为夹具输入，避免随仓库规模增长改断言。 */
+/** 以当前真实 baseline 的 meta.nFiles 作为夹具输入，避免随仓库规模增长改断言。
+ *  release/CI 快照不含 baseline 时使用固定夹具值；依赖真实 baseline 的用例会 skip。 */
 const baselineFiles = (): number => {
-  const indexPath = resolve(repoRoot, ".openarch", "baseline", "_index.json");
-  const index = JSON.parse(readFileSync(indexPath, "utf8"));
-  if (typeof index?.meta?.nFiles !== "number") throw new Error("real baseline index lacks meta.nFiles");
-  return index.meta.nFiles;
+  try {
+    const index = JSON.parse(readFileSync(baselineIndexPath, "utf8"));
+    if (typeof index?.meta?.nFiles === "number") return index.meta.nFiles;
+  } catch {
+    // fall through to fixture default
+  }
+  return 57;
 };
 
 /** 最小合法的 context --json 契约（与 CLI 输出同构的裁剪版）。 */
@@ -48,7 +54,7 @@ const fakeExec = (stdout) => async () => ({ stdout, stderr: "" });
 
 const freshTmpDir = () => mkdtempSync(join(tmpdir(), "openarch-dsh-"));
 
-describe("openarch-state: 状态采集（真实仓库工件）", () => {
+describe.skipIf(!hasBaseline)("openarch-state: 状态采集（真实仓库工件）", () => {
   it("在已初始化仓库上采集有界状态快照", async () => {
     const state = await collectGovernanceState({
       ...DEFAULTS,

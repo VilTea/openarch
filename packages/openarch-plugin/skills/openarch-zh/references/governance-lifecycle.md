@@ -66,3 +66,7 @@ structural_policies:
 编辑前先解析 DocumentStore。项目本地库是 `docs/openarch`；共享库需要显式 `scope-id`，且只能读取绑定的 `scopeRoot`。缺绑定是 `UNAVAILABLE`，不是扫描相邻项目的许可。
 
 若当前项目有自己的能力资产，只有该项目的公共能力、工作流、provider 或脚本合同变化时才更新该项目资产，并运行 `openarch docs check --changed <path>`。接入项目不维护已安装的 OpenArch Skill、runtime/plugin 镜像或产品能力清单；发现产品内容过期时向上游报告，不在接入项目内修改。只有明确维护产品发行的仓库才按其发行流程更新这些来源。使用 `docs record --category patterns|anti_patterns|decisions` 前先完成可验证复盘；文档写完后才检查相似度。类别和写作要求见 [record-guide.md](../record-guide.md)。
+
+## 升级与 Skill 再装备
+
+CLI 行为与 Skill 描述不符，或命令输出与既有经验冲突时，先运行 `openarch update --json`：只读对比本机版本与 release 分支，打印当前/最新版本与升级步骤，绝不自动安装。升级是显式用户动作（按 INSTALL.md 重建二进制）；完成后在项目根重跑 `openarch init --agent <target>` 原子刷新 Skill（退役文件被清除），再用 `openarch context` 确认治理可用性。构建外部集成时，以 `openarch contract --json` 的契约目录为唯一 authority：破坏性变更必须提升版本号，插件对未知版本 fail-closed，不从输出字段猜测兼容性。

@@ -4,6 +4,7 @@
  * 两个 UI 占位：
  * - conversation.composer.dock "openarch-governance"：composer 卡片**下方**的
  *   常驻状态条（对话最底部；baseline 新鲜度 / 变更 / 策略），点击展开看板。
+ * - conversation.composer.dock "openarch-governance"：状态条（baseline 徽章/变更/rules），点击开合看板
  * - shell.overlay            "openarch-dashboard"：全局治理看板
  *   （概览统计卡、P95 校准对照、结构 Top-N、Σ|ΔI| 趋势 sparkline 与分布）。
  *
@@ -32,8 +33,8 @@
 
 export const name = "openarch-dashboard";
 
-/** timer 是硬依赖：状态轮询与组件计时都挂在 cordis timer 上。 */
-export const inject = ["timer"];
+/** timer 与 slots 是硬依赖：轮询计时与看板槽位注册都依赖它们。 */
+export const inject = ["timer", "slots"];
 
 const fmt = (value, digits = 1) => (typeof value === "number" && Number.isFinite(value) ? String(Math.round(value * 10 ** digits) / 10 ** digits) : "?");
 
@@ -50,14 +51,14 @@ const viewportWidth = () => (typeof window !== "undefined" && typeof window.inne
 const clampTipX = (x) => Math.max(150, Math.min(viewportWidth() - 150, x));
 const clampTipY = (y) => Math.max(8, y);
 
-/** 指标释义（label 悬停 title）。 */
+/** 指标释义（label 悬停 title）；面向新手，不复读指标名。 */
 const METRIC_TITLES = {
-  branch: "分支复杂度（加权分支数）",
-  nesting: "嵌套深度（结构/表达式嵌套层数）",
-  loc: "有效代码行数（不含注释与空行）",
-  alpha: "暴露度 α（结构枢纽暴露系数）",
-  oneMinusConnectedness: "不连通形态（1 − connectedness，α/局部负担口径输入）",
-  externalPassthrough: "外部透传调用数（局部负担口径输入）",
+  branch: "分支复杂度：一个函数里有多少条不同执行路径；越高越难理解。",
+  nesting: "嵌套深度：代码一层套一层的深度；越深越难读。",
+  loc: "有效代码行数：去掉空行和注释后真正有代码的行数。",
+  alpha: "暴露度 α：这个文件被多少其他文件依赖/影响的可能程度；越高越像结构枢纽。",
+  oneMinusConnectedness: "不连通形态：1 − 内部连接度；越高表示文件内部各函数之间联系越弱。",
+  externalPassthrough: "外部透传调用数：这个文件直接调用外部模块/API 的次数；越高对外依赖越重。",
 };
 
 /** P95 六项指标（v5.3 口径，与 α_struct / localBurden 统一口径对齐）。 */
@@ -230,7 +231,7 @@ function workspaceRootOf(props, workspacesState) {
 function GovernanceDock({ hub, props }) {
   useStoreVersion(hub);
   // useWorkspaces 是 slot owner 注入的选择器 hook（渲染期读取当前工作区列表）。
-  const workspacesState = typeof props?.useWorkspaces === "function" ? props.useWorkspaces() : null;
+  const workspacesState = typeof props?.useWorkspaces === "function" ? props.useWorkspaces((s) => s) : null;
   const root = workspaceRootOf(props, workspacesState);
   // 动态环境 slot 可能不带 props → 兜底默认工作区（host 默认 cwd）。
   const store = root !== null ? hub.forRoot(root) : hub.defaultStore();
@@ -249,9 +250,9 @@ function GovernanceDock({ hub, props }) {
   const policy = cli?.architecturePolicy ?? null;
   const fresh = baseline?.freshness === "fresh";
   const files = typeof baseline?.files === "number" ? baseline.files : "?";
-  const wtPaths = Array.isArray(changes?.worktree?.paths) ? changes.worktree.paths.length : 0;
-  const wtSrc = Array.isArray(changes?.worktree?.sourcePaths) ? changes.worktree.sourcePaths.length : 0;
-  const stPaths = Array.isArray(changes?.staged?.paths) ? changes.staged.paths.length : 0;
+  const wtPaths = typeof changes?.worktree?.paths === "number" ? changes.worktree.paths : 0;
+  const wtSrc = typeof changes?.worktree?.sourcePaths === "number" ? changes.worktree.sourcePaths : 0;
+  const stPaths = typeof changes?.staged?.paths === "number" ? changes.staged.paths : 0;
   const rules = policy?.declaredRules ?? "?";
   const readiness = Array.isArray(cli?.readiness) ? cli.readiness : [];
   const notReady = readiness.filter((r) => r && typeof r.state === "string" && r.state !== "ready").map((r) => r.id);
@@ -292,9 +293,9 @@ function GovernanceDock({ hub, props }) {
   );
 }
 
-/** 概览统计卡。 */
-function StatCard({ label, value, sub }) {
-  const title = `${label}: ${value}${sub ? ` · ${sub}` : ""}`;
+/** 概览统计卡；hint 是面向新手的通俗说明，不复读卡片内容。 */
+function StatCard({ label, value, sub, hint }) {
+  const title = hint ?? `${label}: ${value}${sub ? ` · ${sub}` : ""}`;
   return React.createElement(
     "div",
     { className: "oa-stat", title },
@@ -330,16 +331,18 @@ function MetricBar({ label, current, gate, max }) {
     React.createElement("div", { className: "oa-metric-head" },
       React.createElement("span", { className: "oa-metric-label", title: METRIC_TITLES[label] ?? label }, label),
       React.createElement("span", { className: "oa-metric-values" },
-        React.createElement("span", { className: "oa-metric-cur", title: "当前基线结构分布（P95 上界）" }, fmt(current)),
-        React.createElement("span", { className: "oa-metric-gate", title: "门禁校准值（项目 P95 自校准）" }, `gate ${fmt(gate)}`),
+        React.createElement("span", { className: "oa-metric-cur", title: "当前项目 P95 值：大多数文件都没有超过这个数。" }, fmt(current)),
+        React.createElement("span", { className: "oa-metric-gate", title: "项目参考线：超过它说明当前复杂程度已高于项目自己设定的基准。" }, `gate ${fmt(gate)}`),
       ),
     ),
     React.createElement("div", {
       className: "oa-track",
-      title: `${overGate ? "⚠ 当前值已越过 gate 校准（当前负担高于门禁基准）" : "当前值仍在 gate 校准以内"}（current ${fmt(current)} / gate ${fmt(gate)}，P95 项目自校准）`,
+      title: overGate
+        ? `当前值已超过项目参考线（current ${fmt(current)} > gate ${fmt(gate)}），说明最复杂的一批文件需要关注。`
+        : `当前值仍在项目参考线以内（current ${fmt(current)} ≤ gate ${fmt(gate)}）。`,
     },
       React.createElement("div", { className: "oa-track-fill", style: { width: widthOf(current) } }),
-      React.createElement("span", { className: "oa-track-gate", style: { left: `${gatePct}%` }, title: `gate ${fmt(gate)}` }),
+      React.createElement("span", { className: "oa-track-gate", style: { left: `${gatePct}%` }, title: "项目参考线：超过它表示复杂度过高。" }),
     ),
   );
 }
@@ -348,7 +351,15 @@ function MetricBar({ label, current, gate, max }) {
 function TopRow({ row, rank, maxBranch }) {
   const rankClass = rank <= 3 ? ` oa-rank-${rank}` : "";
   const miniWidth = `${Math.max(3, Math.min(100, (Number.isFinite(row.branchCount) ? row.branchCount : 0) / maxBranch * 100))}%`;
-  const rowTitle = `${row.path ?? ""}\nbranch ${fmt(row.branchCount)} · loc ${fmt(row.loc, 0)} · nesting ${fmt(row.nestingDepth, 0)} · α ${fmt(row.alphaStruct, 2)} · declLoc ${fmt(row.declarationLoc, 0)} · extPass ${fmt(row.externalPassthroughCalls, 0)}`;
+  const rowTitle = [
+    row.path ?? "",
+    `branch=${fmt(row.branchCount)} 分支数`,
+    `loc=${fmt(row.loc, 0)} 有效代码行`,
+    `nest=${fmt(row.nestingDepth, 0)} 嵌套深度`,
+    `α=${fmt(row.alphaStruct, 2)} 暴露度`,
+    `declLoc=${fmt(row.declarationLoc, 0)} 声明代码行`,
+    `extPass=${fmt(row.externalPassthroughCalls, 0)} 外部调用数`,
+  ].join("\n");
   return React.createElement(
     "div",
     { className: "oa-top-row", title: rowTitle },
@@ -661,28 +672,32 @@ function GovernancePanel({ hub }) {
         {
           title: "概览",
           open: true,
-          hint: "本地 .openarch 事实快照（fail-closed）；baseline 新鲜度由 openarch context 判定，Δ 为工作树/暂存变更计数。",
+          hint: "这里显示 OpenArch 从当前项目本地读取到的事实；数字都来自项目配置、扫描基线和 Git 变更。",
         },
         React.createElement("div", { className: "oa-stats" },
           React.createElement(StatCard, {
             label: "baseline",
             value: `${typeof baseline?.files === "number" ? baseline.files : "?"} files`,
             sub: `${fresh ? "fresh" : "stale"} · ${dateOf(baseline?.scanAt)}`,
+            hint: "OpenArch 扫描过的项目文件总数。fresh 表示基线是最新的；stale 表示工作区已有变化但还没重新扫描。",
           }),
           React.createElement(StatCard, {
             label: "生产 / 测试",
             value: `${state.baseline?.nProductionFiles ?? "?"} / ${state.baseline?.nTestFiles ?? "?"}`,
             sub: Array.isArray(state.baseline?.languages) ? state.baseline.languages.join(" · ") : undefined,
+            hint: "被识别为生产代码和测试代码的文件数量；下面的语言是当前纳入 OpenArch 分析的编程语言。",
           }),
           React.createElement(StatCard, {
             label: "已声明策略",
             value: `${cli?.architecturePolicy?.declaredRules ?? "?"} rules`,
             sub: cli?.architecturePolicy?.state ?? undefined,
+            hint: "项目 .openarch/config.yml 里声明的结构治理规则数量；state 表示这些规则当前是否处于强制执行状态。",
           }),
           React.createElement(StatCard, {
             label: "变更",
-            value: `wt ${cli?.changes?.worktree?.paths?.length ?? "?"} · st ${cli?.changes?.staged?.paths?.length ?? "?"}`,
-            sub: `源文件 ${cli?.changes?.worktree?.sourcePaths?.length ?? "?"} / ${cli?.changes?.staged?.sourcePaths?.length ?? "?"}`,
+            value: `wt ${cli?.changes?.worktree?.paths ?? "?"} · st ${cli?.changes?.staged?.paths ?? "?"}`,
+            sub: `源文件 ${cli?.changes?.worktree?.sourcePaths ?? "?"} / ${cli?.changes?.staged?.sourcePaths ?? "?"}`,
+            hint: "wt=工作区里已修改但还没暂存的文件数；st=已经 git add 暂存的文件数。源文件指 OpenArch 会做结构分析的代码文件。",
           }),
         ),
         scanStatus && Number.isFinite(scanStatus.total) && scanStatus.total > 0
@@ -714,13 +729,13 @@ function GovernancePanel({ hub }) {
             {
               title: "P95 结构校准（current vs gate）",
               open: true,
-              hint: "六项指标与 gate/review 统一口径（α/局部负担输入）。按策略分组展示 sealed 校准；current 越过 gate 刻度线 = 当前负担已高于该策略门禁校准。小样本策略的 P95 不稳定，阈值仅作观察。",
+              hint: "这些是 OpenArch 用来衡量代码复杂度的六项指标。current 是当前项目排在 95% 位置的数值（大多数文件都没超过）；gate 是项目自己设定的参考线。如果 current 超过 gate，说明最复杂的一批文件已经高于项目基准。",
             },
             policyIds.length > 0
               ? policyIds.map((id) => React.createElement(
                   "div",
                   { key: id, className: "oa-policy" },
-                  React.createElement("div", { className: "oa-policy-title", title: `策略 ${id} 的 sealed P95 校准（与 gate 一致）` }, id),
+                  React.createElement("div", { className: "oa-policy-title", title: `策略 ${id} 的 P95 参考线；current 超过 gate 表示该策略范围内最复杂文件高于基准。` }, id),
                   metrics.map((m) => React.createElement(MetricBar, { key: m, label: m, current: policies[id]?.current?.[m], gate: policies[id]?.gate?.[m], max: maxOf(policies[id]) })),
                 ))
               : metrics.map((m) => React.createElement(MetricBar, { key: m, label: m, current: p95.current?.[m], gate: p95.gate?.[m], max: p95Max })),
@@ -745,17 +760,17 @@ function GovernancePanel({ hub }) {
             {
               title: `结构事实 Top-${top.length}（branchCount）`,
               open: true,
-              hint: "生产文件按分支复杂度排序；declLoc/extPass 为局部负担的直接输入列（分片只落哈希，无归一化数值），branchCount 并非唯一热区口径。",
+              hint: "按分支复杂度从高到低列出项目里最复杂的生产文件。数字越大表示这个文件的分支、体积、嵌套或对外依赖越重，越值得优先关注。",
             },
             React.createElement("div", { className: "oa-top-head" },
               React.createElement("span", null, "#"),
               React.createElement("span", { className: "oa-mono" }, "文件"),
-              React.createElement("span", { className: "oa-top-num" }, "branch"),
-              React.createElement("span", { className: "oa-top-num" }, "loc"),
-              React.createElement("span", { className: "oa-top-num" }, "nest"),
-              React.createElement("span", { className: "oa-top-num" }, "α"),
-              React.createElement("span", { className: "oa-top-num", title: "声明代码行（局部负担输入）" }, "declLoc"),
-              React.createElement("span", { className: "oa-top-num", title: "外部透传调用数（局部负担输入）" }, "extPass"),
+              React.createElement("span", { className: "oa-top-num", title: "分支数：一个文件里所有函数的分支路径总量" }, "branch"),
+              React.createElement("span", { className: "oa-top-num", title: "有效代码行数（去掉空行和注释）" }, "loc"),
+              React.createElement("span", { className: "oa-top-num", title: "嵌套深度：代码一层套一层的深度" }, "nest"),
+              React.createElement("span", { className: "oa-top-num", title: "暴露度：文件被其他代码依赖/影响的程度" }, "α"),
+              React.createElement("span", { className: "oa-top-num", title: "声明代码行：只算声明部分的行数" }, "declLoc"),
+              React.createElement("span", { className: "oa-top-num", title: "外部透传调用数：直接调用外部 API/模块的次数" }, "extPass"),
             ),
             top.map((row, index) => React.createElement(TopRow, { key: row.path ?? index, row, rank: index + 1, maxBranch })),
           )
@@ -769,7 +784,7 @@ function GovernancePanel({ hub }) {
             {
               title: "branchCount 分布",
               open: true,
-              hint: "branchCount 等宽直方图（10 桶）；悬停柱体查看桶区间、文件数与占比。",
+              hint: "把项目里所有文件的分支数分成 10 个区间，显示每个区间的文件数量；悬停柱子可以看具体区间和占比。",
             },
             React.createElement(Distribution, { distribution: state.distribution.branchCount ?? null }),
           )
@@ -902,7 +917,7 @@ const CSS = `
 `;
 
 export function apply(ctx, config = {}) {
-  const slots = ctx.get("slots");
+  const slots = ctx?.slots ?? ctx?.get?.("slots");
   if (!slots || typeof slots.inject !== "function") return;
   const refreshMs = typeof config?.refreshMs === "number" ? config.refreshMs : 20_000;
 

@@ -44,7 +44,7 @@
 ## 退役与闭环状态（校准 2026-08-15）
 
 - 已退役 CEL 变量：`branch_count`、`crl_state`、`crl_inputs`、`cohesion`、`function_count`、`symbol_scope`——写进 gate 规则即配置错误。
-- `testMetrics` 持久化已退役：测试治理只读重采，不写回 baseline；`TEST_BLOAT` 保持 `openarch test --verbose` 的 report-only 膨胀诊断，不进治理信号汇总。
+- `testMetrics` 持久化已退役：测试治理只读重采，不写回 baseline；`TEST_BLOAT` 保持 `openarch test --bloat` 的 report-only 膨胀诊断，不进治理信号汇总。
 - `cohesion` 不再写入新 baseline 分片；旧分片仅读取兼容。
 
 ## 探索性策略校准

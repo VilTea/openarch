@@ -2,6 +2,8 @@
 
 This page turns reusable lessons from external Agent prompts and skills into an OpenArch usage route. It is an action contract, not a new CLI state machine and not a substitute for user decisions.
 
+> This page is a specialized expansion of the `SKILL.md` Minimal Loop for “which command to run when”; the overall process remains the Minimal Loop as the single authority. Subagent parallelism conditions and lead-Agent responsibility are authoritative in the `SKILL.md` “Collaboration And Environment” section; this page only adds routing and output contracts.
+
 > “没有调查，没有发言权。” — Mao Zedong, *Against Book Worship*
 
 ## Routing Principles
@@ -29,6 +31,7 @@ Start with `openarch context` to obtain the initial project fact projection, the
 | A module is repeatedly edited or existing risk needs explanation | `openarch review` / `review --evolution` | Treat top burden, co-change history, and findings as investigation leads only. Establish a concrete pattern before creating a script or project contract. |
 | A reproducible static corruption hypothesis exists | `openarch rules facts` -> choose a skeleton -> `rules check` -> `rules scan` | Preserve a positive example or historical revision, then scan legal, violating, and unavailable samples. A post-repair zero is `CLEAN`; it is not proof of unvalidated coverage. |
 | Test framework or collection boundary is uncertain | `openarch check --tests` or `review` | Separate provider coverage from policy verdict. `UNAVAILABLE/PARTIAL` limits test governance only and does not stop production investigation. |
+| No diff context but a full verdict is needed (fresh checkout, CI verification) | `openarch check --full [--tests]` | Skips the diff precondition and runs gate + config audit + test governance in one pass. Still consume the full signal surface item by item — a full run does not excuse skipping WARNs or findings. |
 | A capability, script, or experience document changes materially | `openarch docs status` / `docs check --changed <path>` | Update only the current project's DocumentStore. Product Skill, runtime mirrors, and release assets are maintained by the product repository. |
 
 This table is not a mandatory sequence. When several rows match, choose the row that reduces the most uncertainty and state why the others were not run.

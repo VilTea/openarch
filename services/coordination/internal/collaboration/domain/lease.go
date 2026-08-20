@@ -66,10 +66,10 @@ func (request LeaseRequest) Validate() error {
 }
 
 type LeaseCredential struct {
-	LeaseID          string
-	Owner            string
-	FencingToken     uint64
-	CoordinatorEpoch uint64
+	LeaseID          string `json:"leaseId"`
+	Owner            string `json:"owner"`
+	FencingToken     uint64 `json:"fencingToken"`
+	CoordinatorEpoch uint64 `json:"coordinatorEpoch"`
 }
 
 func (credential LeaseCredential) Validate() error {

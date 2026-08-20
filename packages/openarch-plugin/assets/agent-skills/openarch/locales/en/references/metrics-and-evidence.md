@@ -44,7 +44,7 @@ A normal `scan` updates observed `P95` only. A sealed calibration epoch remains 
 ## Retired And Closed-Loop Status (Calibrated 2026-08-15)
 
 - Retired CEL variables: `branch_count`, `crl_state`, `crl_inputs`, `cohesion`, `function_count`, `symbol_scope` - using them in a gate rule is a configuration error.
-- `testMetrics` persistence is retired: test governance is read-only and re-collects every run; `TEST_BLOAT` stays a report-only diagnostic behind `openarch test --verbose`, outside governance signals.
+- `testMetrics` persistence is retired: test governance is read-only and re-collects every run; `TEST_BLOAT` stays a report-only diagnostic behind `openarch test --bloat`, outside governance signals.
 - `cohesion` is no longer written into new baseline shards; old shards remain read-compatible.
 
 ## Exploratory Policy Calibration

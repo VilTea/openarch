@@ -79,6 +79,10 @@ describe("openarch-tools: 注册面", () => {
   it("注册六个模型工具与工具纪律 section", () => {
     const { byName, section } = mount();
     expect(Object.keys(byName).sort()).toEqual(["openarch_check", "openarch_context", "openarch_contract", "openarch_review", "openarch_scan", "openarch_test"]);
+    for (const tool of Object.values(byName)) {
+      expect(tool.parameters?.type).toBe("object");
+      expect(tool.parameters?.properties).toBeTypeOf("object");
+    }
     expect(section.section).toHaveBeenCalledTimes(1);
     const reg = section.section.mock.calls[0][0];
     expect(reg.name).toBe("tool:openarch");

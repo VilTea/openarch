@@ -46,8 +46,11 @@ export function buildScanTool(deps) {
     name: "openarch_scan",
     description: "重建/更新 OpenArch 基线。作为后台任务运行并返回 job id（用 job_output 收集、job_kill 取消）；后台任务服务不可用时同步执行。配置 structural_policies/file_kinds 变化后应传 rebuild: true。",
     parameters: {
-      rebuild: { type: "boolean", description: "强制全量重建（--rebuild；配置变化后必须，增量 scan 按内容 SHA-256 短路、不感知配置）。" },
-      report: { type: "boolean", description: "追加扫描范围/排除段/解析失败的结构复盘报告（--report）。" },
+      type: "object",
+      properties: {
+        rebuild: { type: "boolean", description: "强制全量重建（--rebuild；配置变化后必须，增量 scan 按内容 SHA-256 短路、不感知配置）。" },
+        report: { type: "boolean", description: "追加扫描范围/排除段/解析失败的结构复盘报告（--report）。" },
+      },
     },
     isConcurrencySafe: () => false,
     timeoutMs: 900_000,

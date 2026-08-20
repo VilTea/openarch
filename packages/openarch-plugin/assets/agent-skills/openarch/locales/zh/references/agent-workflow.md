@@ -2,6 +2,8 @@
 
 本页把外部 Agent prompt/skill 的可复用经验落到 OpenArch 的使用路由中。它是行动合同，不是新的 CLI 状态机，也不替用户决定任务顺序。
 
+> 本页是 `SKILL.md` “最小闭环”在“何时执行哪个命令”上的专项展开；整体流程仍以最小闭环为唯一权威。子 Agent 并行条件与主 Agent 责任以 `SKILL.md` “协作与环境”为权威，本页只补充路由和输出合同。
+
 > “没有调查，没有发言权。”——《反对本本主义》
 
 ## 路由原则
@@ -29,6 +31,7 @@
 | 反复修改同一模块，或需要解释存量风险 | `openarch review` / `review --evolution` | 只把 Top 负担、历史共同变化和 finding 当调查线索；确认具体模式后才建立脚本或项目合同。 |
 | 已有可复现的静态腐化假设 | `openarch rules facts` → 选择 skeleton → `rules check` → `rules scan` | 先保存正例或历史 revision，再回扫合法、违规和不可用样本；零命中是治理后的 `CLEAN`，不是未经验证的覆盖证明。 |
 | 测试框架或收集边界不确定 | `openarch check --tests` 或 `review` | 区分工具覆盖度与策略裁决；`UNAVAILABLE/PARTIAL` 只限制测试治理，不阻断生产代码调查。 |
+| 无 diff 上下文但需要全量裁决（冷检出、CI 验证） | `openarch check --full [--tests]` | 跳过 diff 前置，一次完成门禁 + 配置审计 + 测试治理；仍按全量信号面逐项消费，不因全量输出而跳过 WARN/finding。 |
 | 能力、脚本或经验文档发生实质变化 | `openarch docs status` / `docs check --changed <path>` | 只更新当前项目 DocumentStore；产品 Skill、runtime 镜像和发行资产由产品仓库维护。 |
 
 路由表不是强制顺序。一次行动若同时满足多行，先选能减少最大不确定性的那一行，并在摘要中说明为何不执行其他动作。

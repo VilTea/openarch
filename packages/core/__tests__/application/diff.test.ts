@@ -214,6 +214,44 @@ describe("diff D_MR integration", () => {
     expect(histories).toEqual([[]]);
   });
 
+  it("does not read deleted files from disk when a manual fallback profile is supplied", async () => {
+    const deletedPath = "src/deleted.ts";
+    const parse = vi.fn(() => { throw new Error("deleted file must not be parsed from disk"); });
+    const ParserTest = Layer.succeed(ParserService, {
+      parse, query: () => Effect.succeed([]), supportedLanguages: Effect.succeed(["typescript"]),
+    });
+    const StorageTest = Layer.succeed(StorageService, {
+      writeBaseline: () => Effect.void,
+      readIndex: () => Effect.succeed({ version: "1", meta: {
+        scanAt: "2026-07-11T00:00:00.000Z", snapshotSha256: "a".repeat(64), nFiles: 10, nProductionFiles: 10, languages: ["typescript"],
+        p95: { branch: 10, nesting: 10, loc: 100, alpha: 1, oneMinusConnectedness: 1, externalPassthrough: 10 },
+      } }),
+      writeIndex: () => Effect.void, writeFileMetrics: () => Effect.void, deleteFileMetrics: () => Effect.void,
+      readFileMetrics: () => Effect.succeed(before), listAllFileMetrics: () => Effect.succeed([[before.path, before]]), clearFileMetrics: () => Effect.void,
+      writeHistory: () => Effect.void, readHistoryEntry: () => Effect.succeed(null), readAllHistory: () => Effect.succeed([]),
+    });
+    const LockTest = Layer.succeed(LockService, {
+      acquire: () => Effect.succeed({ name: "diff", agentId: "test", acquiredAt: 0, lockId: "test-lock" }), release: () => Effect.void,
+    });
+
+    await withTemporaryDirectory("diff-deleted", async (cwd) => {
+      const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(cwd);
+      try {
+        const report = await Effect.runPromise(diff({
+          changedFiles: [deletedPath], baselinePath: ".openarch/baseline.json", agentId: "test",
+          semanticProfiles: [{ file: deletedPath, changes: [{ anchor: "manual:file", kind: "function_body" }], beforeState: "git", deleted: true }],
+        }).pipe(Effect.provide(Layer.mergeAll(ParserTest, StorageTest, LockTest))));
+
+        expect(parse).not.toHaveBeenCalled();
+        expect(report.summary.dMR).toBe(0);
+        expect(report.summary.deltas).toEqual([]);
+        expect(report.evidence.mrDetail).toEqual([]);
+      } finally {
+        cwdSpy.mockRestore();
+      }
+    });
+  });
+
   it("replays a content-addressed diff without adding history or recalculating against its own writeback", async () => {
     let current: IndexEntry = before;
     let stored: StoredHistoryEntry | null = null;

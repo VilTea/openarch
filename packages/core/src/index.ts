@@ -66,6 +66,10 @@ export type { GateFileMetric, GateRenderResult, GateReportFacts } from "./applic
 export { testGovernance } from "./application/testGovernance";
 export type { TestGovernanceReport } from "./application/testGovernance";
 export { testGovernanceProviderList } from "./test-governance/catalog";
+export * from "./application/definitionSurfaceCandidates";
+export * from "./application/definitionSurfaceFacts";
+export * from "./application/definitionSurfaceContracts";
+
 export * from "./application/diff";
 export { rebuildGraph } from "./application/diffGraph";
 export type { RebuiltGraph } from "./application/diffGraph";

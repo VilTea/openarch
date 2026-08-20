@@ -10,19 +10,15 @@ const tempDir = () => join(tmpdir(), `openarch-default-scripts-${Date.now()}-${M
 describe("installDefaultScripts", () => {
   it("installs matching scripts once and rejects templates, providers, and configuration templates", () => {
     const cwd = tempDir();
-    const result = installDefaultScripts(cwd, ["typescript"], ["anti-patterns.typescript.no-empty-catch", "anti-patterns.typescript.hardcoded-project-shape", "anti-patterns.typescript.parallel-language-facts", "anti-patterns.typescript.authority-bypass", "anti-patterns.cross-language.authority-boundary", "anti-patterns.cross-language.authority-import-bypass", "implicit-deps.typescript.eventbus", "test-governance.typescript.vitest", "config.layer-weights"]);
+    const result = installDefaultScripts(cwd, ["typescript"], ["anti-patterns.typescript.no-empty-catch", "anti-patterns.typescript.hardcoded-project-shape", "anti-patterns.cross-language.authority-boundary", "anti-patterns.cross-language.authority-import-bypass", "implicit-deps.typescript.eventbus", "test-governance.typescript.vitest", "config.layer-weights"]);
     expect(result.installed).toEqual([
       "anti-patterns.typescript.no-empty-catch",
       "anti-patterns.typescript.hardcoded-project-shape",
-      "anti-patterns.typescript.parallel-language-facts",
-      "anti-patterns.typescript.authority-bypass",
       "anti-patterns.cross-language.authority-boundary",
       "anti-patterns.cross-language.authority-import-bypass",
     ]);
     expect(existsSync(join(cwd, ".openarch", "anti-patterns", "rules", "no-empty-catch.mjs"))).toBe(true);
     expect(existsSync(join(cwd, ".openarch", "anti-patterns", "rules", "hardcoded-project-shape.mjs"))).toBe(true);
-    expect(existsSync(join(cwd, ".openarch", "anti-patterns", "rules", "parallel-language-facts.mjs"))).toBe(true);
-    expect(existsSync(join(cwd, ".openarch", "anti-patterns", "rules", "authority-bypass.mjs"))).toBe(true);
     expect(existsSync(join(cwd, ".openarch", "anti-patterns", "rules", "authority-boundary.mjs"))).toBe(true);
     expect(existsSync(join(cwd, ".openarch", "anti-patterns", "rules", "authority-import-bypass.mjs"))).toBe(true);
     expect(defaultScriptTarget("anti-patterns.typescript.no-empty-catch")).toBe(".openarch/anti-patterns/rules/no-empty-catch.mjs");

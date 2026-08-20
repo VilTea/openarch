@@ -14,6 +14,7 @@
 dsh/
   host/
     openarch-state.mjs         治理状态读取器（纯 Node 逻辑，无依赖，可单测）
+    openarch-test-cache.mjs    测试治理结果本地缓存（.openarch/dsh-test-governance.json）
     openarch-contract.mjs      JSON 契约面：从 dsh-config.schema.json 推导配置白名单（strictConfig）
     openarch-tools.mjs         模型工具层入口（装配 + 客户端数据通道 RPC/HTTP）
     openarch-tools-run.mjs     执行层：子进程/后台任务生产者/verdict 映射/接缝
@@ -23,7 +24,7 @@ dsh/
     openarch-tools-scan.mjs    openarch_scan 工具构造器（后台任务优先）
     openarch-signals.mjs       systemPrompt 治理简报（order 90，每步装配时求值）
   client/
-    openarch-dashboard.mjs     状态条（input.dock）+ 看板（shell.overlay）
+    openarch-dashboard.mjs     状态条（composer.dock）+ 看板（shell.overlay）
   schema/                      JSON Schema（插件开发合同，随包发布）
     dsh-plugin.schema.json       插件清单：模块导出契约 + 工具面元数据
     dsh-config.schema.json       apply(ctx, config) 的 config 契约
@@ -118,6 +119,20 @@ Host 端 `createGovernanceCache` 采集一份有界快照，经两条通道对 C
 - `openarch_scan` 后台任务对接 DSH `jobs` 注册表（`kind: "openarch"`，流式 `readOutput`、可 `job_kill`）。
 - 工具卡由 `presentCall`/`presentResult` 提供（generic card + verdict 标题），v1 不接管 `tool.call.toolview` 键，避免遮蔽报告正文。
 - 测试接缝：`ctx.get("openarch.exec")` / `ctx.get("openarch.spawn")` / `ctx.get("openarch.cwd")`，缺省用真实 `node:child_process`。
+- DSH 服务访问约定：硬依赖（`tools`/`systemPrompt`/`webServer`/`slots`/`timer`）声明在 `inject`；可选服务与测试接缝（`jobs`、`workspaceRegistry`、`openarch.*`）统一用 `ctx.get(...)`，缺失时回退默认实现。
+
+## 测试治理缓存
+
+`openarch_test` 的评估结果是**运行时投影**，不是 gate 证据。为避免 DSH 重启后看板丢失上次结果，插件会把最近一次有界投影写入：
+
+```text
+<项目根>/.openarch/dsh-test-governance.json
+```
+
+- 写入时机：`openarch_test` 成功解析 `test-governance-json-v1` 后；
+- 读取时机：`openarch-tools` 启动时按默认 cwd 读取，看板据此重建测试治理分区；
+- 缓存损坏/缺失：fail-closed 显示“尚未运行 openarch_test”，不伪装成 clean；
+- 清除方式：删除该文件即可（或下次成功运行覆盖）。
 
 ## 信号层合同（`openarch-signals`）
 
@@ -139,21 +154,9 @@ Host 端 `createGovernanceCache` 采集一份有界快照，经两条通道对 C
 
 ## 挂载方式
 
-### 1. Agent 预设（推荐，`--preset` 安装后自动生效）
+> **Agent 预设已移除**：`openarch-agent-install --target dsh --preset` 不再可用（DSH 预设尚未稳定）。当前唯一正式路径是下面的 Bundle 看板；动态 Cordis 包仅用于本会话内验证/原型。
 
-`assets/dsh-preset/agent.cordis.yml` 已追加两行（安装器把整个 `dsh/` 复制进预设目录）：
-
-```yaml
-- id: openarch-signals
-  name: ./dsh/host/openarch-signals.mjs
-
-- id: openarch-tools
-  name: ./dsh/host/openarch-tools.mjs
-```
-
-这两行只注册模型工具与 prompt section，不发布服务，**无需 isolate realm**。
-
-### 2. 动态 Cordis 包（本会话内验证 / 原型）
+### 1. 动态 Cordis 包（本会话内验证 / 原型）
 
 - Host：`cordis_define` 的 `code.host` 使用本目录 Host 模块的函数体（动态运行环境无 `node:fs`/`child_process`，需把文件访问与进程执行改为 `ctx.get("fs")` + `ctx.get("subprocess")` 服务；工具注册必须经 `harness.defineTool(...)` 包装）。
 - Client：`code.client` 取 `client/openarch-dashboard.mjs` 函数体、去掉末尾 `export` 行即可（文件无 import，仅用 Builtin `React`/`host`/`styles`）。
@@ -161,9 +164,28 @@ Host 端 `createGovernanceCache` 采集一份有界快照，经两条通道对 C
   `harness.handle("openarch/governance-state", ...)`，Client 用 `host.call` 直连；fetch 回退只对静态打包（真实浏览器环境）有效。2026-08 实测：client-only 包 + fetch 回退会以 “fetch is not available in a dynamic client half” 失败。
 - **不要注册 locale 命名空间**（组件文案硬编码）：重复注册会在更新时抛 `locale namespace "openarch" already has locale "zh"`。
 
-### 3. 静态包（正式发行形态）
+### 2. 静态包 / Bundle 看板（正式发行形态，含 dashboard）
 
-把 `dsh/` 视为一个可发布的 DSH 仓库插件：host 模块是标准 Cordis 插件（`name`/`inject`/`apply`），client 模块交给部署的 `dsh.client` 扫描打包；数据通道走 `webServer` 路由（Host 已自动注册，无需额外配置）。
+`@openarch/plugin` 是一个可发布的 DSH bundle 插件：`cordis.patch.yml` 声明 dashboard/signals/tools 三行；数据通道走 `webServer` 路由（Host 已自动注册，无需额外配置）。
+
+安装方式是把包加入 DSH profile 的 bundles（例如 `dsh.profile.bundles` 或 `dsh plugin add @openarch/plugin`）。发布包中的 `exports["./client"]` 指向**已构建**的 `lib/client.js`，该文件已按 DSH 客户端契约自注册：
+
+```js
+window.__ModuleLoader__.load({
+  id: "@openarch/plugin",
+  factory: (require) => { /* ... */ }
+});
+```
+
+DSH 的 `client-modules` **不会扫描或编译源码**；它把 `exports["./client"]` 指向的文件原样作为 `/plugins/<id>/client.js` 伺服给浏览器。因此客户端必须预先构建为 `window.__ModuleLoader__.load(...)` 自注册 bundle，并通过 `exports["./client"]` 暴露。源码 `dsh/client/openarch-dashboard.mjs` 不是这种 bundle，不能直接作为静态 client 使用。
+
+本地重建客户端产物：
+
+```bash
+pnpm --dir packages/openarch-plugin build:client
+```
+
+发布前 `prepack` 会自动执行该构建，`pnpm pack` 产物中的 `lib/client.js` 即为可用 bundle。
 
 ## 验证
 

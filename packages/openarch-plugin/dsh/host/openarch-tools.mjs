@@ -23,6 +23,7 @@
  * - 静态挂载：webServer 路由 GET /api/openarch/governance-state?root=<path>&force=1
  */
 import { createGovernanceCaches, normalizeRoot } from "./openarch-state.mjs";
+import { readTestGovernanceCache, writeTestGovernanceCache } from "./openarch-test-cache.mjs";
 import { cwdSeamOf, execSeamOf, pickConfig } from "./openarch-tools-run.mjs";
 import { buildContextTool } from "./openarch-tools-context.mjs";
 import { buildGateTool } from "./openarch-tools-gate.mjs";
@@ -35,8 +36,8 @@ export { renderContextText, renderGateText, renderTestText, renderContractText }
 
 export const name = "openarch-tools";
 
-/** `ctx.tools` 是硬依赖：没有工具注册表这个插件毫无意义。 */
-export const inject = ["tools"];
+/** 工具注册表、系统提示与 webServer 是硬依赖：没有它们工具/看板数据通道无法工作。 */
+export const inject = ["tools", "systemPrompt", "webServer"];
 
 const TOOL_GUIDANCE = {
   name: "tool:openarch",
@@ -133,7 +134,10 @@ export function apply(ctx, config) {
   const options = pickConfig(config);
   options.cwd = cwdSeamOf(ctx, options.cwd);
   // openarch_test 观察槽：按 root 各持最近一次评估投影（多工作区隔离）。
+  // 优先从本地缓存重建，使 DSH 重启后看板仍能显示上次测试治理结果。
   const lastTestByRoot = new Map();
+  const cachedTest = readTestGovernanceCache(options.cwd);
+  if (cachedTest) lastTestByRoot.set(normalizeRoot(options.cwd), cachedTest);
   const caches = createGovernanceCaches({
     ...options,
     execFileAsync: execSeamOf(ctx).execFile,
@@ -145,7 +149,9 @@ export function apply(ctx, config) {
     caches,
     cacheFor: (cwd) => caches.forRoot(cwd) ?? caches.forRoot(options.cwd),
     onTestGovernance: (value, root) => {
-      lastTestByRoot.set(normalizeRoot(root), value);
+      const normalized = normalizeRoot(root);
+      lastTestByRoot.set(normalized, value);
+      if (root) writeTestGovernanceCache(root, value);
     },
   };
 

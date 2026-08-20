@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { statusDocsRepo } from "../docs-repo/DocsRepoManager";
 import { renderHookLauncher } from "../hook/HookLauncher";
@@ -156,13 +156,18 @@ ${marker}
 ${renderHookLauncher("advisory", "OpenArch document advisory")}
 "$OPENARCH_BIN" docs check --staged || true
 `;
+  const makeExecutable = (): void => {
+    if (process.platform !== "win32") chmodSync(hookPath, 0o755);
+  };
   if (existsSync(hookPath)) {
     const existing = readFileSync(hookPath, "utf8");
     if (!existing.includes(marker)) return "skipped";
     writeFileSync(hookPath, content, "utf8");
+    makeExecutable();
     return "updated";
   }
   mkdirSync(dirname(hookPath), { recursive: true });
   writeFileSync(hookPath, content, "utf8");
+  makeExecutable();
   return "installed";
 };

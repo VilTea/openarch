@@ -27,6 +27,9 @@ const initializeTreeSitter = (): Promise<void> => {
   return treeSitterInitialization;
 };
 
+const parseError = (path: string, cause: unknown): ParseError =>
+  new ParseError({ path, cause: cause instanceof Error ? cause : new Error(String(cause)) });
+
 /**
  * One lazily initialized parser per grammar. Language strategies own grammar
  * semantics; this runtime owns only the shared Tree-sitter lifecycle.
@@ -44,6 +47,8 @@ export const createTreeSitterRuntime = (grammarFile: string) => {
   const resultCache = createQueryResultCache();
   let grammarKey: string | undefined;
 
+  const grammarPath = (): string => runtimeResourcePath("grammars", grammarFile);
+
   const cacheKeyFor = (code: string, pattern: string): string | undefined => {
     if (grammarKey === undefined) {
       try {
@@ -55,48 +60,73 @@ export const createTreeSitterRuntime = (grammarFile: string) => {
     return resultCache.keyFor(code, pattern, grammarKey);
   };
 
-  const grammarPath = (): string => runtimeResourcePath("grammars", grammarFile);
+  const loadParser = async (): Promise<Parser> => {
+    if (!initialization) {
+      initialization = (async () => {
+        await initializeTreeSitter();
+        // Load bytes ourselves so grammar loading is independent of host
+        // runtime detection (Node, Bun, or a future executable host).
+        const loaded = await Language.load(readFileSync(grammarPath()));
+        const created = new Parser();
+        created.setLanguage(loaded);
+        language = loaded;
+        parser = created;
+        return created;
+      })().catch((cause) => {
+        initialization = undefined;
+        throw cause;
+      });
+    }
+    return initialization;
+  };
 
-  const ensureParser = () =>
+  const ensureParser = (): Effect.Effect<Parser, ParseError, never> =>
+    Effect.tryPromise({
+      try: loadParser,
+      catch: (cause) => parseError("(tree-sitter init)", cause),
+    });
+
+  const parseText = (filePath: string, code: string): Effect.Effect<ParsedTreeSource, ParseError, never> =>
     Effect.gen(function* () {
-      if (parser && language) return parser;
-      return yield* Effect.tryPromise({
-        try: async () => {
-          if (!initialization) {
-            initialization = (async () => {
-              await initializeTreeSitter();
-              // Load bytes ourselves so grammar loading is independent of host
-              // runtime detection (Node, Bun, or a future executable host).
-              language = await Language.load(readFileSync(grammarPath()));
-              parser = new Parser();
-              parser.setLanguage(language);
-              return parser;
-            })().catch((cause) => {
-              initialization = undefined;
-              throw cause;
-            });
-          }
-          return initialization;
-        },
-        catch: (cause) => new ParseError({ path: "(tree-sitter init)", cause }),
+      const activeParser = yield* ensureParser();
+      return yield* Effect.try({
+        try: () => ({ code, root: treeCache.rootFor(activeParser, filePath, code) }),
+        catch: (cause) => parseError(filePath, cause),
       });
     });
 
-  const parseText = (filePath: string, code: string) =>
-    Effect.gen(function* () {
-      const activeParser = yield* ensureParser();
-      try {
-        return { code, root: treeCache.rootFor(activeParser, filePath, code) } satisfies ParsedTreeSource;
-      } catch (cause) {
-        return yield* Effect.fail(new ParseError({ path: filePath, cause: cause instanceof Error ? cause : new Error(String(cause)) }));
-      }
+  const parse = (filePath: string): Effect.Effect<ParsedTreeSource, ParseError, never> =>
+    parseText(filePath, readFileSync(filePath, "utf8"));
+
+  const query = (filePath: string, pattern: string): Effect.Effect<QueryMatch[], ParseError, never> =>
+    queryText(filePath, readFileSync(filePath, "utf8"), pattern);
+
+  const compileQuery = (pattern: string): Effect.Effect<Query, ParseError, never> => {
+    const cached = queryCache.get(pattern);
+    if (cached) return Effect.succeed(cached);
+    return Effect.try({
+      try: () => {
+        const compiled = new Query(language!, pattern);
+        queryCache.set(pattern, compiled);
+        return compiled;
+      },
+      catch: (cause) => parseError("(tree-sitter query)", cause),
     });
+  };
 
-  const parse = (filePath: string) => parseText(filePath, readFileSync(filePath, "utf8"));
+  const matchesFor = (compiled: Query, root: Node): QueryMatch[] =>
+    compiled.matches(root).map((match) => ({
+      captures: match.captures.map((capture) => ({
+        name: capture.name,
+        text: capture.node.text,
+        startLine: capture.node.startPosition.row + 1,
+        endLine: capture.node.endPosition.row + 1,
+        startIndex: capture.node.startIndex,
+        endIndex: capture.node.endIndex,
+      })),
+    })) satisfies QueryMatch[];
 
-  const query = (filePath: string, pattern: string) => queryText(filePath, readFileSync(filePath, "utf8"), pattern);
-
-  const queryText = (filePath: string, code: string, pattern: string) =>
+  const queryText = (filePath: string, code: string, pattern: string): Effect.Effect<QueryMatch[], ParseError, never> =>
     Effect.gen(function* () {
       const cacheKey = cacheKeyFor(code, pattern);
       if (cacheKey !== undefined) {
@@ -104,31 +134,12 @@ export const createTreeSitterRuntime = (grammarFile: string) => {
         if (cached !== undefined) return cached;
       }
       const activeParser = yield* ensureParser();
-      let root: Node;
-      try {
-        root = treeCache.rootFor(activeParser, filePath, code);
-      } catch (cause) {
-        return yield* Effect.fail(new ParseError({ path: filePath, cause: cause instanceof Error ? cause : new Error(String(cause)) }));
-      }
-      let compiled = queryCache.get(pattern);
-      if (!compiled) {
-        try {
-          compiled = new Query(language!, pattern);
-        } catch (cause) {
-          return yield* Effect.fail(new ParseError({ path: filePath, cause: new Error(`invalid query: ${String(cause)}`) }));
-        }
-        queryCache.set(pattern, compiled);
-      }
-      const matches = compiled.matches(root).map((match) => ({
-        captures: match.captures.map((capture) => ({
-          name: capture.name,
-          text: capture.node.text,
-          startLine: capture.node.startPosition.row + 1,
-          endLine: capture.node.endPosition.row + 1,
-          startIndex: capture.node.startIndex,
-          endIndex: capture.node.endIndex,
-        })),
-      })) satisfies QueryMatch[];
+      const root = yield* Effect.try({
+        try: () => treeCache.rootFor(activeParser, filePath, code),
+        catch: (cause) => parseError(filePath, cause),
+      });
+      const compiled = yield* compileQuery(pattern);
+      const matches = matchesFor(compiled, root);
       if (cacheKey !== undefined) resultCache.put(cacheKey, matches);
       return matches;
     });

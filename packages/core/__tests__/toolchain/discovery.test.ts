@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { discoverSemanticToolchains } from "../../src/toolchain/discovery";
 import type { ToolchainRuntime } from "../../src/toolchain/types";
 
+const isWin32 = process.platform === "win32";
+
 const runtime = (overrides: Partial<ToolchainRuntime> = {}): ToolchainRuntime => ({
   platform: "win32",
   environment: { ProgramFiles: "C:/Program Files" },
@@ -23,7 +25,7 @@ describe("discoverSemanticToolchains", () => {
     ]);
   });
 
-  it("prefers JAVA_HOME for javac but keeps a missing JDT LS as a partial Java toolchain", () => {
+  it.skipIf(!isWin32)("prefers JAVA_HOME for javac but keeps a missing JDT LS as a partial Java toolchain", () => {
     const javaHome = "C:/JDK";
     const report = discoverSemanticToolchains("C:/project", ["java"], runtime({
       environment: { JAVA_HOME: javaHome },
@@ -48,7 +50,7 @@ describe("discoverSemanticToolchains", () => {
     expect(report.tools).toContainEqual(expect.objectContaining({ id: "go", availability: "unavailable" }));
   });
 
-  it("uses PATH before a platform JDK when JAVA_HOME is absent or invalid", () => {
+  it.skipIf(!isWin32)("uses PATH before a platform JDK when JAVA_HOME is absent or invalid", () => {
     const report = discoverSemanticToolchains("C:/project", ["java"], runtime({
       environment: { ProgramFiles: "C:/Program Files" },
       resolveExecutable: (name) => name === "javac" ? "C:/tools/javac.exe" : undefined,
@@ -59,7 +61,7 @@ describe("discoverSemanticToolchains", () => {
     expect(report.tools).toContainEqual(expect.objectContaining({ id: "javac", location: "path", executable: "C:/tools/javac.exe" }));
   });
 
-  it("honors an explicit external tool path without searching the governed project or PATH", () => {
+  it.skipIf(!isWin32)("honors an explicit external tool path without searching the governed project or PATH", () => {
     const report = discoverSemanticToolchains("C:/project", ["go"], runtime({
       environment: { OPENARCH_GOPLS_PATH: "C:/tools/gopls.exe", OPENARCH_GO_PATH: "C:/tools/go.exe" },
       exists: (path) => path === "C:/tools/gopls.exe" || path === "C:/tools/go.exe",
@@ -78,7 +80,7 @@ describe("discoverSemanticToolchains", () => {
     })]);
   });
 
-  it("uses a user configuration file without one environment variable per tool", () => {
+  it.skipIf(!isWin32)("uses a user configuration file without one environment variable per tool", () => {
     const userConfig = "C:/Users/test/AppData/Roaming/OpenArch/toolchains.yml";
     const report = discoverSemanticToolchains("C:/project", ["java"], runtime({
       environment: { APPDATA: "C:/Users/test/AppData/Roaming" },
@@ -96,7 +98,7 @@ describe("discoverSemanticToolchains", () => {
     ]));
   });
 
-  it("propagates a machine-local env block from toolchains.yml into the tool fact", () => {
+  it.skipIf(!isWin32)("propagates a machine-local env block from toolchains.yml into the tool fact", () => {
     const userConfig = "C:/Users/test/AppData/Roaming/OpenArch/toolchains.yml";
     const report = discoverSemanticToolchains("C:/project", ["go"], runtime({
       environment: { APPDATA: "C:/Users/test/AppData/Roaming" },
@@ -116,7 +118,7 @@ describe("discoverSemanticToolchains", () => {
     }));
   });
 
-  it("lets checkout-local configuration override the user configuration", () => {
+  it.skipIf(!isWin32)("lets checkout-local configuration override the user configuration", () => {
     const report = discoverSemanticToolchains("C:/project", ["java"], runtime({
       environment: { APPDATA: "C:/Users/test/AppData/Roaming" },
       readFile: (path) => path.replaceAll("\\", "/").endsWith("/toolchains.yml")
@@ -131,7 +133,7 @@ describe("discoverSemanticToolchains", () => {
     expect(report.tools).toContainEqual(expect.objectContaining({ id: "jdtls", location: "project-config", executable: "C:/tools/project-jdtls.bat" }));
   });
 
-  it("refuses a tool resolved only inside the project root", () => {
+  it.skipIf(!isWin32)("refuses a tool resolved only inside the project root", () => {
     const report = discoverSemanticToolchains("C:/project", ["python"], runtime({
       resolveExecutable: (name) => name === "pyright-langserver" ? "C:/project/.venv/Scripts/pyright-langserver.exe" : undefined,
       isProjectLocalExecutable: (_cwd, executable) => executable.replaceAll("\\", "/").startsWith("C:/project/"),
@@ -141,7 +143,7 @@ describe("discoverSemanticToolchains", () => {
     expect(report.tools).toEqual([expect.objectContaining({ id: "pyright", reason: expect.stringContaining("inside the project") })]);
   });
 
-  it("does not run a version command for an LSP launcher", () => {
+  it.skipIf(!isWin32)("does not run a version command for an LSP launcher", () => {
     let versionCalls = 0;
     const report = discoverSemanticToolchains("C:/project", ["python"], runtime({
       resolveExecutable: (name) => name === "pyright-langserver" ? "C:/tools/pyright-langserver.cmd" : undefined,

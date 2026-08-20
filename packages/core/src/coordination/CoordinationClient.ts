@@ -64,32 +64,49 @@ const readJson = async <T>(response: Response, what: string): Promise<T> => {
 
 const baseUrl = (url: string): string => url.replace(/\/+$/, "");
 
-export const fetchDocsRepoDescriptor = async (url: string): Promise<DocsRepoDescriptor> => {
-  const response = await request(`${baseUrl(url)}/v1/docs-repo`);
+const getJSON = async <T>(url: string, path: string, query = ""): Promise<T> => {
+  const response = await request(`${baseUrl(url)}${path}${query}`);
   await requireOk(response);
-  return parseDescriptor(await readJson(response, "docs-repo"));
+  return readJson(response, path);
 };
+
+const postJSON = async <T>(url: string, path: string, body: unknown): Promise<T> => {
+  const response = await request(`${baseUrl(url)}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  await requireOk(response);
+  return readJson(response, path);
+};
+
+const listCollection = async <T>(
+  url: string,
+  path: string,
+  field: string,
+  parseItem: (value: unknown, what: string) => T,
+  repositoryId?: string,
+): Promise<readonly T[]> => {
+  const query = repositoryId ? `?repositoryId=${encodeURIComponent(repositoryId)}` : "";
+  const body = await getJSON<{ readonly [key: string]: unknown } | null>(url, `${path}${query}`);
+  const items = body?.[field];
+  if (!Array.isArray(items)) {
+    throw new CoordinationError("invalid_descriptor", `service returned an invalid ${field} list`);
+  }
+  return items.map((item) => parseItem(item, `${field} list`));
+};
+
+export const fetchDocsRepoDescriptor = async (url: string): Promise<DocsRepoDescriptor> =>
+  parseDescriptor(await getJSON(url, "/v1/docs-repo"));
 
 export const postDocsRepoRefresh = async (
   url: string,
   notice: { readonly repositoryId: string; readonly branch: string; readonly headSha: string },
-): Promise<DocsRepoDescriptor> => {
-  const response = await request(`${baseUrl(url)}/v1/docs-repo/refresh`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(notice),
-  });
-  await requireOk(response);
-  return parseDescriptor(await readJson(response, "docs-repo refresh"));
-};
+): Promise<DocsRepoDescriptor> =>
+  parseDescriptor(await postJSON(url, "/v1/docs-repo/refresh", notice));
 
 export const postEvidence = async (url: string, record: unknown): Promise<void> => {
-  const response = await request(`${baseUrl(url)}/v1/evidence`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(record),
-  });
-  await requireOk(response);
+  await postJSON(url, "/v1/evidence", record);
 };
 
 export interface TaskSubmitResult {
@@ -114,17 +131,12 @@ export const submitTask = async (
     readonly headSha: string;
   },
 ): Promise<TaskSubmitResult> => {
-  const response = await request(`${baseUrl(url)}/v1/tasks/submit`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      task: { repositoryId: submission.repositoryId, serviceId: submission.serviceId, taskId: submission.taskId },
-      branch: submission.branch,
-      headSha: submission.headSha,
-    }),
+  const result = await postJSON<TaskSubmitResult>(url, "/v1/tasks/submit", {
+    task: { repositoryId: submission.repositoryId, serviceId: submission.serviceId, taskId: submission.taskId },
+    branch: submission.branch,
+    headSha: submission.headSha,
   });
-  await requireOk(response);
-  return parseTaskResult(await readJson(response, "task submit"), "task submit");
+  return parseTaskResult(result, "task submit");
 };
 
 export const claimTask = async (
@@ -137,17 +149,12 @@ export const claimTask = async (
     readonly claimedBy: string;
   },
 ): Promise<TaskSubmitResult> => {
-  const response = await request(`${baseUrl(url)}/v1/tasks/claim`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      task: { repositoryId: claim.repositoryId, serviceId: claim.serviceId, taskId: claim.taskId },
-      proposalSha256: claim.proposalSha256,
-      claimedBy: claim.claimedBy,
-    }),
+  const result = await postJSON<TaskSubmitResult>(url, "/v1/tasks/claim", {
+    task: { repositoryId: claim.repositoryId, serviceId: claim.serviceId, taskId: claim.taskId },
+    proposalSha256: claim.proposalSha256,
+    claimedBy: claim.claimedBy,
   });
-  await requireOk(response);
-  return parseTaskResult(await readJson(response, "task claim"), "task claim");
+  return parseTaskResult(result, "task claim");
 };
 
 export const completeTask = async (
@@ -161,18 +168,13 @@ export const completeTask = async (
     readonly completedHeadSHA?: string;
   },
 ): Promise<TaskSubmitResult> => {
-  const response = await request(`${baseUrl(url)}/v1/tasks/complete`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      task: { repositoryId: completion.repositoryId, serviceId: completion.serviceId, taskId: completion.taskId },
-      proposalSha256: completion.proposalSha256,
-      completedBy: completion.completedBy,
-      ...(completion.completedHeadSHA ? { completedHeadSHA: completion.completedHeadSHA } : {}),
-    }),
+  const result = await postJSON<TaskSubmitResult>(url, "/v1/tasks/complete", {
+    task: { repositoryId: completion.repositoryId, serviceId: completion.serviceId, taskId: completion.taskId },
+    proposalSha256: completion.proposalSha256,
+    completedBy: completion.completedBy,
+    ...(completion.completedHeadSHA ? { completedHeadSHA: completion.completedHeadSHA } : {}),
   });
-  await requireOk(response);
-  return parseTaskResult(await readJson(response, "task complete"), "task complete");
+  return parseTaskResult(result, "task complete");
 };
 
 const parseTaskResult = (result: TaskSubmitResult, what: string): TaskSubmitResult => {
@@ -206,16 +208,8 @@ const parseTaskSummary = (value: unknown, what: string): TaskSummary => {
   return summary;
 };
 
-export const listTasks = async (url: string, repositoryId?: string): Promise<readonly TaskSummary[]> => {
-  const query = repositoryId ? `?repositoryId=${encodeURIComponent(repositoryId)}` : "";
-  const response = await request(`${baseUrl(url)}/v1/tasks${query}`);
-  await requireOk(response);
-  const body = await readJson(response, "task list") as { readonly tasks?: unknown };
-  if (!Array.isArray(body?.tasks)) {
-    throw new CoordinationError("invalid_descriptor", "service returned an invalid task list");
-  }
-  return body.tasks.map((summary) => parseTaskSummary(summary, "task list"));
-};
+export const listTasks = (url: string, repositoryId?: string): Promise<readonly TaskSummary[]> =>
+  listCollection(url, "/v1/tasks", "tasks", parseTaskSummary, repositoryId);
 
 export interface DebtSummary {
   readonly schemaVersion: string;
@@ -242,16 +236,8 @@ const parseDebtSummary = (value: unknown, what: string): DebtSummary => {
   return debt;
 };
 
-export const listDebts = async (url: string, repositoryId?: string): Promise<readonly DebtSummary[]> => {
-  const query = repositoryId ? `?repositoryId=${encodeURIComponent(repositoryId)}` : "";
-  const response = await request(`${baseUrl(url)}/v1/debts${query}`);
-  await requireOk(response);
-  const body = await readJson(response, "debt list") as { readonly debts?: unknown };
-  if (!Array.isArray(body?.debts)) {
-    throw new CoordinationError("invalid_descriptor", "service returned an invalid debt list");
-  }
-  return body.debts.map((debt) => parseDebtSummary(debt, "debt list"));
-};
+export const listDebts = (url: string, repositoryId?: string): Promise<readonly DebtSummary[]> =>
+  listCollection(url, "/v1/debts", "debts", parseDebtSummary, repositoryId);
 
 export interface LeaseCredential {
   readonly leaseId: string;
@@ -283,13 +269,12 @@ export const acquireLease = async (
   url: string,
   leaseRequest: { readonly repositoryId: string; readonly target: string; readonly owner: string; readonly ttlSeconds: number },
 ): Promise<Lease> => {
-  const response = await request(`${baseUrl(url)}/v1/leases/acquire`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ key: { repositoryId: leaseRequest.repositoryId, target: leaseRequest.target }, owner: leaseRequest.owner, ttlSeconds: leaseRequest.ttlSeconds }),
+  const lease = await postJSON<Lease>(url, "/v1/leases/acquire", {
+    key: { repositoryId: leaseRequest.repositoryId, target: leaseRequest.target },
+    owner: leaseRequest.owner,
+    ttlSeconds: leaseRequest.ttlSeconds,
   });
-  await requireOk(response);
-  return parseLease(await readJson(response, "lease acquire"), "acquire");
+  return parseLease(lease, "acquire");
 };
 
 export const renewLease = async (
@@ -297,37 +282,19 @@ export const renewLease = async (
   credential: LeaseCredential,
   ttlSeconds: number,
 ): Promise<Lease> => {
-  const response = await request(`${baseUrl(url)}/v1/leases/renew`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ credential, ttlSeconds }),
-  });
-  await requireOk(response);
-  return parseLease(await readJson(response, "lease renew"), "renew");
+  const lease = await postJSON<Lease>(url, "/v1/leases/renew", { credential, ttlSeconds });
+  return parseLease(lease, "renew");
 };
 
 export const releaseLease = async (
   url: string,
   credential: LeaseCredential,
 ): Promise<void> => {
-  const response = await request(`${baseUrl(url)}/v1/leases/release`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ credential }),
-  });
-  await requireOk(response);
+  await postJSON(url, "/v1/leases/release", { credential });
 };
 
-export const listLeases = async (url: string, repositoryId?: string): Promise<readonly Lease[]> => {
-  const query = repositoryId ? `?repositoryId=${encodeURIComponent(repositoryId)}` : "";
-  const response = await request(`${baseUrl(url)}/v1/leases${query}`);
-  await requireOk(response);
-  const body = await readJson(response, "lease list") as { readonly leases?: unknown };
-  if (!Array.isArray(body?.leases)) {
-    throw new CoordinationError("invalid_descriptor", "service returned an invalid lease list");
-  }
-  return body.leases.map((lease) => parseLease(lease, "list"));
-};
+export const listLeases = (url: string, repositoryId?: string): Promise<readonly Lease[]> =>
+  listCollection(url, "/v1/leases", "leases", parseLease, repositoryId);
 
 export interface SessionCredential {
   readonly sessionId: string;
@@ -360,13 +327,8 @@ export const registerSession = async (
   url: string,
   registration: { readonly repositoryId: string; readonly sessionId: string; readonly owner: string; readonly ttlSeconds: number },
 ): Promise<LiveSession> => {
-  const response = await request(`${baseUrl(url)}/v1/sessions/register`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(registration),
-  });
-  await requireOk(response);
-  return parseSession(await readJson(response, "session register"), "register");
+  const session = await postJSON<LiveSession>(url, "/v1/sessions/register", registration);
+  return parseSession(session, "register");
 };
 
 export const heartbeatSession = async (
@@ -374,34 +336,16 @@ export const heartbeatSession = async (
   credential: SessionCredential,
   ttlSeconds: number,
 ): Promise<LiveSession> => {
-  const response = await request(`${baseUrl(url)}/v1/sessions/heartbeat`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ credential, ttlSeconds }),
-  });
-  await requireOk(response);
-  return parseSession(await readJson(response, "session heartbeat"), "heartbeat");
+  const session = await postJSON<LiveSession>(url, "/v1/sessions/heartbeat", { credential, ttlSeconds });
+  return parseSession(session, "heartbeat");
 };
 
 export const closeSession = async (
   url: string,
   credential: SessionCredential,
 ): Promise<void> => {
-  const response = await request(`${baseUrl(url)}/v1/sessions/close`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ credential }),
-  });
-  await requireOk(response);
+  await postJSON(url, "/v1/sessions/close", { credential });
 };
 
-export const listSessions = async (url: string, repositoryId?: string): Promise<readonly LiveSession[]> => {
-  const query = repositoryId ? `?repositoryId=${encodeURIComponent(repositoryId)}` : "";
-  const response = await request(`${baseUrl(url)}/v1/sessions${query}`);
-  await requireOk(response);
-  const body = await readJson(response, "session list") as { readonly sessions?: unknown };
-  if (!Array.isArray(body?.sessions)) {
-    throw new CoordinationError("invalid_descriptor", "service returned an invalid session list");
-  }
-  return body.sessions.map((session) => parseSession(session, "list"));
-};
+export const listSessions = (url: string, repositoryId?: string): Promise<readonly LiveSession[]> =>
+  listCollection(url, "/v1/sessions", "sessions", parseSession, repositoryId);

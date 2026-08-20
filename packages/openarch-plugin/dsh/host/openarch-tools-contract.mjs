@@ -24,7 +24,7 @@ export function buildContractTool(deps) {
   return {
     name: "openarch_contract",
     description: "读取上游 OpenArch 机器契约目录（contract --json）：各可消费 JSON 契约的当前版本与 openarch 版本。外部插件据此感知契约版本；本插件对未知契约版本 fail-closed。",
-    parameters: {},
+    parameters: { type: "object", properties: {} },
     isConcurrencySafe: () => true,
     timeoutMs: 60_000,
     output: {

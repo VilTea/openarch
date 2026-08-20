@@ -44,6 +44,10 @@ file_kinds:
   # 本地发行 bundle 是可执行验证产物，不是 OpenArch 自身生产源码。
   - pattern: "artifacts/**"
     kind: "auxiliary"
+  # OpenArch 插件 client bundle 是生成物（lib/ 由 build:client 产出），
+  # 不应以生产身份进入结构信号面。
+  - pattern: "packages/openarch-plugin/lib/**"
+    kind: "auxiliary"
   # 校准/工具脚本（seed-symbol-calibration 等）是开发工具，非治理对象；
   # 但保留在 src 外可被 tsx 直跑，避免 tsconfig 项目外的 .mts 污染 workspace 扫描。
   - pattern: "packages/core/scripts/**"

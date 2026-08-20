@@ -115,11 +115,18 @@ export const diff = (input: DiffInput) =>
     return yield* withGovernanceWriteLock(input.agentId, () => Effect.gen(function* () {
 
     // 1. 解析变更文件
-    const asts = yield* Effect.all(input.changedFiles.map((p) => {
+    // 已删除文件没有 after 源码：跳过磁盘解析（否则 parser 读不存在文件会 ENOENT）。
+    // 语义 profile 仍可携带删除文件的手工 fallback，但冲击/证据只对有 after 结构的文件计算。
+    const profilesByFile = new Map(input.semanticProfiles?.map((profile) => [toPosixPath(profile.file), profile]) ?? []);
+    const parseTargets = input.changedFiles.filter((p) => {
+      const afterText = input.afterTexts?.get(toRelative(p));
+      if (afterText !== undefined || existsSync(p)) return true;
+      return profilesByFile.get(toPosixPath(toRelative(p)))?.deleted !== true;
+    });
+    const asts = yield* Effect.all(parseTargets.map((p) => {
       const afterText = input.afterTexts?.get(toRelative(p));
       return afterText === undefined ? parser.parse(p) : parser.parseText(p, afterText);
     }), { concurrency: DEFAULT_ANALYSIS_CONCURRENCY });
-    const profilesByFile = new Map(input.semanticProfiles?.map((profile) => [toPosixPath(profile.file), profile]) ?? []);
     const changesFor = (path: string) => {
       const profile = profilesByFile.get(toRelative(path));
       if (profile) return profile.changes;

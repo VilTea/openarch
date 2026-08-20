@@ -38,7 +38,9 @@ const fakeLaunch = (script: string): { command: string; args: string[] } => {
   // vitest worker 的 PATH 查找 spawn 失败（Windows 环境怪癖）——cmd /c + execPath
   // 绝对路径（cmd 处理空格引号）绕过。
   const node = process.execPath;
-  return { command: process.env.ComSpec ?? "cmd.exe", args: ["/c", `"${node}" "${file}"`] };
+  return process.platform === "win32"
+    ? { command: process.env.ComSpec ?? "cmd.exe", args: ["/c", `"${node}" "${file}"`] }
+    : { command: node, args: [file] };
 };
 
 const request = (port: number, id: number, method: string, params: unknown = {}): Promise<unknown> =>

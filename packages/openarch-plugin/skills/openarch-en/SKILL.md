@@ -17,7 +17,15 @@ Investigation precedes judgment: inspect `openarch context`, configuration, base
 
 - **Seek truth from facts (practice loop)**: inspect `openarch context`, configuration, baseline, code, and real output; a conclusion across a boundary must be tested against the corresponding object and setting. `PARTIAL` and `UNAVAILABLE` are not zero or clean.
 - **Information theory (preserve uncertainty)**: distinguish fact, metric, finding, signal, policy, and calibration, while retaining identity, provenance, scope, lifecycle, and observation range. Scripts and providers consume explicitly scoped facts; only facts crossing lifecycle or ownership boundaries are versioned, and diagnostic signals do not enter the gate.
+- **Cognitive-point principle (principal contradiction / net reduction)**: maintainability is driven mainly by how many independent cognitive points a maintainer must remember, not by `LOC`, class count, or module count. Keep one authoritative entry per important concept; before adding an abstraction, module, doc path, or install path, ask whether it increases cognitive points. Parallel implementations, duplicate concepts, inconsistent naming, hidden conventions, and doc/implementation drift all grow cognitive points. SSOT, consumer analysis, ubiquitous language, and documentation/contract verification are its engineering tools. OpenArch structural metrics are proxies, not cognitive load itself.
 - **Red Army experience (concrete, protracted defense)**: corruption returns with change, so do not chase one clean run. Build the smallest defense around the principal contradiction and its concrete conditions; backscan, repair/calibrate, verify/record in local real samples, then extend it. Do not bypass `BLOCK`.
+
+## Terms And States
+
+- Fact states are unified as `AVAILABLE` / `PARTIAL` / `UNAVAILABLE` / `NOT_CONFIGURED`; `PARTIAL`/`UNAVAILABLE` are fact boundaries, not zero or clean.
+- Policy verdicts are unified as `PASS` / `WARN` / `BLOCK`; only project policy produces verdicts, and metrics, findings, and signals never enter the `gate` by themselves.
+- Metrics and formulas are authoritative only in [metrics-and-evidence.md](./references/metrics-and-evidence.md); this file keeps summaries only.
+- The Minimal Loop is the single authoritative process; [agent-workflow.md](./references/agent-workflow.md) and [project-defenses.md](./references/project-defenses.md) are specialized expansions of it, not parallel processes of equal status.
 
 ## Investigate And Judge
 
@@ -27,6 +35,7 @@ Investigation precedes judgment: inspect `openarch context`, configuration, base
 - **Form a falsifiable judgment**: read current code, configuration, baseline, history, and existing rules; find a comparable working sample, then state the smallest hypothesis and check. A filename, similar text, one metric, or one scan is a clue only. Preserve semantics local facts cannot decide as unknown; never disguise them as a default gate.
 - **Examine impact and disagreement**: when public behavior, persisted data, cross-component collaboration, or developer use may change, investigate what changes, dependents, failure boundary, and the proof offered by existing interfaces or tests. When sources disagree, preserve their identities and scopes; the difference is a fact, not something to erase by majority, authority, habit, or expectation.
 - **Move from local to general**: reuse validated capabilities; keep internal experiments malleable, requiring migration or rejection only at real external compatibility boundaries. Backscan, repair/calibrate, and verify general guidance in local samples under differing conditions before promotion; one project's symptom and repair remain project experience.
+- **Review for cognitive-point net reduction**: in review or refactoring, explicitly ask how many mental entries this concept has: where is the authoritative definition, who consumes it, who changes it, what must be checked before deletion, whether documentation and implementation agree, and whether a new abstraction has at least two real callers. Design judgments that cannot be statically proven stay as `review` heuristics; do not pass them off as metrics or a `gate`.
 
 ## Collaboration And Environment
 
@@ -39,14 +48,17 @@ Investigation precedes judgment: inspect `openarch context`, configuration, base
 - `I_push` is an upper bound on change propagation from declaration semantics, reverse structure propagation, direct consumers, project-layer sensitivity, and dependency synchronization. It is not `LOC` or a quality score. Inspect contracts, classification, `Reach`, and the validation plan before acting on a high value.
 - `CRL_state` observes current local burden against project `P95` values: maximum function branching, nesting, effective lines, and direct external orchestration. `α_struct` explains exposure and `connectedness` explains module shape; neither convicts a file alone.
 - `D_MR` diagnoses local-burden improvement or regression for this production change only. It is displayed separately, does not offset other values, and never enters the gate; tests and auxiliary files do not participate.
+- Cognitive points are not a numeric metric: `CRL_state`/structural metrics are proxies for cognitive burden, not cognitive points themselves. Cognitive-point net reduction is used as a `review` heuristic and report signal, not a `gate`.
 
 Read [metrics-and-evidence.md](./references/metrics-and-evidence.md) for factors, calibration epochs, coverage, and action boundaries.
 
 ## Minimal Loop
 
+> The Minimal Loop below is the single authoritative process; other reference pages may expand or cite it, but must not create another process of equal status.
+
 1. Run `openarch context`. Initialize when configuration is absent; scan when the baseline is absent; do not stage pre-emptively. When the baseline scope is current and `architecturePolicy=UNCONFIGURED`, do not stop at `PASS`: run `openarch review`, use its P95/Top-3 facts to start exploratory policy calibration, and use the host's native single/multi-select UI to let the project owner choose “trial one minimal WARN, trial two independent WARNs, or defer and record why.” The first round must not write configuration or create a BLOCK automatically; every threshold needs a tolerance, sample scope, and rescan plan. **After changing `structural_policies`/`file_kinds` configuration, run `openarch scan --rebuild`** (incremental scan short-circuits on content `SHA-256` and does not notice configuration changes; otherwise the gate reports `policy_calibration_missing` or keeps the old scope).
 2. Before editing, read the current project's bound capability asset, when one exists, and task-relevant experience. State which project capability is reused, or why it is not applicable. An integrated project maintains only its own assets, rules, and records. The installed OpenArch Skill, runtime/plugin mirrors, and release assets are read-only inputs; report stale or mismatched content upstream instead of editing it in the integrated project. Only a repository explicitly maintaining the product release may update those sources and mirrors through its own release process. Report missing scope or assets as unavailable.
-3. After implementation, use `openarch check --worktree --report` for unstaged work. When a non-TypeScript project needs higher-fidelity symbol references or consumer evidence, configure its global LSP toolchain, then run `openarch check --worktree --semantic --report` and read the actual provider, coverage, and risks. Routine output is an action summary; add `--verbose` only to investigate D_MR, symbol evidence, or formula admission. Use `openarch check --staged --report` when preparing a commit; LSP reads the worktree and cannot stand in for Git-index evidence. Run `openarch review` first when a file is repeatedly edited or the user asks for architectural review.
+3. After implementation, use `openarch check --worktree --report --output-mode summary` for unstaged work; escalate to `--output-mode detail` for consumers/change-surface/formula details, `--output-mode full` for complete MR/symbol admission drill-down, and `--human` for human-readable output. When a non-TypeScript project needs higher-fidelity symbol references or consumer evidence, configure its global LSP toolchain, then run `openarch check --worktree --semantic --report --output-mode detail` and read the actual provider, coverage, and risks. Routine output is an action summary; add `--verbose` only to investigate D_MR, symbol evidence, or formula admission. Use `openarch check --staged --report --output-mode summary` when preparing a commit; LSP reads the worktree and cannot stand in for Git-index evidence. Run `openarch review` first when a file is repeatedly edited or the user asks for architectural review.
 4. When a capability, provider, script, configuration, or command changes in the current project, follow that project's DocumentStore contract and run `openarch docs check --changed <path>`; do not create or edit an asset that is absent or outside the project. Record only a reviewable conclusion.
 
 When automatic semantic evidence is unavailable for production code, investigate the whole batch and use per-file `--change-override path=actual-kind` once. Do not turn unknown into `function_body`. Tests and auxiliary files do not enter production `I_push` or `D_MR`.
@@ -73,13 +85,14 @@ When automatic semantic evidence is unavailable for production code, investigate
 | Task or signal | Required reference |
 |---|---|
 | `I_push`, CRL, `D_MR`, `P95`, calibration, or `WARN` interpretation | [metrics-and-evidence.md](./references/metrics-and-evidence.md) |
-| initialization, hooks, personal/team persistence, evidence, DocumentStore, or records | [governance-lifecycle.md](./references/governance-lifecycle.md), then [record-guide.md](./record-guide.md) when needed |
+| initialization, hooks, personal/team persistence, evidence, DocumentStore, records, or Skill upgrades/refresh | [governance-lifecycle.md](./references/governance-lifecycle.md), then [record-guide.md](./record-guide.md) when needed |
 | authoring, changing, or calibrating a project script or authority; inspecting fact capability/consumers, AST facts, and script observations | [script-authoring.md](./references/script-authoring.md) |
 | default assets, anti-pattern/security/test findings, or policy promotion | [project-defenses.md](./references/project-defenses.md) |
 | Agent routing, summary contract, user choices, subagents, or stopping conditions | [agent-workflow.md](./references/agent-workflow.md) |
 | multi-repository work, Task/Debt, or `review --evolution` | [collaboration-and-evolution.md](./references/collaboration-and-evolution.md) |
 | language parsers, test providers, compiler/`LSP`/`SCIP` semantics | [language-and-assurance.md](./references/language-and-assurance.md); when an external toolchain is unavailable, run `openarch toolchains`, then read the matching `references/toolchains/{python,go,rust,java}.md` file for the project language |
 | methodological source quotations | [methodological-sources.md](./references/methodological-sources.md) |
+| feature–theory overview; adding a command or methodology | [theory-and-feature-map.md](./references/theory-and-feature-map.md) |
 
 ## Completion
 

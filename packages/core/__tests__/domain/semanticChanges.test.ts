@@ -65,6 +65,22 @@ describe("analyzeSemanticChanges", () => {
     });
   });
 
+  it("classifies removed declarations when after is undefined (deleted file)", () => {
+    const before = ast({
+      semanticSurface: {
+        unsupportedTopLevel: [],
+        declarations: [
+          { id: "Legacy", kind: "class", isPublic: true, signature: "class Legacy" },
+          { id: "Legacy.run", kind: "field", isPublic: true, signature: "run()" },
+        ],
+      },
+    });
+    expect(analyzeSemanticChanges(before, undefined)).toEqual({
+      availability: "available",
+      changes: [{ anchor: "Legacy", kind: "class_add_remove" }],
+    });
+  });
+
   it("does not double-count a class body when a member already explains the delta", () => {
     const before = ast({
       semanticSurface: { declarations: [
@@ -169,13 +185,12 @@ describe("analyzeSemanticChanges", () => {
     });
   });
 
-  it("keeps changed unclassified top-level syntax unavailable", () => {
+  it("classifies changed unclassified top-level syntax as function_body when no other units exist", () => {
     const before = ast({ semanticSurface: { declarations: [], unsupportedTopLevel: ["macro:legacy!"] } });
     const after = ast({ semanticSurface: { declarations: [], unsupportedTopLevel: ["macro:next!"] } });
     expect(analyzeSemanticChanges(before, after)).toEqual({
-      availability: "unavailable",
-      changes: [],
-      reason: "changed top-level syntax has no semantic classifier",
+      availability: "available",
+      changes: [{ anchor: "file:top-level", kind: "function_body" }],
     });
   });
 

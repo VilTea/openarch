@@ -2,6 +2,25 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格；版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.4] - 2026-08-20
+
+共享语义关系流水线、定义面信号与发布自动化版。
+
+### Added
+
+- **语义关系 provider 共享流水线**：Python/Go/Java/Rust 全部迁移到 `semanticRelationPipeline.ts`（Template Method + Strategy + Hooks），消除四个语言各写一套 LSP 生命周期/解析/报告的平行实现。
+- **定义面事实/契约分层**：`definitionSurfaceFacts.ts` 复用 minhash/LSH 做定义面相似组召回；`definitionSurfaceContracts.ts` 提供通用契约判定；OpenArch 自身语义关系契约以项目脚本落地，core 不硬编码项目文件名。
+
+### Changed
+
+- CoordinationClient 收敛 `getJSON/postJSON/listCollection`，CLI `coordinationContext` 复用 core descriptor 校验，消除双写。
+- 移除 OpenArch 特定 `parallel-language-facts` / `authority-bypass` 默认模板，改由项目脚本承载；避免通用发布模板过拟合。
+- Go `LeaseCredential` 补齐 JSON tag，与 SessionCredential 对齐。
+
+### Fixed
+
+- 定义面契约初版误把 TypeScript compiler provider 当作 LSP provider；已收窄为 LSP 型 provider 并验证无回归。
+
 ## [0.1.3] - 2026-08-17
 
 多语言语义关系与机器契约版。

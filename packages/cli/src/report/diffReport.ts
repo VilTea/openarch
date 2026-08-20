@@ -178,6 +178,14 @@ const renderSymbolScopeAdmissions = (locale: Locale, report: DiffReport): readon
 export interface DiffReportView {
   /** Detail is opt-in so routine check output retains one decision-oriented shape. */
   readonly detail?: boolean;
+  /**
+   * Output density for Agent-facing reports:
+   * - `summary`: smallest decision-oriented view (Verdict + deltas + evidence state);
+   * - `detail`: current default evidence view;
+   * - `full`: detail + MR/symbol admission drill-down;
+   * - `human`: same as `full` (human explanations come from the Skill, not the CLI).
+   */
+  readonly mode?: "summary" | "detail" | "full" | "human";
 }
 
 const renderImpactScale = (locale: Locale, report: DiffReport): readonly string[] => {
@@ -213,14 +221,30 @@ const renderCore = (report: DiffReport, locale: Locale): readonly string[] => [
   message(locale, "diff.evidence", { state: report.summary.evidenceState === "pending" ? message(locale, "diff.pendingEvidence") : message(locale, "diff.history"), id: report.summary.historyEntryId }),
 ];
 
+/** Smallest Agent-facing view: keep the decision and the files, drop drill-down evidence. */
+const renderDiffSummary = (report: DiffReport, locale: Locale): readonly string[] => [
+  message(locale, "diff.heading", { impact: report.summary.iPush.toFixed(1), diagnosis: renderSummary(locale, report), files: report.summary.deltas.length }),
+  ...report.summary.deltas
+    .filter((delta) => delta.deltaI !== 0)
+    .map((delta) => message(locale, "diff.delta", { file: delta.file, impact: delta.deltaI.toFixed(1), alpha: delta.alphaStruct.toFixed(3) })),
+  message(locale, "diff.evidence", { state: report.summary.evidenceState === "pending" ? message(locale, "diff.pendingEvidence") : message(locale, "diff.history"), id: report.summary.historyEntryId }),
+];
+
 /**
  * Summary is the routine Agent-facing view. Detail is evidence drill-down,
- * never a second metric or policy path.
+ * never a second metric or policy path. `mode` lets the caller choose density:
+ * summary keeps the decision + deltas; full adds MR and symbol drill-down.
  */
-export const renderDiffReport = (report: DiffReport, locale: Locale = "zh", view: DiffReportView = { detail: true }): readonly string[] => [
-  ...renderCore(report, locale),
-  ...(view.detail ? [
-    ...report.evidence.mrDetail.map((detail) => renderMRDetail(locale, detail)),
-    ...renderSymbolScopeAdmissions(locale, report),
-  ] : []),
-];
+export const renderDiffReport = (report: DiffReport, locale: Locale = "zh", view: DiffReportView = { detail: true }): readonly string[] => {
+  const mode = view.mode ?? "detail";
+  if (mode === "summary") return renderDiffSummary(report, locale);
+  const core = renderCore(report, locale);
+  if (mode === "full" || view.detail) {
+    return [
+      ...core,
+      ...report.evidence.mrDetail.map((detail) => renderMRDetail(locale, detail)),
+      ...renderSymbolScopeAdmissions(locale, report),
+    ];
+  }
+  return core;
+};

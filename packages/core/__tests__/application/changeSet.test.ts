@@ -140,15 +140,19 @@ describe("collectGitChangeSet", () => {
     });
   });
 
-  it("uses a non-production evidence fallback without claiming production semantics", async () => {
+  it("classifies non-production top-level test changes without claiming public contracts", async () => {
     const report = await Effect.runPromise(analyzeChangeSetSemantics(".", {
       availability: "available",
       files: [{ path: "src/api.test.ts", kind: "modified", beforeText: "describe('api', () => {});", afterText: "describe('api', () => { it('works', () => {}); });" }],
     }).pipe(Effect.provide(TreeSitterParserLive)));
-    expect(report).toEqual({
+    expect(report).toEqual(expect.objectContaining({
       availability: "available",
-      profiles: [{ file: "src/api.test.ts", changes: [{ anchor: "non-production:file", kind: "function_body" }], beforeState: "unavailable" }],
-    });
+      profiles: [expect.objectContaining({
+        file: "src/api.test.ts",
+        changes: [{ anchor: "file:top-level", kind: "function_body" }],
+        beforeState: "git",
+      })],
+    }));
   });
 
   it("groups historical source changes by real Git commit instead of a caller-selected diff batch", () => {

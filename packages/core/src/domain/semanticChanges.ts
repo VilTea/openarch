@@ -60,6 +60,8 @@ const importSources = (ast: FileAst): readonly string[] => [...new Set(ast.impor
 interface DeclarationMaps {
   readonly before: ReadonlyMap<string, SemanticDeclaration>;
   readonly after: ReadonlyMap<string, SemanticDeclaration>;
+  /** True when the parser reports changed top-level syntax that has no declaration classifier. */
+  readonly unsupportedTopLevelChanged: boolean;
 }
 
 const byUniqueId = (declarations: Iterable<SemanticDeclaration>): ReadonlyMap<string, SemanticDeclaration | undefined> => {
@@ -92,13 +94,11 @@ const mapsFor = (before: FileAst | undefined, after: FileAst | undefined): Decla
   const beforeDeclarations = declarationMap(normalizeReexportIdentity(rawBefore, byUniqueId(rawAfter)));
   const afterDeclarations = declarationMap(normalizeReexportIdentity(rawAfter, byUniqueId(rawBefore)));
   if (!beforeDeclarations || !afterDeclarations) return "declaration identities are ambiguous";
-  // Only a real before/after pair can prove that unclassified top-level syntax
-  // changed. Added or deleted revisions have no counterpart surface, so their
-  // supported declarations stay classifiable instead of failing the whole file.
-  if (beforeSurface && afterSurface && !same(beforeSurface.unsupportedTopLevel, afterSurface.unsupportedTopLevel)) {
-    return "changed top-level syntax has no semantic classifier";
-  }
-  return { before: beforeDeclarations, after: afterDeclarations };
+  return {
+    before: beforeDeclarations,
+    after: afterDeclarations,
+    unsupportedTopLevelChanged: !!(beforeSurface && afterSurface && !same(beforeSurface.unsupportedTopLevel, afterSurface.unsupportedTopLevel)),
+  };
 };
 
 const addedOrRemovedChanges = (
@@ -134,8 +134,10 @@ const importChanges = (before: FileAst | undefined, after: FileAst | undefined):
 };
 
 /**
- * Pure, conservative declaration-level change classifier. It never infers a
- * low-impact kind when a parser reports an unclassified top-level surface.
+ * Pure, conservative declaration-level change classifier. It only falls back
+ * to `function_body` for changed top-level syntax when there are no other
+ * declaration/import units to classify; it never invents public contract
+ * changes from unclassified syntax.
  */
 export const analyzeSemanticChanges = (before: FileAst | undefined, after: FileAst | undefined): SemanticChangeAnalysis => {
   const maps = mapsFor(before, after);
@@ -146,5 +148,9 @@ export const analyzeSemanticChanges = (before: FileAst | undefined, after: FileA
     ...changedDeclarationUnits(maps.before, maps.after),
     ...importChanges(before, after),
   ];
-  return { availability: "available", changes: changes.length > 0 ? changes : [{ anchor: "file", kind: "comment_whitespace" }] };
+  if (changes.length > 0) return { availability: "available", changes };
+  if (maps.unsupportedTopLevelChanged) {
+    return { availability: "available", changes: [{ anchor: "file:top-level", kind: "function_body" }] };
+  }
+  return { availability: "available", changes: [{ anchor: "file", kind: "comment_whitespace" }] };
 };

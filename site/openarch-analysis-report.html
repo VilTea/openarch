@@ -306,12 +306,12 @@
     <span class="eyebrow">源码架构与结构分析 · Source &amp; Structure</span>
     <h1 class="title">解剖一条<span class="accent">防线</span>：源码与功能</h1>
     <p class="lede">
-      把 OpenArch 拆开看：<strong style="color:var(--ink-1)">源码部分</strong>解剖 39,525 行产品代码的分层骨架与结构信号，
+      把 OpenArch 拆开看：<strong style="color:var(--ink-1)">源码部分</strong>解剖 42,396 行产品代码的分层骨架与结构信号，
       <strong style="color:var(--ink-1)">功能部分</strong>清点命令面、机器契约、脚本引擎与治理闭环如何互相咬合。
       每个数字都来自本仓库 <code style="color:var(--series-1)">openarch</code> 自审与 Git 统计——不是估算，可复现。
     </p>
     <div class="hero-meta">
-      <span><b>对象</b> · openarch@0.1.2 · HEAD 5de9f725（2026-08-16 快照）</span>
+      <span><b>对象</b> · openarch@0.1.4 · HEAD 62211855（2026-08-21 快照）</span>
       <span><b>方法</b> · openarch context / review + git ls-files 逐层统计</span>
       <span><b>结构</b> · 源码（分层 · 信号）＋ 功能（全景 · 闭环 · 指标 · 理论）</span>
     </div>
@@ -326,9 +326,9 @@
     <div class="tldr">
       <p>
         <span class="pill">双轨解剖</span>
-        源码侧是一条以 <strong style="color:var(--ink-1)">3,378 行纯函数 domain 为圆心</strong>的六边形防线——
-        9 个可替换端口向外展开成 application（6,920 行）与 adapter（5,594 行），ESLint 锁死"adapter 不依赖 application"的边界；
-        功能侧由 <strong style="color:var(--ink-1)">15 个命令、4 份机器契约、3 个脚本引擎</strong>咬合成一条
+        源码侧是一条以 <strong style="color:var(--ink-1)">3,384 行纯函数 domain 为圆心</strong>的六边形防线——
+        9 个可替换端口向外展开成 application（7,242 行）与 adapter（7,602 行），ESLint 锁死"adapter 不依赖 application"的边界；
+        功能侧由 <strong style="color:var(--ink-1)">15 个命令、5 份机器契约、3 个脚本引擎</strong>咬合成一条
         "调查 → 防线 → 回扫 → 修复/校准 → 验证 → 沉淀"的治理闭环。
         两轨在指标罗盘上会合：状态是基线，变化是信号。全部数值取自 HEAD 快照，重跑命令即得现势结论。
       </p>
@@ -365,7 +365,7 @@
     </div>
     <div class="chart-card">
       <div class="chart-legend">
-        <span class="key"><span class="dot" style="background:var(--series-3)"></span>domain · 纯函数核心 3,378 行</span>
+        <span class="key"><span class="dot" style="background:var(--series-3)"></span>domain · 纯函数核心 3,384 行</span>
         <span class="key"><span class="dot" style="background:var(--series-1)"></span>port ×9 / application / adapter</span>
         <span class="key"><span class="dot" style="background:var(--series-2)"></span>外部消费者（cli · plugin · Go 服务）</span>
         <span style="margin-left:auto">悬停查看依据 →</span>
@@ -389,7 +389,7 @@
       <p class="sec-sub">
         两类 report-only 信号，全部来自 <code style="color:var(--series-1)">openarch review</code> 的真实输出：
         结构候选解释指标策略（不自动形成 finding），定义面信号圈出"声明密集 + 规模大"的契约候选。
-        架构门禁 PASS（13 条规则未触发）——信号是调查线索，不是判罪。
+        架构门禁 PASS、反模式 0 finding（WARN 与 async finding 已先后清除）——信号是调查线索，不是判罪。
       </p>
     </div>
     <div class="grid-2">
@@ -397,7 +397,7 @@
         <div class="chart-legend">
           <span class="key"><span class="dot" style="background:var(--series-1)"></span>局部负担（0–1，P95 归一化）</span>
         </div>
-        <canvas id="burdenCanvas" role="img" aria-label="Top-3 局部负担文件条形图：docs.ts 0.635、discover.ts 0.635、extensions.ts 0.627"></canvas>
+        <canvas id="burdenCanvas" role="img" aria-label="Top-3 局部负担文件条形图：diff.ts 0.640、discover.ts 0.631、docs.ts 0.626"></canvas>
       </div>
       <div class="chart-card">
         <div class="chart-legend">
@@ -406,24 +406,25 @@
           <span class="key"><span class="dot" style="background:var(--series-3)"></span>plugin</span>
           <span style="margin-left:auto">点径 ∝ loc · 悬停查看 →</span>
         </div>
-        <canvas id="scatterCanvas" role="img" aria-label="定义面信号散点图：九个契约候选的声明数与行数分布"></canvas>
+        <canvas id="scatterCanvas" role="img" aria-label="定义面信号散点图：七个契约候选的声明数与行数分布"></canvas>
         <div id="scatterTip"></div>
       </div>
     </div>
 
     <div class="tension" style="margin-top:24px">
-      <h3>结构债 · 显式标注，而非强制消除 <span class="sev">低</span></h3>
+      <h3>结构债 · 全绿之后，技术债仍在表上 <span class="sev">低</span></h3>
       <div class="diverge">
-        <div class="pole claim"><small>哲学主张</small>腐化会回流，防线按主要矛盾渐进建立，不追求一次全绿</div>
+        <div class="pole claim"><small>哲学主张</small>PASS 只是已声明策略未触发；不追求一次全绿，防线跟着主要矛盾走</div>
         <div class="mid">↔</div>
-        <div class="pole reality"><small>审查事实</small>Top-3 高负担文件持续上榜（历史负载 258.7 / 164.9 / 77.5），门禁仍 PASS</div>
+        <div class="pole reality"><small>审查事实</small>门禁 PASS · 反模式 0 finding（WARN 与 async finding 已先后清除），但 Top-3 结构候选持续上榜（历史负载 579.0 / 266.5 / 73.9）</div>
       </div>
       <p class="body">
-        这三个文件是命令与编排层的成熟大文件（<code style="color:var(--series-1)">docs.ts</code> · <code style="color:var(--series-1)">discover.ts</code> · <code style="color:var(--series-1)">extensions.ts</code>）。
-        review 如实列出而不掩饰；项目把治理精力投给主要矛盾（契约面、事实注册表），把成熟大文件标注为技术债。
-        这正是"战壕"哲学的落地：防线跟着主要矛盾走，而不是四处灭火。
+        0.1.4 在本仓库上演了完整的一轮闭环：CRL WARN 2 由重构清除（<code style="color:var(--series-1)">c1cee7a6</code>），
+        重构引入的 3 个 async-without-await 连同 4 个存量又被下一提交清零（<code style="color:var(--series-1)">62211855</code>）——
+        每次修复都被自己的规则当场验收。剩下的 diff / discover / docs 是成熟编排层大文件，作为显式技术债标注，
+        治理精力继续投向主要矛盾，而不是四处灭火。
       </p>
-      <div class="verdict-line"><b>证据</b> · <code style="color:var(--series-1)">openarch review</code> 结构候选 Top-3 · <code style="color:var(--series-1)">.openarch/config.yml</code> 13 条已声明规则（typescript-js 与 go-coordination 双总体，校准=sealed）</div>
+      <div class="verdict-line"><b>证据</b> · <code style="color:var(--series-1)">openarch review</code>（基线 2026-08-21 重扫，18 规则 0 finding）· c1cee7a6 清除 CRL WARN 2 · 62211855 清除 async-without-await ×7 · <code style="color:var(--series-1)">.openarch/config.yml</code> 13 条已声明规则（双总体，校准=sealed）</div>
     </div>
   </section>
 
@@ -498,9 +499,9 @@
   <footer>
     <div class="note">
       <b>方法与复现</b><br/>
-      本页全部数值为 <b>openarch@0.1.2 · HEAD 5de9f725（2026-08-16）</b>快照：
-      门禁/信号来自 <code>pnpm openarch context</code> 与 <code>pnpm openarch review</code>；
-      行数统计来自 <code>git ls-files</code>（口径：tracked 的 .ts/.tsx/.go/.js/.mjs，core 23,254 · cli 5,060 · plugin 3,925 · Go 服务 7,286）。
+      本页全部数值为 <b>openarch@0.1.4 · HEAD 62211855（2026-08-21）</b>快照：
+      门禁/信号来自 <code>pnpm openarch context</code> 与 <code>pnpm openarch review</code>（基线 2026-08-21 重扫）；
+      行数统计来自 <code>git ls-files</code>（口径：tracked 的 .ts/.tsx/.go/.js/.mjs，core 25,590 · cli 5,123 · plugin 4,397 · Go 服务 7,286）。
       结构信号随演进变化——在任意 revision 重跑同一组命令，即可得到该时点的现势结论：
       <code>git checkout &lt;rev&gt; && pnpm openarch review</code>。
     </div>
@@ -510,36 +511,36 @@
 </div>
 
 <script>
-/* ════════════════════════ DATA (HEAD 5de9f725 snapshot) ════════════════════════ */
+/* ════════════════════════ DATA (HEAD 62211855 snapshot) ════════════════════════ */
 const KPI = [
-  { v: 39525, u: '', l: '产品源码行（TS · Go · JS）', p: 100 },
-  { v: 369,   u: '', l: '门禁评估生产文件 · 13 规则 PASS', p: 72 },
-  { v: 198,   u: '', l: '测试文件 · provider 全处理（AVAILABLE）', p: 100 },
-  { v: 18329, u: '', l: 'TS 测试行（177 个 .test.ts）', p: 46 },
-  { v: 0,     u: '', l: '反模式 finding（17 规则执行）', p: 100 },
-  { v: 3378,  u: '', l: 'domain 纯函数核心（行）', p: 15 },
+  { v: 42396, u: '', l: '产品源码行（TS · Go · JS）', p: 100 },
+  { v: 383,   u: '', l: '门禁评估生产文件 · 13 规则 PASS', p: 70 },
+  { v: 204,   u: '', l: '测试文件 · provider 全处理（AVAILABLE）', p: 100 },
+  { v: 19612, u: '', l: 'TS 测试行（183 个 .test.ts）', p: 46 },
+  { v: 0,     u: '', l: '反模式 finding（18 规则执行）', p: 100 },
+  { v: 3384,  u: '', l: 'domain 纯函数核心（行）', p: 13 },
 ];
 
 const LAYERS = [
-  { key: 'domain', name: 'domain', lines: 3378,
+  { key: 'domain', name: 'domain', lines: 3384,
     role: '度量、依赖图、公式与规则语义——纯函数，无 IO、无进程、无时间',
     bound: '被所有层依赖，不依赖任何层；变更即高 I_push（层权重最高）' },
   { key: 'port', name: 'port ×9', lines: 357,
     role: '可替换合同：Storage · Parser · Rule · Lock · SymbolUse · SemanticRelation · SemanticToolchain · ScanProgress · SymbolCalibration',
     bound: '实现可整体替换；application 只消费合同，不触达实现' },
-  { key: 'application', name: 'application', lines: 6920,
+  { key: 'application', name: 'application', lines: 7242,
     role: 'scan / check / review / gate / docs 用例编排；治理写锁串行化共享状态',
     bound: '读 durable 基线只经 StorageService 端口（no-direct-baseline-storage 项目防线）' },
-  { key: 'adapter', name: 'adapter', lines: 5594,
-    role: 'tree-sitter 五语言策略 · LSP session · JSON 存储 · CEL 求值器',
+  { key: 'adapter', name: 'adapter', lines: 7602,
+    role: 'tree-sitter 五语言策略 · LSP session 与共享语义关系流水线 · JSON 存储 · CEL 求值器',
     bound: 'ESLint 强制：adapter 不得依赖 application' },
   { key: 'engines', name: '引擎子系统（core 根级）', lines: 7005,
     role: 'script-runtime · staged-analysis · test-governance · symbol-use · implicit-deps · anti-patterns · document-store',
     bound: '共享 ProjectFacts v2 快照；项目脚本只经公开扩展点消费事实' },
-  { key: 'cli', name: 'cli', lines: 5060,
-    role: '15 命令路由 · 双语 i18n · 报告渲染',
+  { key: 'cli', name: 'cli', lines: 5123,
+    role: '15 命令路由 · 双语 i18n · 报告渲染（含 --output-mode 层级）',
     bound: 'bundledDependencies 只携带 core 一个内部依赖' },
-  { key: 'plugin', name: 'openarch-plugin', lines: 3925,
+  { key: 'plugin', name: 'openarch-plugin', lines: 4397,
     role: 'Skill 资产镜像 · DSH 插件 · 用户级 installer',
     bound: '8 棵镜像树由 pluginSkillSync 合同测试锁定，不手工分叉' },
   { key: 'go', name: 'coordination（Go）', lines: 7286,
@@ -548,29 +549,27 @@ const LAYERS = [
 ];
 
 const BURDEN = [
-  { f: 'cli/commands/docs.ts',        v: 0.635, exp: 0.101, shape: 0.357, hist: 77.5 },
-  { f: 'core/application/discover.ts', v: 0.635, exp: 0.147, shape: 0.732, hist: 258.7 },
-  { f: 'cli/commands/extensions.ts',  v: 0.627, exp: 0.160, shape: 0.607, hist: 164.9 },
+  { f: 'cli/commands/diff.ts',         v: 0.640, exp: 0.202, shape: 0.435, hist: 579.0 },
+  { f: 'core/application/discover.ts', v: 0.631, exp: 0.189, shape: 0.732, hist: 266.5 },
+  { f: 'cli/commands/docs.ts',         v: 0.626, exp: 0.162, shape: 0.357, hist: 73.9 },
 ];
 
 const DEFFACE = [
-  { f: 'script-runtime/projectFactsContract.ts', pkg: 'core',   decl: 134, loc: 247 },
-  { f: 'adapter/symbol-use/LspSymbolUse.ts',     pkg: 'core',   decl: 124, loc: 410 },
-  { f: 'coordination/CoordinationClient.ts',     pkg: 'core',   decl: 107, loc: 405 },
-  { f: 'cli/report/testReport.ts',               pkg: 'cli',    decl: 99,  loc: 304 },
-  { f: 'dsh/client/openarch-dashboard.mjs',      pkg: 'plugin', decl: 68,  loc: 768 },
-  { f: 'application/discover.ts',                pkg: 'core',   decl: 65,  loc: 282 },
-  { f: 'application/diff.ts',                    pkg: 'core',   decl: 64,  loc: 245 },
-  { f: 'domain/evolutionHistory.ts',             pkg: 'core',   decl: 64,  loc: 249 },
-  { f: 'symbol-use/typescript.ts',               pkg: 'core',   decl: 64,  loc: 315 },
+  { f: 'adapter/symbol-use/LspSymbolUse.ts',                pkg: 'core',   decl: 124, loc: 410 },
+  { f: 'adapter/semantic-relations/RustSemanticRelationProvider.ts', pkg: 'core', decl: 114, loc: 601 },
+  { f: 'coordination/CoordinationClient.ts',                pkg: 'core',   decl: 107, loc: 349 },
+  { f: 'cli/report/testReport.ts',                          pkg: 'cli',    decl: 99,  loc: 304 },
+  { f: 'adapter/semantic-relations/JavaSemanticRelationProvider.ts', pkg: 'core', decl: 84,  loc: 360 },
+  { f: 'dsh/client/openarch-dashboard.mjs',                 pkg: 'plugin', decl: 81,  loc: 866 },
+  { f: 'adapter/semantic-relations/GoSemanticRelationProvider.ts',   pkg: 'core', decl: 75,  loc: 316 },
 ];
 
 const CAPS = [
   { n: '15', t: '命令面', d: '11 公开 + 4 高级：init · context · contract · scan · review · check · rules · docs · toolchains · test · update ／ coordination · lsp · calibration · anti-patterns。命令注册表是唯一 authority。' },
-  { n: '4 份', t: '机器契约', d: 'context-json · test-governance-json · provider-list · rules-facts。openarch contract 输出目录；破坏性变更必须提升版本，插件对未知版本 fail-closed。' },
+  { n: '5 份', t: '机器契约', d: 'context-json · test-governance-json · provider-list · rules-facts · docs-check。openarch contract 输出目录；破坏性变更必须提升版本，插件对未知版本 fail-closed。' },
   { n: '6 + 5', t: '测试治理', d: 'provider：Vitest · node:test · Go · Rust · JUnit · pytest；runner 执行真实命令给证据。198 个测试文件全部被 provider 处理（AVAILABLE）。' },
-  { n: '3 · 30', t: '脚本引擎', d: 'anti-patterns / implicit-deps / test-governance 三引擎共享 ProjectFacts 快照；清单 30 条目；7 个事实域自描述注册表（rules facts 可检索消费者）。' },
-  { n: '5 语言', t: '符号级语义', d: 'TS 编译器 provider（精确）· pyright · gopls · rust-analyzer · jdtls。complete 是语言级校准边界，越界保持 PARTIAL 并保留已收集事实。' },
+  { n: '3 · 28', t: '脚本引擎', d: 'anti-patterns / implicit-deps / test-governance 三引擎共享 ProjectFacts 快照；清单 28 条目（0.1.4 移除 2 个过拟合默认模板，改由项目脚本承载）；7 个事实域自描述注册表（rules facts 可检索消费者）。' },
+  { n: '5 语言', t: '符号级语义', d: 'TS 编译器 provider（精确）· pyright · gopls · rust-analyzer · jdtls；语义关系族 extends / implements / embeds / instantiates 已跨五语言（0.1.3 起四语言 LSP provider 迁入共享流水线）。complete 是校准边界，越界保持 PARTIAL 并保留已收集事实。' },
   { n: '8 棵', t: 'Skill 体系', d: '86 行宪法 + 8 份 reference + 4 份工具链指南；zh / en 双语独立编写；镜像树由合同测试锁定翻译、结构与残留。' },
   { n: '7,286 行', t: '协调服务（Go）', d: 'task / lease / evidence；证据经 authority key 脱敏导出。默认不启用——地址只来自用户显式配置，绝不从环境推导。' },
   { n: '6 工具', t: 'DSH 插件', d: 'openarch_context / check / review / scan / test / contract。消费契约目录，schema 未知版本直接拒绝——插件与 CLI 的边界同样 fail-closed。' },
@@ -745,9 +744,9 @@ const ARCH_RINGS = [
   { key: 'adapter', r0: 150, r1: 206, color: '--series-1', label: 'adapter' },
 ];
 const ARCH_SATS = [
-  { key: 'cli',     label: 'cli 5,060',        ax: -90 },
+  { key: 'cli',     label: 'cli 5,123',        ax: -90 },
   { key: 'engines', label: '引擎子系统 7,005', ax: 0 },
-  { key: 'plugin',  label: 'plugin 3,925',     ax: 155 },
+  { key: 'plugin',  label: 'plugin 4,397',     ax: 155 },
   { key: 'go',      label: 'Go 服务 7,286',    ax: 205 },
 ];
 let archPulses = [], archRaf = 0, archSatRects = [];
@@ -772,7 +771,7 @@ function drawArch() {
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('domain', cx, cy - 8);
       ctx.fillStyle = ink3; ctx.font = '600 11px system-ui';
-      ctx.fillText('3,378 行 · 纯函数', cx, cy + 10);
+      ctx.fillText('3,384 行 · 纯函数', cx, cy + 10);
     } else {
       const mid = (ring.r0 + ring.r1) / 2;
       ctx.beginPath(); ctx.arc(cx, cy, mid, 0, Math.PI * 2);
@@ -977,7 +976,7 @@ function drawScatter() {
   });
   // note
   ctx.fillStyle = ink3; ctx.font = '10px system-ui'; ctx.textAlign = 'left';
-  ctx.fillText('9 个候选均同时超过本语言 decl P95 与 loc P95', padL, 14);
+  ctx.fillText('7 个候选均同时超过本语言 decl P95 与 loc P95', padL, 14);
 }
 let scatterPop = REDUCED ? 1 : 0;
 const scatterTip = $('#scatterTip');

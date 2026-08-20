@@ -113,9 +113,22 @@
         },
         "parameters": {
           "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/parameter"
-          }
+          "required": ["type", "properties"],
+          "properties": {
+            "type": {
+              "const": "object"
+            },
+            "properties": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/parameter"
+              }
+            },
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
         },
         "timeoutMs": {
           "type": "integer",

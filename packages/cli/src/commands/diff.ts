@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import { LAMBDA_AST, collectSymbolUseReports, collectTypeScriptSymbolVersionPair, diff, prefilterStaticBoundEmpty, readHistoryRetentionPolicy, staticConsumerFilesFor, reconcileBaseline, sealPendingEvidence, symbolUseDemandForProfiles, symbolUseRequestPolicy, type ChangeKind, type SymbolUseDemand, type SymbolUseReport, type SymbolVersionPairReport } from "@openarch/core";
 import { exitCodeFromError } from "../exit-code";
-import { renderDiffReport } from "../report/diffReport";
+import { renderDiffReport, type DiffReportView } from "../report/diffReport";
 import { message, type Locale } from "../i18n";
 import {
   CommandHandler,
@@ -22,7 +22,15 @@ interface DiffRequest {
   readonly paths: readonly string[];
   readonly changeType?: ChangeKind;
   readonly changeOverrides: ChangeOverrides;
+  readonly outputMode: NonNullable<DiffReportView["mode"]>;
 }
+
+const outputModeOf = (args: readonly string[]): NonNullable<DiffReportView["mode"]> => {
+  if (args.includes("--human") || args.includes("-H")) return "human";
+  const index = args.indexOf("--output-mode");
+  const value = index >= 0 ? args[index + 1] : undefined;
+  return value === "summary" || value === "detail" || value === "full" || value === "human" ? value : "detail";
+};
 
 const stagedPaths = (cwd: string): string[] =>
   gitChangePaths(cwd, "staged").filter((path) => isAnalyzableSourceFile(path, cwd, "change-evidence"));
@@ -117,12 +125,12 @@ const stagedDiffRequest = (args: readonly string[], cwd: string): DiffRequest | 
   const rawStaged = gitChangePaths(cwd, "staged");
   if (rawStaged.length === 0) {
     console.log("暂存区没有变更（无新增/修改的已跟踪文件）。");
-    return { paths: [], changeOverrides: new Map() };
+    return { paths: [], changeOverrides: new Map(), outputMode: outputModeOf(args) };
   }
   const paths = rawStaged.filter((path) => isAnalyzableSourceFile(path, cwd, "change-evidence"));
   if (paths.length === 0) {
     console.log(`暂存区有 ${rawStaged.length} 个变更文件，但没有匹配当前项目 languages 配置的可分析文件（变更仅涉及不可分析文件，如文档/配置/资源）。`);
-    return { paths: [], changeOverrides: new Map() };
+    return { paths: [], changeOverrides: new Map(), outputMode: outputModeOf(args) };
   }
   const changeOverrides = parseChangeOverrides(args);
   if (!changeOverrides) return undefined;
@@ -130,7 +138,7 @@ const stagedDiffRequest = (args: readonly string[], cwd: string): DiffRequest | 
     console.error("--change-type 与 --change-override 不能同时使用");
     return undefined;
   }
-  return { paths, changeOverrides, ...(changeType ? { changeType: changeType as ChangeKind } : {}) };
+  return { paths, changeOverrides, outputMode: outputModeOf(args), ...(changeType ? { changeType: changeType as ChangeKind } : {}) };
 };
 
 const parseDiffRequest = (args: readonly string[], cwd: string): DiffRequest | undefined => {
@@ -147,13 +155,14 @@ const parseDiffRequest = (args: readonly string[], cwd: string): DiffRequest | u
   }
   const fileArgs = [...args];
   for (let index = fileArgs.length - 1; index >= 0; index--) {
-    if (fileArgs[index] === "--change-type" || fileArgs[index] === "--change-override") fileArgs.splice(index, 2);
+    if (fileArgs[index] === "--change-type" || fileArgs[index] === "--change-override" || fileArgs[index] === "--output-mode") fileArgs.splice(index, 2);
+    if (fileArgs[index] === "--human" || fileArgs[index] === "-H") fileArgs.splice(index, 1);
   }
   const providedPaths = fileArgs.filter((arg) => !arg.startsWith("--")).flatMap((arg) => arg.split(",")).map((path) => path.trim()).filter(Boolean);
-  if (providedPaths.length === 0) { console.error("用法: openarch check [--change-type <type>|--change-override <path>=<type>] <files>"); return undefined; }
+  if (providedPaths.length === 0) { console.error("用法: openarch check [--change-type <type>|--change-override <path>=<type>|--output-mode <summary|detail|full|human>] <files>"); return undefined; }
   const paths = providedPaths.filter((path) => isAnalyzableSourceFile(path, cwd, "change-evidence"));
   if (paths.length === 0) { console.error(`指定路径中没有匹配当前项目 languages 配置的可分析文件（共 ${providedPaths.length} 个路径，均不可分析或不在 languages 扩展名内）。`); return undefined; }
-  return { paths, changeOverrides, ...(changeType ? { changeType: changeType as ChangeKind } : {}) };
+  return { paths, changeOverrides, outputMode: outputModeOf(args), ...(changeType ? { changeType: changeType as ChangeKind } : {}) };
 };
 
 const executeDiff = async (
@@ -183,7 +192,8 @@ const executeDiff = async (
     implicitDeps,
   }).pipe(Effect.provide(LiveLayer), Effect.either));
   if (result._tag === "Right") {
-    renderDiffReport(result.right, locale, { detail }).forEach((line) => console.log(line));
+    const full = request.outputMode === "full" || request.outputMode === "human";
+    renderDiffReport(result.right, locale, { detail: detail || full, mode: request.outputMode }).forEach((line) => console.log(line));
     return 0;
   }
   printAnalysisError(result.left);

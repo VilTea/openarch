@@ -4,6 +4,8 @@
 
 Read this page before selecting default assets, establishing a project defense, promoting a finding, or interpreting test, security, or anti-pattern coverage.
 
+> This page is a specialized expansion of the `SKILL.md` Minimal Loop for “building project defenses / promoting rules”; rule-promotion steps follow this page, while the overall process remains the Minimal Loop as the single authority. Subagent parallelism conditions and lead-Agent responsibility are authoritative in the `SKILL.md` “Collaboration And Environment” section; this page only adds defense-scenario specifics.
+
 ## Select Assets From Evidence
 
 Default scripts, templates, and providers are selectable references, never implicit policy. Select the smallest set from current `languages`, architecture facts, existing providers, and team intent. `openarch rules facts` only shows compatible template families; a recommendation is not installation, calibration, or gate eligibility.

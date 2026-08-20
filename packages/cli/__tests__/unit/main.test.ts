@@ -48,7 +48,7 @@ describe("runCli help boundary", () => {
     temporaryDirectories.push(cwd);
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    await expect(runCli(["init", "--mode", "shared"], cwd)).resolves.toBe(3);
+    await expect(runCli(["--lang", "zh", "init", "--mode", "shared"], cwd)).resolves.toBe(3);
 
     expect(error).toHaveBeenCalledWith("--mode 只能是 personal 或 team");
     expect(existsSync(join(cwd, ".openarch"))).toBe(false);
@@ -59,7 +59,7 @@ describe("runCli help boundary", () => {
     temporaryDirectories.push(cwd);
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    await expect(runCli(["init", "--agent", "unknown"], cwd)).resolves.toBe(3);
+    await expect(runCli(["--lang", "zh", "init", "--agent", "unknown"], cwd)).resolves.toBe(3);
 
     expect(error).toHaveBeenCalledWith("--agent 只能是 claude、codex、cursor、opencode、reasonix、dsh");
     expect(existsSync(join(cwd, ".openarch"))).toBe(false);

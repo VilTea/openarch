@@ -81,7 +81,7 @@ describe("Node LSP session", () => {
     ]);
   });
 
-  it("waits for diagnostics notifications using canonical Windows file URIs", async () => {
+  it.skipIf(process.platform !== "win32")("waits for diagnostics notifications using canonical Windows file URIs", async () => {
     const process = new FakeLspProcess();
     const session = startLspSession(lspLaunchSpec("rust-analyzer"), "/workspace", () => process);
     const ready = session.waitForDiagnostics?.(["file:///C:/workspace/src/lib.rs"], 100);

@@ -1,6 +1,6 @@
-import { lstatSync, readFileSync, realpathSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { dirname, join, relative, resolve, isAbsolute, sep } from "node:path";
+import { join, relative, resolve, isAbsolute } from "node:path";
 import { load } from "js-yaml";
 import type { Language } from "./domain/ast";
 import { classifyFileKindWithPolicy, isFileKindRule, type FileKindRule } from "./domain/testGovernance";
@@ -10,16 +10,9 @@ import { toPosixPath, projectRoot } from "./infra/paths";
 import { SCAN_EXCLUDED_DIRECTORY_NAMES } from "./infra/scanExclusions";
 import { detectProjectLanguages } from "./languageSupport";
 import { createAnalysisScope, isPathInAnalysisScope } from "./domain/analysisScope";
+import { canonicalPathKey, hasSymlinkAncestor, isWithinProjectRoot } from "./projectFilesScan";
 
 const normalizePath = (path: string): string => toPosixPath(path).toLowerCase();
-
-/** Ordinary project scans cannot widen their source population through ../ or an absolute sibling. */
-const isWithinProjectRoot = (path: string, cwd: string): boolean => {
-  const candidate = isAbsolute(path) ? resolve(path) : resolve(cwd, path);
-  const relativePath = relative(resolve(cwd), candidate);
-  return relativePath.length > 0 && relativePath !== "."
-    && !relativePath.startsWith(`..${sep}`) && relativePath !== ".." && !isAbsolute(relativePath);
-};
 
 const parseConfiguredLanguages = (input: unknown): readonly Language[] | undefined =>
   Array.isArray(input) && input.every((language) => typeof language === "string")
@@ -104,26 +97,6 @@ export const listProjectSourceFiles = (options: ProjectSourceFilesOptions = {}):
   const extensions = resolveProjectExtensions(cwd, languages);
   if (extensions.length === 0) return [];
 
-  const canonicalKey = (path: string): string => {
-    try { return realpathSync.native(path).toLowerCase(); } catch { return path.toLowerCase(); }
-  };
-  const symlinkAncestors = new Map<string, boolean>();
-  const hasSymlinkAncestor = (path: string): boolean => {
-    let directory = dirname(path);
-    while (directory.length > cwd.length) {
-      const cached = symlinkAncestors.get(directory);
-      if (cached !== undefined) return cached;
-      let symlink = false;
-      try { symlink = lstatSync(directory).isSymbolicLink(); } catch { /* deleted mid-scan */ }
-      symlinkAncestors.set(directory, symlink);
-      if (symlink) return true;
-      const parent = dirname(directory);
-      if (parent === directory) break;
-      directory = parent;
-    }
-    return false;
-  };
-
   const seenRealPaths = new Set<string>();
   return [...new Set(
     extensions.flatMap((extension) => globSync(`**/*${extension}`, { cwd }))
@@ -134,8 +107,8 @@ export const listProjectSourceFiles = (options: ProjectSourceFilesOptions = {}):
     //（校准 2026-08-15：serde 探针发现 symlink 使 208 个真实源码被双计为 242）。
     const relativePath = relative(cwd, path).replace(/\\/g, "/").toLowerCase();
     if (relativePath.split("/").some((segment) => SCAN_EXCLUDED_DIRECTORY_NAMES.has(segment))) return false;
-    if (hasSymlinkAncestor(path)) return false;
-    const realKey = canonicalKey(path);
+    if (hasSymlinkAncestor(path, cwd)) return false;
+    const realKey = canonicalPathKey(path);
     if (seenRealPaths.has(realKey)) return false;
     seenRealPaths.add(realKey);
     return isAnalyzableProjectFile(path, { cwd, languages, population, fileKindRules });

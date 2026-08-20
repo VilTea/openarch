@@ -43,10 +43,13 @@ export function buildGateTool(deps, kind, description, argFlags, callTitle) {
   return {
     name: `openarch_${kind}`,
     description,
-    parameters: argFlags.reduce((acc, flag) => {
-      acc[flag.key] = { type: "boolean", description: flag.description };
-      return acc;
-    }, {}),
+    parameters: {
+      type: "object",
+      properties: argFlags.reduce((acc, flag) => {
+        acc[flag.key] = { type: "boolean", description: flag.description };
+        return acc;
+      }, {}),
+    },
     isConcurrencySafe: () => false,
     timeoutMs: 300_000,
     output: {

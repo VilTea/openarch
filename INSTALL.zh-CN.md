@@ -51,12 +51,12 @@ openarch --version
 ## 3. 初始化受治理项目
 
 ```bash
-# 把 claude 换成你的 Agent：claude / codex / cursor / opencode / reasonix
+# 把 claude 换成你的 Agent：claude / codex / cursor / opencode / reasonix / dsh
 openarch init --agent claude
 openarch context
 ```
 
-`--agent` 可选 `claude`、`codex`、`cursor`、`opencode`、`reasonix`。命令只写入所选项目目录，例如 `.claude/skills/openarch/`；它读取 `.openarch/config.yml` 的 `presentation.locale` 并安装对应的 `zh` 或 `en` Skill 树。更新时原子替换整个旧 OpenArch Skill 目录，清除退役文件。缺失或非法配置稳定回退 `en`；`--lang` 只改变本次 CLI 输出，绝不改变已安装的 Skill。
+`--agent` 可选 `claude`、`codex`、`cursor`、`opencode`、`reasonix`、`dsh`。命令只写入所选项目目录，例如 `.claude/skills/openarch/`；它读取 `.openarch/config.yml` 的 `presentation.locale` 并安装对应的 `zh` 或 `en` Skill 树。更新时原子替换整个旧 OpenArch Skill 目录，清除退役文件。缺失或非法配置稳定回退 `en`；`--lang` 只改变本次 CLI 输出，绝不改变已安装的 Skill。
 
 ## 3.1 Agent Skill 安装（Agent 必读）
 
@@ -71,6 +71,7 @@ openarch context
    | Cursor | `openarch init --agent cursor` | `.cursor/skills/openarch/` |
    | OpenCode | `openarch init --agent opencode` | `.opencode/skills/openarch/` |
    | Reasonix | `openarch init --agent reasonix` | `.reasonix/skills/openarch/` |
+   | DSH | `openarch init --agent dsh` | `.dsh/skills/openarch/` |
 
    命令只写入所选项目目录，读取 `presentation.locale` 并安装匹配的 `zh`/`en` Skill 树。OpenArch 升级后重跑以刷新 Skill（退役文件被原子清除）。
 

@@ -320,7 +320,7 @@
     <div class="sec-head">
       <span class="sec-num">02 · 安装（重点）</span>
       <h2>三步让 Agent 装上并用起来</h2>
-      <p class="sec-sub">从拿到 CLI 到 Agent 在项目里跑起来。源码构建与本地 tarball 均正式可用（npm 仓库发行暂缓，已在选项中置灰）；初始化与验证两步通用。</p>
+      <p class="sec-sub">从拿到 CLI 到 Agent 在项目里跑起来。源码构建与本地 tarball 均正式可用；npm 仓库发行仍暂缓（已在选项中置灰）；初始化与验证两步通用。</p>
     </div>
 
     <div class="agent-first" id="agent-first">
@@ -455,7 +455,7 @@
     <div class="kpi-row" style="margin-bottom:24px">
       <div class="stat"><div class="v" data-count="11">11<span class="u"> + 4</span></div><div class="l">公开 + 高级命令</div></div>
       <div class="stat"><div class="v" data-count="5">5<span class="u"> 种</span></div><div class="l">符号级语言</div></div>
-      <div class="stat"><div class="v" data-count="30">30<span class="u"> 条目</span></div><div class="l">内置脚本清单</div></div>
+      <div class="stat"><div class="v" data-count="28">28<span class="u"> 条目</span></div><div class="l">内置脚本清单</div></div>
       <div class="stat"><div class="v" data-count="0">0<span class="u"> LLM</span></div><div class="l">门禁确定性</div></div>
     </div>
     <div class="cmd-grid">
@@ -464,14 +464,14 @@
       <div class="cmd"><div class="cname">contract</div><div class="cdesc">机器契约目录：插件消费的 JSON 契约 id/version/status</div></div>
       <div class="cmd"><div class="cname">scan</div><div class="cdesc">建立/更新状态基线（CRL、结构、TEST_BLOAT）</div></div>
       <div class="cmd"><div class="cname">review</div><div class="cdesc">存量复盘：Top-3 局部负担、结构候选 · --evolution 历史演化（仅报告）</div></div>
-      <div class="cmd"><div class="cname">check</div><div class="cdesc">变更冲击门禁：--worktree / --staged · --semantic · --report --verbose --tests --full --record-config</div></div>
+      <div class="cmd"><div class="cname">check</div><div class="cdesc">变更冲击门禁：--worktree / --staged · --semantic · --tests/--full · --output-mode 报告层级 · --record-config</div></div>
       <div class="cmd"><div class="cname">rules</div><div class="cdesc">项目规则：facts（自描述注册表：--domain/--query 检索 · --unused 零消费者 CI 提示）→ skeleton → 脚本 → scan · discover 隐式依赖</div></div>
       <div class="cmd"><div class="cname">docs</div><div class="cdesc">协作文档库：check（相似候选 · --unfilled · --json）/ record / status / decide 处置</div></div>
       <div class="cmd"><div class="cname">toolchains</div><div class="cdesc">查看/配置外部编译器与语言服务器</div></div>
       <div class="cmd"><div class="cname">test</div><div class="cdesc">测试治理：六框架适配器、provider 覆盖、[--list] [--bloat] [--json]</div></div>
       <div class="cmd"><div class="cname">update</div><div class="cdesc">只读远端发行感知：当前/最新版本 · --json</div></div>
       <div class="cmd adv"><div class="cname">coordination</div><div class="cdesc">可选远程：Task / 租约 / 语义锁（默认 UNAVAILABLE）</div></div>
-      <div class="cmd adv"><div class="cname">lsp</div><div class="cdesc">LSP 预热与 daemon（jdtls 转发等）</div></div>
+      <div class="cmd adv"><div class="cname">lsp</div><div class="cdesc">LSP 预热与常驻 daemon（jdtls / gopls 转发）</div></div>
       <div class="cmd adv"><div class="cname">calibration</div><div class="cdesc">P95 校准 epoch 管理</div></div>
       <div class="cmd adv"><div class="cname">anti-patterns</div><div class="cdesc">反模式引擎直接访问</div></div>
     </div>

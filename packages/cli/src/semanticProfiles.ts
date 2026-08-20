@@ -1,4 +1,6 @@
 import { Effect } from "effect";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { LAMBDA_AST, analyzeChangeSetSemantics, collectGitChangeSet, type ChangeKind, type SemanticBeforeState, type SemanticFileProfile } from "@openarch/core";
 import { LiveLayer, printAnalysisError } from "./runtime";
 import { type Locale, message } from "./i18n";
@@ -106,7 +108,10 @@ const fallbackProfiles = async (cwd: string, paths: readonly string[], overrides
     const normalized = normalizePath(path);
     const beforeState = candidate.beforeStates.get(normalized) ?? "unavailable";
     beforeStates.set(normalized, beforeState);
-    profiles.push({ file: normalized, changes: [{ anchor: "manual:file", kind }], beforeState });
+    const deleted = analysis._tag === "Right"
+      && analysis.right.reason?.includes("deleted or unreadable after source")
+      && !existsSync(resolve(cwd, path));
+    profiles.push({ file: normalized, changes: [{ anchor: "manual:file", kind }], beforeState, ...(deleted ? { deleted: true } : {}) });
     console.log(message(locale, "semantic.explicitFallback", { path, kind }));
   }
   if (missing.length > 0) {

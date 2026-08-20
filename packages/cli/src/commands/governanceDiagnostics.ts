@@ -10,7 +10,7 @@ export const governanceDiagnostics = async (locale: Locale): Promise<
 > => {
   try {
     const result = await Effect.runPromise(evaluateGovernance().pipe(Effect.provide(LiveLayer)));
-    return { lines: renderGovernanceDiagnostics(result, locale) };
+    return { lines: renderGovernanceDiagnostics(result, locale, process.cwd()) };
   } catch (error) {
     return { unavailable: error instanceof Error ? error.message : String(error) };
   }

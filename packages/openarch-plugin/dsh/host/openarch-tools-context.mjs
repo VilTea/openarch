@@ -13,7 +13,7 @@ export function buildContextTool(deps) {
   return {
     name: "openarch_context",
     description: "读取 OpenArch 项目治理事实（配置、baseline 状态、变更计数、就绪状态）。只读、秒级；输出为稳定 JSON 契约的摘要。",
-    parameters: {},
+    parameters: { type: "object", properties: {} },
     isConcurrencySafe: () => true,
     timeoutMs: 60_000,
     output: {

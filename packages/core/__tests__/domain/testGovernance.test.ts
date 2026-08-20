@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { classifyFileKind, classifyFileKindWithPolicy, evaluateTestPolicy, type TestFinding } from "../../src/domain/testGovernance";
 import { assessTestGovernanceCoverage } from "../../src/domain/testGovernanceCoverage";
 import { assessTestProviderCoverage } from "../../src/domain/testProviderCoverage";
@@ -20,10 +22,11 @@ describe("classifyFileKind", () => {
   });
 
   it("interprets project rules against project-relative paths even when runtime passes absolute paths", () => {
+    const root = resolve(tmpdir(), "openarch-demo");
     expect(classifyFileKindWithPolicy(
-      "E:/workspace/demo/fixtures/sample/input.ts",
+      join(root, "fixtures", "sample", "input.ts"),
       [{ pattern: "fixtures/**", kind: "auxiliary" }],
-      { projectRoot: "E:/workspace/demo" },
+      { projectRoot: root },
     )).toBe("auxiliary");
   });
 });

@@ -188,6 +188,9 @@ const catalog = {
     "governance.noStructuralData": "- 无可用局部负担或历史趋势数据。",
     "governance.definitionHeading": "- 定义面信号（声明密集 + 规模大，report-only）：超本语言 decl P95 且超 loc P95 的契约候选。",
     "governance.definitionEntry": "  → {path}: decl={decl} / loc={loc}",
+    "governance.definitionSurfaceHeading": "### 定义面相似候选（report-only）",
+    "governance.definitionSurfaceGroup": "- 相似组 {id}: {files}（重复块 {lines} 行，最高相似 {similarity}）",
+    "governance.definitionSurfaceBlock": "  → {file}:{line}: {text}",
     "governance.structuralEntry": "- {path}: 局部={local} 暴露={exposure} 不连通形态={shape} 历史={crl}",
     "governance.findingPolicy": "### Finding 策略",
     "governance.antiPatterns": "#### 反模式（默认仅报告）",
@@ -206,6 +209,7 @@ const catalog = {
     "governance.actionConfigurePolicy": "不要停在 UNCONFIGURED/PASS：先用 review 的 P95 与 Top-3 发起一次阈值校准选择，再以项目证据配置最小 rules_warn/rules_block；不要复制其他项目阈值。",
     "governance.actionAntiPatterns": "逐类复核反模式 finding，保存真实正例；修复或记录合理边界后，才讨论项目级质量裁决。",
     "governance.actionTestCoverage": "确认实际测试 runner；仅启用已支持 provider，未知框架应保持 UNAVAILABLE，不能由 PASS 伪装为覆盖完整。",
+    "governance.actionDefinitionSurface": "存在定义面相似候选；运行 --output-mode detail 或 review 查看相似组，并复核反模式中的定义面契约违规。",
     "governance.actionNone": "当前没有需要由该概览升级的信号；继续按项目策略运行 openarch check。",
     "gate.heading": "## check 策略裁决",
     "gate.verdict": "- Verdict: {verdict}",
@@ -410,7 +414,7 @@ const catalog = {
   --report     详细报告口径
 
 心流提示：WARN 触发明细直接在此查看（无需绕道）；提交门禁仍用 openarch check --staged --report。`,
-    "help.check": `openarch check [--worktree|--staged] [--semantic] [--wait-index] [--report] [--tests] [--full] [--verbose] [paths...]
+    "help.check": `openarch check [--worktree|--staged] [--semantic] [--wait-index] [--report] [--tests] [--full] [--verbose] [--output-mode <mode>] [--human] [paths...]
 
 统一变更验证：评估变更影响（I_push / D_MR）、策略门禁与配置审计。
 
@@ -424,6 +428,8 @@ const catalog = {
   --semantic      请求编译器/LSP 符号级证据（仅工作树；输出 C_push 变更面与消费者）
   --wait-index    配合 --semantic：等待 LSP 完整索引（慢但准，验收场景）
   --report        报告口径（含策略明细与 WARN 列表）
+  --output-mode <summary|detail|full|human>  输出密度：summary 默认给 Agent 最小可行动信息；detail 深入消费者/变更面；full 含 MR/符号准入钻取；human 面向人类阅读
+  --human          等价于 --output-mode human
   --tests         追加测试治理评估（可与 --full 组合：check --full --tests）
   --verbose       取证详情（D_MR / 符号证据 / 公式准入）
   --record-config 将本次校准记录写入项目配置
@@ -577,6 +583,9 @@ actions:
     "governance.noStructuralData": "- No local-burden or historical-trend data is available.",
     "governance.definitionHeading": "- Definition-footprint signal (declaration-dense AND large, report-only): above language decl P95 and loc P95.",
     "governance.definitionEntry": "  -> {path}: decl={decl} / loc={loc}",
+    "governance.definitionSurfaceHeading": "### Definition-surface similarity candidates (report-only)",
+    "governance.definitionSurfaceGroup": "- Similar group {id}: {files} (repeated blocks {lines} lines, max similarity {similarity})",
+    "governance.definitionSurfaceBlock": "  -> {file}:{line}: {text}",
     "governance.structuralEntry": "- {path}: local={local} exposure={exposure} disconnected-shape={shape} history={crl}",
     "governance.findingPolicy": "### Finding Policy",
     "governance.antiPatterns": "#### Anti-patterns (Report Only by Default)",
@@ -595,6 +604,7 @@ actions:
     "governance.actionConfigurePolicy": "Do not stop at UNCONFIGURED/PASS: start a threshold-calibration choice from review P95 and Top-3, then configure the smallest rules_warn/rules_block from project evidence; do not copy another project's thresholds.",
     "governance.actionAntiPatterns": "Review anti-pattern findings by category and preserve real positive examples; only discuss a project-level quality verdict after repair or recording a justified boundary.",
     "governance.actionTestCoverage": "Confirm the actual test runner; enable only supported providers. Unknown frameworks must remain UNAVAILABLE rather than letting PASS imply complete coverage.",
+    "governance.actionDefinitionSurface": "Definition-surface similarity candidates exist; run --output-mode detail or review to inspect similarity groups and re-check definition-surface contract violations in anti-patterns.",
     "governance.actionNone": "No signal from this overview needs escalation; continue running openarch check under project policy.",
     "gate.heading": "## Check Policy Verdict",
     "gate.verdict": "- Verdict: {verdict}",
@@ -799,7 +809,7 @@ Options:
   --report     detailed report view
 
 Flow: WARN trigger details are shown right here (no detour); the commit gate remains openarch check --staged --report.`,
-    "help.check": `openarch check [--worktree|--staged] [--semantic] [--wait-index] [--report] [--tests] [--full] [--verbose] [paths...]
+    "help.check": `openarch check [--worktree|--staged] [--semantic] [--wait-index] [--report] [--tests] [--full] [--verbose] [--output-mode <mode>] [--human] [paths...]
 
 Unified change validation: change impact (I_push / D_MR), policy gate, and config audit.
 
@@ -813,6 +823,8 @@ Options:
   --semantic       request compiler/LSP symbol-level evidence (worktree only; emits C_push change-surface and consumers)
   --wait-index     with --semantic: wait for a complete LSP index (slow but accurate; acceptance scenarios)
   --report         report view (policy details and WARN list)
+  --output-mode <summary|detail|full|human>  output density: summary gives Agents minimal actionable info; detail drills into consumers/change surface; full includes MR/symbol admission; human is for humans
+  --human           alias for --output-mode human
   --tests          append test-governance evaluation (compose with --full: check --full --tests)
   --verbose        forensics (D_MR / symbol evidence / formula admission)
   --record-config  write this calibration into project config

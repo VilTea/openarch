@@ -1,6 +1,24 @@
 // packages/core/__tests__/coordination/CoordinationClient.test.ts
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { CoordinationError, acquireLease, fetchDocsRepoDescriptor, listLeases, listSessions, listTasks, postDocsRepoRefresh, postEvidence, submitTask } from "../../src/coordination/CoordinationClient";
+import {
+  CoordinationError,
+  acquireLease,
+  claimTask,
+  closeSession,
+  completeTask,
+  fetchDocsRepoDescriptor,
+  heartbeatSession,
+  listDebts,
+  listLeases,
+  listSessions,
+  listTasks,
+  postDocsRepoRefresh,
+  postEvidence,
+  registerSession,
+  releaseLease,
+  renewLease,
+  submitTask,
+} from "../../src/coordination/CoordinationClient";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -98,6 +116,141 @@ describe("postEvidence / submitTask", () => {
     expect((mockFetch.mock.calls[0] as [string])[0]).toBe("http://127.0.0.1:8787/v1/tasks?repositoryId=repo-a");
   });
 });
+
+describe("task claim / complete endpoint contracts", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("claimTask posts to /v1/tasks/claim and returns the claimed result", async () => {
+    const resultBody = { status: { state: "claimed", claimedBy: "agent-a" }, created: true };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => resultBody });
+    const result = await claimTask("http://127.0.0.1:8787", {
+      repositoryId: "repo-1", serviceId: "svc-1", taskId: "task-1",
+      proposalSha256: "p".repeat(64), claimedBy: "agent-a",
+    });
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8787/v1/tasks/claim");
+    expect(JSON.parse(String(init.body))).toEqual({
+      task: { repositoryId: "repo-1", serviceId: "svc-1", taskId: "task-1" },
+      proposalSha256: "p".repeat(64), claimedBy: "agent-a",
+    });
+    expect(result).toEqual(resultBody);
+  });
+
+  it("completeTask posts to /v1/tasks/complete and omits completedHeadSHA when absent", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ status: { state: "completed", completedBy: "agent-a" }, created: false }) });
+    await completeTask("http://127.0.0.1:8787", {
+      repositoryId: "repo-1", serviceId: "svc-1", taskId: "task-1",
+      proposalSha256: "p".repeat(64), completedBy: "agent-a",
+    });
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).not.toHaveProperty("completedHeadSHA");
+  });
+
+  it("completeTask includes completedHeadSHA when provided", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ status: { state: "completed" }, created: false }) });
+    await completeTask("http://127.0.0.1:8787", {
+      repositoryId: "repo-1", serviceId: "svc-1", taskId: "task-1",
+      proposalSha256: "p".repeat(64), completedBy: "agent-a", completedHeadSHA: "a".repeat(40),
+    });
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toMatchObject({ completedHeadSHA: "a".repeat(40) });
+  });
+});
+
+describe("debt / lease / session endpoint contracts", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("listDebts parses summaries and appends the repositoryId filter", async () => {
+    const debt = {
+      schemaVersion: "1",
+      debt: { repositoryId: "repo-a", serviceId: "svc-a", debtId: "debt-1" },
+      title: "Defer", reason: "No evidence", reconsiderCondition: "More data", status: "deferred",
+    };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ debts: [debt] }) });
+    const debts = await listDebts("http://127.0.0.1:8787", "repo-a");
+    expect(debts).toEqual([debt]);
+    expect((mockFetch.mock.calls[0] as [string])[0]).toBe("http://127.0.0.1:8787/v1/debts?repositoryId=repo-a");
+  });
+
+  it("acquireLease posts the key/owner/ttl and parses the lease", async () => {
+    const lease = {
+      key: { repositoryId: "repo-a", target: "s1" },
+      leaseId: "lease-1", owner: "agent-a", fencingToken: 1, coordinatorEpoch: 7,
+      expiresAt: new Date().toISOString(),
+    };
+    mockFetch.mockResolvedValue({ ok: true, status: 201, json: async () => lease });
+    const result = await acquireLease("http://127.0.0.1:8787", { repositoryId: "repo-a", target: "s1", owner: "agent-a", ttlSeconds: 30 });
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8787/v1/leases/acquire");
+    expect(JSON.parse(String(init.body))).toEqual({ key: { repositoryId: "repo-a", target: "s1" }, owner: "agent-a", ttlSeconds: 30 });
+    expect(result).toEqual(lease);
+  });
+
+  it("renewLease posts the credential and ttl and parses the lease", async () => {
+    const lease = {
+      key: { repositoryId: "repo-a", target: "s1" },
+      leaseId: "lease-1", owner: "agent-a", fencingToken: 2, coordinatorEpoch: 7,
+      expiresAt: new Date().toISOString(),
+    };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => lease });
+    const credential = { leaseId: "lease-1", owner: "agent-a", fencingToken: 2, coordinatorEpoch: 7 };
+    const result = await renewLease("http://127.0.0.1:8787", credential, 60);
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ credential, ttlSeconds: 60 });
+    expect(result).toEqual(lease);
+  });
+
+  it("releaseLease posts the credential to /v1/leases/release", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ released: true }) });
+    const credential = { leaseId: "lease-1", owner: "agent-a", fencingToken: 2, coordinatorEpoch: 7 };
+    await releaseLease("http://127.0.0.1:8787", credential);
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8787/v1/leases/release");
+    expect(JSON.parse(String(init.body))).toEqual({ credential });
+  });
+
+  it("registerSession posts registration and parses the session", async () => {
+    const session = {
+      ref: { repositoryId: "repo-a", sessionId: "sess-1" }, owner: "agent-a",
+      fencingToken: 1, coordinatorEpoch: 7, startedAt: "2026-01-01T00:00:00Z",
+      lastHeartbeat: "2026-01-01T00:00:00Z", expiresAt: "2026-01-01T00:01:00Z",
+    };
+    mockFetch.mockResolvedValue({ ok: true, status: 201, json: async () => session });
+    const result = await registerSession("http://127.0.0.1:8787", { repositoryId: "repo-a", sessionId: "sess-1", owner: "agent-a", ttlSeconds: 60 });
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8787/v1/sessions/register");
+    expect(JSON.parse(String(init.body))).toEqual({ repositoryId: "repo-a", sessionId: "sess-1", owner: "agent-a", ttlSeconds: 60 });
+    expect(result).toEqual(session);
+  });
+
+  it("heartbeatSession posts credential and ttl", async () => {
+    const session = {
+      ref: { repositoryId: "repo-a", sessionId: "sess-1" }, owner: "agent-a",
+      fencingToken: 2, coordinatorEpoch: 7, startedAt: "2026-01-01T00:00:00Z",
+      lastHeartbeat: "2026-01-01T00:00:30Z", expiresAt: "2026-01-01T00:01:30Z",
+    };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => session });
+    const credential = { sessionId: "sess-1", owner: "agent-a", fencingToken: 2, coordinatorEpoch: 7 };
+    await heartbeatSession("http://127.0.0.1:8787", credential, 90);
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ credential, ttlSeconds: 90 });
+  });
+
+  it("closeSession posts the credential to /v1/sessions/close", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ closed: true }) });
+    const credential = { sessionId: "sess-1", owner: "agent-a", fencingToken: 2, coordinatorEpoch: 7 };
+    await closeSession("http://127.0.0.1:8787", credential);
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8787/v1/sessions/close");
+    expect(JSON.parse(String(init.body))).toEqual({ credential });
+  });
+
+  it("listCollection throws invalid_descriptor when the collection field is missing", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ tasks: "not-an-array" }) });
+    await expect(listTasks("http://127.0.0.1:8787")).rejects.toMatchObject({ cause: "invalid_descriptor" });
+  });
+});
+
 
 describe("concurrent coordination requests (L4)", () => {
   beforeEach(() => mockFetch.mockReset());

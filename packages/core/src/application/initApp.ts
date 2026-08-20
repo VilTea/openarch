@@ -31,7 +31,7 @@ const renderPreCommitHook = (includeProjectDocumentCheck: boolean): string => [
   "fi",
   "set +e",
   "echo \"-> openarch check evidence (staged)\"",
-  "\"$OPENARCH_BIN\" check --staged --report",
+  "\"$OPENARCH_BIN\" check --staged --report --output-mode summary",
   "DIFF_EXIT=$?",
   "set -e",
   "if [ \"$DIFF_EXIT\" -ge 2 ]; then echo \"missing or invalid semantic evidence\"; exit \"$DIFF_EXIT\"; fi",

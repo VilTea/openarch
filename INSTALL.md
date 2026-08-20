@@ -68,12 +68,12 @@ anywhere (keeping the executable beside `resources/`) and add it to `PATH`.
 ## 3. Initialize a Governed Project
 
 ```bash
-# replace claude with your agent: claude | codex | cursor | opencode | reasonix
+# replace claude with your agent: claude | codex | cursor | opencode | reasonix | dsh
 openarch init --agent claude
 openarch context
 ```
 
-`--agent` accepts `claude`, `codex`, `cursor`, `opencode`, or `reasonix`. It writes only the
+`--agent` accepts `claude`, `codex`, `cursor`, `opencode`, `reasonix`, or `dsh`. It writes only the
 selected project-local directory (for example `.claude/skills/openarch/`), reads
 `.openarch/config.yml: presentation.locale`, and installs the matching `zh` or `en`
 Skill tree. Updates atomically replace the entire previous OpenArch Skill directory,
@@ -96,6 +96,7 @@ methodology is available in this project:
    | Cursor | `openarch init --agent cursor` | `.cursor/skills/openarch/` |
    | OpenCode | `openarch init --agent opencode` | `.opencode/skills/openarch/` |
    | Reasonix | `openarch init --agent reasonix` | `.reasonix/skills/openarch/` |
+   | DSH | `openarch init --agent dsh` | `.dsh/skills/openarch/` |
 
    The command writes only the selected project-local directory, reads
    `presentation.locale`, and installs the matching `zh` or `en` Skill tree.

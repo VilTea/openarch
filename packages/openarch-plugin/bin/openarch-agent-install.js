@@ -11,13 +11,17 @@ const valueFor = (name) => {
 
 const target = valueFor("--target");
 const requestedLocale = valueFor("--locale");
-const installPreset = process.argv.includes("--preset");
 const supportedTargets = new Set(["codex", "cursor", "opencode", "claude", "dsh"]);
 const systemLocale = Intl.DateTimeFormat().resolvedOptions().locale.toLowerCase().startsWith("zh") ? "zh" : "en";
 const locale = requestedLocale ?? systemLocale;
 
-if (!target || !supportedTargets.has(target) || !["zh", "en"].includes(locale) || process.argv.includes("--scope") || (installPreset && target !== "dsh")) {
-  console.error("Usage: openarch-agent-install --target <codex|cursor|opencode|claude|dsh> [--locale <zh|en>] [--preset]");
+if (process.argv.includes("--preset")) {
+  console.error("DSH preset is not stable and has been removed. Install the DSH bundle instead (add @openarch/plugin to dsh.profile.bundles).");
+  process.exit(2);
+}
+
+if (!target || !supportedTargets.has(target) || !["zh", "en"].includes(locale) || process.argv.includes("--scope")) {
+  console.error("Usage: openarch-agent-install --target <codex|cursor|opencode|claude|dsh> [--locale <zh|en>]");
   process.exit(2);
 }
 
@@ -78,38 +82,3 @@ if (!existsSync(skill)) {
 const destination = resolve(resolve(userRoots[target], "skills"), "openarch");
 replaceDirectory(skill, destination);
 console.log(`Installed OpenArch Skill (${locale}): ${destination}`);
-
-if (installPreset) {
-  const presetSource = resolve(root, "assets", "dsh-preset");
-  const presetDestination = resolve(userRoots.dsh, ".agent-presets", "openarch");
-  if (!existsSync(resolve(presetSource, "agent.cordis.yml")) || !existsSync(resolve(presetSource, "preset.yml"))) {
-    console.error("OpenArch DSH preset 资产缺失，安装包可能不完整。");
-    process.exit(3);
-  }
-  const dshSource = resolve(root, "dsh");
-  const parent = dirname(presetDestination);
-  mkdirSync(parent, { recursive: true });
-  recoverBackup(presetDestination, ".openarch-preset-backup-");
-  const suffix = `${process.pid}-${Date.now()}`;
-  const staging = resolve(parent, `.openarch-preset-staging-${suffix}`);
-  const backup = resolve(parent, `.openarch-preset-backup-${suffix}`);
-  try {
-    cpSync(presetSource, staging, { recursive: true });
-    cpSync(resolve(root, "skills", "openarch-zh"), resolve(staging, "skills", "openarch-zh"), { recursive: true });
-    cpSync(resolve(root, "skills", "openarch-en"), resolve(staging, "skills", "openarch-en"), { recursive: true });
-    // DSH 插件源码（host/client 模块 + 测试 + 文档）随预设一起安装；
-    // agent.cordis.yml 以 ./dsh/host/*.mjs 相对路径引用它们。
-    if (existsSync(dshSource)) {
-      cpSync(dshSource, resolve(staging, "dsh"), { recursive: true });
-    }
-    if (existsSync(presetDestination)) renameSync(presetDestination, backup);
-    renameSync(staging, presetDestination);
-  } catch (error) {
-    if (existsSync(backup) && !existsSync(presetDestination)) renameSync(backup, presetDestination);
-    throw error;
-  } finally {
-    rmSync(staging, { recursive: true, force: true });
-    rmSync(backup, { recursive: true, force: true });
-  }
-  console.log(`Installed OpenArch DSH preset: ${presetDestination}`);
-}

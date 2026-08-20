@@ -21,7 +21,9 @@ npm install --global @openarch/plugin
 openarch-agent-install --target codex --locale en
 ```
 
-`--locale` is optional and defaults from the host locale. Supported targets are `codex`, `cursor`, `opencode`, `claude`, and `dsh` (DeepSeek Harness). For `dsh` the installer writes to `${DSH_HOME:-~/.dsh}/skills/openarch`; adding `--preset` also installs an OpenArch agent preset into `${DSH_HOME:-~/.dsh}/.agent-presets/openarch` with localized `openarch-zh`/`openarch-en` preset skills. The standalone installer deliberately has no project scope; use `openarch init --agent <target>` for each project (`--agent dsh` writes `.dsh/skills/openarch`).
+`--locale` is optional and defaults from the host locale. Supported targets are `codex`, `cursor`, `opencode`, `claude`, and `dsh` (DeepSeek Harness). For `dsh` the installer writes to `${DSH_HOME:-~/.dsh}/skills/openarch`. The standalone installer deliberately has no project scope; use `openarch init --agent <target>` for each project (`--agent dsh` writes `.dsh/skills/openarch`).
+
+**DSH integration uses the bundle / dashboard plugin** (static package): install `@openarch/plugin` as a DSH profile bundle to enable the dashboard and the governance-state data channel. This path requires the packaged client bundle (`lib/client.js`), which is built by `pnpm --dir packages/openarch-plugin build:client` or automatically by `prepack` before `pnpm pack`. The DSH agent preset (`--preset`) has been removed because it was not stable. See [`dsh/README.md`](./dsh/README.md) for details.
 
 For source or offline use, create local tarballs, install the CLI tarball into the governed project, then run the same CLI initialization:
 

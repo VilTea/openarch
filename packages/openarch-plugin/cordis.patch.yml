@@ -4,12 +4,13 @@
 # profile's layer stack).
 #
 # Rows (all host-plane registries; the dashboard row doubles as the client
-# bundle — the web client scanner resolves this package's
-# `exports["./client"]` into the boot graph):
+# bundle — DSH client-modules resolves this package's `exports["./client"]`
+# into the boot graph):
 #
 # - openarch-dashboard  browser UI (composer dock + shell.overlay panel);
-#   on the host plane it resolves its own client module, which is a
-#   harmless no-op (no `slots` service there).
+#   on the host plane it resolves the package root (`dsh/host/
+#   openarch-dashboard-host.mjs`), which is a harmless no-op (no `slots`
+#   service there).
 # - openarch-signals   systemPrompt order-90 governance brief.
 # - openarch-tools     openarch_context/check/review/scan/test/contract
 #   tools + the `GET /api/openarch/governance-state` client data route.

@@ -48,6 +48,7 @@ try {
   cpSync(releaseDir, installedDir, { recursive: true });
   mkdirSync(join(workspace, ".openarch"), { recursive: true });
   if (!probe(installedExecutable, ["--help"], workspace).includes("openarch <command>")) throw new Error("binary did not print command help");
+  if (!probe(installedExecutable, ["check", "--help"], workspace).includes("--output-mode")) throw new Error("binary did not expose --output-mode in check help");
   if (!probe(installedExecutable, ["rules", "skeleton", "classification"], workspace).includes("pathClasses")) throw new Error("binary did not load packaged script assets");
   for (const sample of languageProbes) {
     const path = join(workspace, sample.path);

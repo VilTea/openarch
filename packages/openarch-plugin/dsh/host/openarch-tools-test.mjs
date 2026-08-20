@@ -97,8 +97,11 @@ export function buildTestTool(deps) {
     name: "openarch_test",
     description: "运行 OpenArch 测试治理评估（只读观察）：覆盖状态、provider 处理面、适配器建议与 TEST_BLOAT；list 只列已注册 provider。以已安装 openarch 二进制为准（需支持 test --json，旧版请先升级）。结果只作治理建议，绝不自动启用 provider 或据此新增 BLOCK。",
     parameters: {
-      list: { type: "boolean", description: "只列出已注册测试治理 provider（test --list --json）。" },
-      bloat: { type: "boolean", description: "计算测试膨胀指标 TEST_BLOAT（更慢）。" },
+      type: "object",
+      properties: {
+        list: { type: "boolean", description: "只列出已注册测试治理 provider（test --list --json）。" },
+        bloat: { type: "boolean", description: "计算测试膨胀指标 TEST_BLOAT（更慢）。" },
+      },
     },
     isConcurrencySafe: () => false,
     timeoutMs: 600_000,

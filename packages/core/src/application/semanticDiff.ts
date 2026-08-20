@@ -29,6 +29,8 @@ export interface SemanticFileProfile {
   /** Direct Git-AST structure, available independently from the chosen change kind. */
   readonly beforeMetrics?: SemanticBeforeMetrics;
   readonly beforeState: SemanticBeforeState;
+  /** True when the change is a deletion and there is no after source to parse. */
+  readonly deleted?: boolean;
 }
 
 export type SemanticDiffReport =
@@ -72,9 +74,34 @@ export const analyzeChangeSetSemantics = (cwd: string, changeSet: ChangeSetConte
         file: file.path,
         changes: [{ anchor: "non-production:file", kind: "function_body" }],
         beforeState: file.kind === "added" ? "introduced" : "unavailable",
+        ...(file.kind === "deleted" ? { deleted: true } : {}),
       });
-      if (file.kind === "deleted" || !file.afterText) {
-        return { availability: "unavailable", profiles: [], reason: `${file.path}: deleted or unreadable after source` } satisfies SemanticDiffReport;
+      if (file.kind === "deleted") {
+        const path = resolve(cwd, file.path);
+        const parsedBefore = file.beforeText
+          ? yield* parser.parseText(path, file.beforeText).pipe(Effect.option)
+          : undefined;
+        const before = parsedBefore && parsedBefore._tag === "Some" ? parsedBefore.value : undefined;
+        if (!before) {
+          if (isNonProduction) { profiles.push(fallback()); continue; }
+          return { availability: "unavailable", profiles: [], reason: `${file.path}: cannot parse before source for deleted file` } satisfies SemanticDiffReport;
+        }
+        const result = analyzeSemanticChanges(before, undefined);
+        if (result.availability !== "available") {
+          if (isNonProduction) { profiles.push(fallback()); continue; }
+          return { availability: "unavailable", profiles: [], reason: `${file.path}: ${result.reason}` } satisfies SemanticDiffReport;
+        }
+        profiles.push({
+          file: file.path,
+          changes: result.changes,
+          beforeState: "git",
+          beforeMetrics: beforeMetricsOf(before),
+          deleted: true,
+        });
+        continue;
+      }
+      if (!file.afterText) {
+        return { availability: "unavailable", profiles: [], reason: `${file.path}: unreadable after source` } satisfies SemanticDiffReport;
       }
       const path = resolve(cwd, file.path);
       const parsed = yield* Effect.all({

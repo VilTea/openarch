@@ -1,4 +1,8 @@
 import type { GovernanceEvaluation } from "@openarch/core";
+import {
+  definitionSurfaceCandidatePaths,
+  definitionSurfaceSimilarityGroups,
+} from "@openarch/core";
 import { type Locale, message } from "../i18n";
 import { definitionFootprintLines } from "./definitionFootprint";
 
@@ -29,7 +33,7 @@ const testPolicy = (locale: Locale, report: GovernanceEvaluation["diagnostics"])
   ];
 };
 
-const nextActions = (locale: Locale, evaluation: GovernanceEvaluation): readonly string[] => {
+const nextActions = (locale: Locale, evaluation: GovernanceEvaluation, hasDefinitionSurfaceCandidates: boolean): readonly string[] => {
   const report = evaluation.diagnostics;
   const actions: string[] = [];
   if (report.gate.configuredRules === 0) {
@@ -40,6 +44,9 @@ const nextActions = (locale: Locale, evaluation: GovernanceEvaluation): readonly
   }
   if (evaluation.signals.some((signal) => signal.id === "TEST_GOVERNANCE_COVERAGE" || signal.id === "TEST_GOVERNANCE_COLLECTION")) {
     actions.push(message(locale, "governance.actionTestCoverage"));
+  }
+  if (hasDefinitionSurfaceCandidates) {
+    actions.push(message(locale, "governance.actionDefinitionSurface"));
   }
   return actions.length > 0 ? actions : [message(locale, "governance.actionNone")];
 };
@@ -67,8 +74,23 @@ const exploratoryPolicyCalibration = (locale: Locale, evaluation: GovernanceEval
   ];
 };
 
+const renderDefinitionSurface = (locale: Locale, cwd: string | undefined, metrics: readonly { path: string; language?: string; declarationLoc?: number; loc?: number }[]): readonly string[] => {
+  if (!cwd || metrics.length === 0) return [];
+  const candidatePaths = definitionSurfaceCandidatePaths(metrics);
+  const groups = definitionSurfaceSimilarityGroups(candidatePaths, { projectRoot: cwd });
+  if (groups.length === 0) return [];
+  const lines = [message(locale, "governance.definitionSurfaceHeading")];
+  for (const group of groups) {
+    lines.push(message(locale, "governance.definitionSurfaceGroup", {
+      id: group.id, files: group.files.join(", "), lines: String(group.repeatedBlockLines), similarity: group.maxSimilarity.toFixed(2),
+    }));
+    for (const block of group.sampleBlocks) lines.push(message(locale, "governance.definitionSurfaceBlock", { file: block.file, line: String(block.startLine), text: block.text.split("\n")[0] ?? "" }));
+  }
+  return lines;
+};
+
 /** A compact, report-only governance review. Gate remains a separate policy verdict. */
-export const renderGovernanceDiagnostics = (evaluation: GovernanceEvaluation, locale: Locale = "zh"): readonly string[] => {
+export const renderGovernanceDiagnostics = (evaluation: GovernanceEvaluation, locale: Locale = "zh", cwd?: string): readonly string[] => {
   const report = evaluation.diagnostics;
   const lines = [
     message(locale, "governance.heading"),
@@ -99,7 +121,9 @@ export const renderGovernanceDiagnostics = (evaluation: GovernanceEvaluation, lo
   else lines.push(...report.review.top3.map((entry) =>
     message(locale, "governance.structuralEntry", { path: entry.path, local: entry.localBurden.toFixed(3), exposure: entry.exposure.toFixed(3), shape: entry.moduleShape.toFixed(3), crl: entry.crl.toFixed(1) }),
   ));
+  const definitionSurfaceLines = renderDefinitionSurface(locale, cwd, report.gate.report?.metrics ?? []);
   lines.push(...definitionFootprintLines(locale, report.gate.report?.metrics ?? []));
+  lines.push(...definitionSurfaceLines);
 
   lines.push(message(locale, "governance.findingPolicy"), message(locale, "governance.antiPatterns"), ...groupedHits(locale, report));
   lines.push(message(locale, "governance.testPolicy"), ...testPolicy(locale, report));
@@ -107,6 +131,6 @@ export const renderGovernanceDiagnostics = (evaluation: GovernanceEvaluation, lo
   if (evaluation.signals.length === 0) lines.push(message(locale, "governance.noSignals"));
   else lines.push(...evaluation.signals.map((signal) => `- [${signal.state.toUpperCase()}] ${signal.id}: ${signal.message}`));
   lines.push(message(locale, "governance.next"));
-  lines.push(...nextActions(locale, evaluation).map((action, index) => `${index + 1}. ${action}`));
+  lines.push(...nextActions(locale, evaluation, definitionSurfaceLines.length > 0).map((action, index) => `${index + 1}. ${action}`));
   return lines;
 };

@@ -122,4 +122,27 @@ describe.skipIf(!developmentTreePresent)("published OpenArch skill assets", () =
       for (const term of ["λ_ast", "α_struct", "localBurden", "CALIBRATION_SHIFT"]) expect(metrics).toContain(term);
     }
   });
+
+  it("keeps the terminology and process-authority contract consistent", () => {
+    for (const locale of ["zh", "en"] as const) {
+      const isZh = locale === "zh";
+      const skill = readFileSync(resolve(developmentSkillRoots[locale], "SKILL.md"), "utf8");
+      const workflow = readFileSync(resolve(developmentSkillRoots[locale], "references", "agent-workflow.md"), "utf8");
+      const defenses = readFileSync(resolve(developmentSkillRoots[locale], "references", "project-defenses.md"), "utf8");
+      const map = readFileSync(resolve(developmentSkillRoots[locale], "references", "theory-and-feature-map.md"), "utf8");
+
+      expect(skill).toContain("AVAILABLE");
+      expect(skill).toContain("NOT_CONFIGURED");
+      expect(skill).toContain(isZh ? "唯一权威" : "single authoritative process");
+      expect(workflow).toContain(isZh ? "专项展开" : "specialized expansion");
+      expect(defenses).toContain(isZh ? "专项展开" : "specialized expansion");
+      expect(workflow).not.toMatch(isZh ? /^## 最小闭环$/m : /^## Minimal Loop$/m);
+      expect(defenses).not.toMatch(isZh ? /^## 最小闭环$/m : /^## Minimal Loop$/m);
+
+      // 地图必须是薄导航：不复制指标公式，也不假装是权威正文。
+      expect(map).toContain(isZh ? "导航" : "navigation");
+      expect(map).not.toContain("I_push =");
+      expect(map).not.toContain("λ_ast");
+    }
+  });
 });

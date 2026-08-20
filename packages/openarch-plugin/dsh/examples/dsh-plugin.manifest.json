@@ -20,8 +20,8 @@
       "id": "openarch-tools",
       "kind": "host",
       "entry": "./host/openarch-tools.mjs",
-      "inject": ["tools"],
-      "uses": ["systemPrompt", "webServer", "jobs", "harness", "openarch.exec", "openarch.spawn", "openarch.cwd"],
+      "inject": ["tools", "systemPrompt", "webServer"],
+      "uses": ["jobs", "harness", "openarch.exec", "openarch.spawn", "openarch.cwd"],
       "config": {
         "stateTtlMs": 60000
       },
@@ -31,8 +31,8 @@
       "id": "openarch-dashboard",
       "kind": "client",
       "entry": "./client/openarch-dashboard.mjs",
-      "inject": ["timer"],
-      "uses": ["slots", "styles"],
+      "inject": ["timer", "slots"],
+      "uses": ["styles"],
       "config": {
         "refreshMs": 20000
       },
@@ -43,7 +43,7 @@
     {
       "name": "openarch_context",
       "description": "读取 OpenArch 项目治理事实（配置、baseline 状态、变更计数、就绪状态）。只读、秒级；输出为稳定 JSON 契约的摘要。",
-      "parameters": {},
+      "parameters": { "type": "object", "properties": {} },
       "timeoutMs": 60000,
       "concurrency": "safe",
       "cardKind": "generic",
@@ -64,9 +64,12 @@
       "name": "openarch_check",
       "description": "运行 OpenArch 统一变更验证：对工作树或已暂存改动执行 gate/策略/反模式检查并输出报告。退出码 0 PASS / 1 WARN / 2 BLOCK / 3 错误；报告是全量信号面，PASS 仍需逐项消费。",
       "parameters": {
-        "worktree": { "type": "boolean", "description": "验证工作树未暂存改动（默认）。" },
-        "staged": { "type": "boolean", "description": "验证已暂存改动（与 worktree 互斥）。" },
-        "tests": { "type": "boolean", "description": "同时运行测试治理证据（更慢）。" }
+        "type": "object",
+        "properties": {
+          "worktree": { "type": "boolean", "description": "验证工作树未暂存改动（默认）。" },
+          "staged": { "type": "boolean", "description": "验证已暂存改动（与 worktree 互斥）。" },
+          "tests": { "type": "boolean", "description": "同时运行测试治理证据（更慢）。" }
+        }
       },
       "timeoutMs": 300000,
       "concurrency": "exclusive",
@@ -90,7 +93,10 @@
       "name": "openarch_review",
       "description": "运行 OpenArch 架构门禁复查：输出结构候选 Top-3 与 WARN 触发明细（规则 + 条件 + 触发文件），用于反复修改后的架构检查。",
       "parameters": {
-        "evolution": { "type": "boolean", "description": "追加演化证据视角（历史趋势）。" }
+        "type": "object",
+        "properties": {
+          "evolution": { "type": "boolean", "description": "追加演化证据视角（历史趋势）。" }
+        }
       },
       "timeoutMs": 300000,
       "concurrency": "exclusive",
@@ -114,8 +120,11 @@
       "name": "openarch_scan",
       "description": "重建/更新 OpenArch 基线。作为后台任务运行并返回 job id（用 job_output 收集、job_kill 取消）；后台任务服务不可用时同步执行。配置 structural_policies/file_kinds 变化后应传 rebuild: true。",
       "parameters": {
-        "rebuild": { "type": "boolean", "description": "强制全量重建（--rebuild；配置变化后必须，增量 scan 按内容 SHA-256 短路、不感知配置）。" },
-        "report": { "type": "boolean", "description": "追加扫描范围/排除段/解析失败的结构复盘报告（--report）。" }
+        "type": "object",
+        "properties": {
+          "rebuild": { "type": "boolean", "description": "强制全量重建（--rebuild；配置变化后必须，增量 scan 按内容 SHA-256 短路、不感知配置）。" },
+          "report": { "type": "boolean", "description": "追加扫描范围/排除段/解析失败的结构复盘报告（--report）。" }
+        }
       },
       "timeoutMs": 900000,
       "concurrency": "exclusive",
@@ -140,8 +149,11 @@
       "name": "openarch_test",
       "description": "运行 OpenArch 测试治理评估（只读观察）：覆盖状态、provider 处理面、适配器建议与 TEST_BLOAT；list 只列已注册 provider。以已安装 openarch 二进制为准（需支持 test --json，旧版请先升级）。结果只作治理建议，绝不自动启用 provider 或据此新增 BLOCK。",
       "parameters": {
-        "list": { "type": "boolean", "description": "只列出已注册测试治理 provider（test --list --json）。" },
-        "bloat": { "type": "boolean", "description": "计算测试膨胀指标 TEST_BLOAT（更慢）。" }
+        "type": "object",
+        "properties": {
+          "list": { "type": "boolean", "description": "只列出已注册测试治理 provider（test --list --json）。" },
+          "bloat": { "type": "boolean", "description": "计算测试膨胀指标 TEST_BLOAT（更慢）。" }
+        }
       },
       "timeoutMs": 600000,
       "concurrency": "exclusive",
@@ -167,7 +179,7 @@
     {
       "name": "openarch_contract",
       "description": "读取上游 OpenArch 机器契约目录（contract --json）：各可消费 JSON 契约的当前版本与 openarch 版本。外部插件据此感知契约版本；本插件对未知契约版本 fail-closed。",
-      "parameters": {},
+      "parameters": { "type": "object", "properties": {} },
       "timeoutMs": 60000,
       "concurrency": "safe",
       "cardKind": "generic",
