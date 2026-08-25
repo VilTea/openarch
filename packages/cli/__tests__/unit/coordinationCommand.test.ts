@@ -143,11 +143,48 @@ describe("coordination evidence / task", () => {
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining("--task-id"));
   });
 
-  it("task claim requires a proposal sha and executor", async () => {
+  it("task create requires a task spec file", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const code = await coordinationCommand(["task", "create"], baseContext(tempProject()));
+    expect(code).toBe(3);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("task-spec"));
+  });
+
+  it("task create writes an agent-owned proposal into the docs-repo", async () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const cwd = tempProject();
+    const docsRepo = tempProject();
+    const specDir = tempProject();
+    fs.mkdirSync(path.join(docsRepo, ".git"), { recursive: true });
+    vi.spyOn(coreModule, "statusDocsRepo").mockReturnValue({ associated: true, config: { target: docsRepo }, symlinkValid: true });
+    const specFile = path.join(specDir, "task.json");
+    fs.writeFileSync(specFile, JSON.stringify({
+      task: { repositoryId: "repo-1", serviceId: "svc-a", taskId: "task-1" },
+      title: "Add auth", hypothesis: "auth can be gated", requestedBy: "agent-1",
+      goal: "Add login", scope: ["src/auth"], verification: ["pnpm test auth"],
+    }), "utf8");
+    const code = await coordinationCommand(["task", "create", specFile], baseContext(cwd));
+    expect(code).toBe(0);
+    const written = JSON.parse(fs.readFileSync(path.join(docsRepo, "tasks", "repo-1", "svc-a", "task-1", "proposal.json"), "utf8"));
+    expect(written).toMatchObject({
+      schemaVersion: "1",
+      task: { repositoryId: "repo-1", serviceId: "svc-a", taskId: "task-1" },
+      title: "Add auth",
+      hypothesis: "auth can be gated",
+      requestedBy: "agent-1",
+      goal: "Add login",
+      scope: ["src/auth"],
+      verification: ["pnpm test auth"],
+    });
+  });
+
+  it("task claim requires an executor; proposal sha is auto-resolved when omitted", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const code = await coordinationCommand(["claim", "--task-id", "t1"], baseContext(tempProject()));
     expect(code).toBe(3);
-    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("--proposal-sha256"));
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("--claimed-by"));
   });
 
   it("task complete requires an executor", async () => {
@@ -159,7 +196,7 @@ describe("coordination evidence / task", () => {
 
   it("lease acquire requires repository, target and owner", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const code = await coordinationCommand(["lease", "acquire", "--target", "svc"], baseContext(tempProject()));
+    const code = await coordinationCommand(["lease", "acquire", "--target", "type:svc"], baseContext(tempProject()));
     expect(code).toBe(3);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining("--repository-id"));
   });

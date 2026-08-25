@@ -35,6 +35,7 @@ func RegisterLeaseRoutes(mux *http.ServeMux, store port.LeaseStore, publishers .
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid lease acquire: " + err.Error()})
 			return
 		}
+		payload.Key.Target = domain.NormalizeTarget(payload.Key.Target)
 		lease, err := store.Acquire(r.Context(), domain.LeaseRequest{Key: payload.Key, Owner: payload.Owner, TTL: time.Duration(payload.TTLSeconds) * time.Second})
 		if err != nil {
 			writeLeaseError(w, err)
@@ -110,7 +111,7 @@ func RegisterLeaseRoutes(mux *http.ServeMux, store port.LeaseStore, publishers .
 	mux.HandleFunc("GET /v1/leases/{repositoryId}/{target}", func(w http.ResponseWriter, r *http.Request) {
 		key := domain.LeaseKey{
 			RepositoryID: domain.RepositoryID(r.PathValue("repositoryId")),
-			Target:       r.PathValue("target"),
+			Target:       domain.NormalizeTarget(r.PathValue("target")),
 		}
 		lease, exists, err := store.Get(r.Context(), key)
 		if err != nil {

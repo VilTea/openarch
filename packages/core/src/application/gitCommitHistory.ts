@@ -1,5 +1,5 @@
-import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import { execFileHidden } from "../infra/childProcess";
 import { isAnalyzableProjectFile, readProjectFileKindRules, readProjectLanguages } from "../projectFiles";
 import type { EvolutionChangeKind, EvolutionChangeSet } from "../domain/evolutionSignals";
 import { toPosixPath } from "../infra/paths";
@@ -13,7 +13,7 @@ export const collectGitCommitHistory = (cwd: string, maxCommits = 100): GitCommi
   try {
     const languages = readProjectLanguages(cwd);
     const fileKindRules = readProjectFileKindRules(cwd);
-    const raw = execFileSync("git", ["log", `--max-count=${maxCommits}`, "--format=%H", "--relative", "--name-status", "--no-renames"], {
+    const raw = execFileHidden("git", ["log", `--max-count=${maxCommits}`, "--format=%H", "--relative", "--name-status", "--no-renames"], {
       cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5000,
     });
     const changeSets: EvolutionChangeSet[] = [];

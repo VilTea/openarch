@@ -83,9 +83,14 @@ Examples:
 
 Task proposals are Agent-owned Git documents. The service verifies one pushed
 proposal/scope/head snapshot and appends signed `verified → claimed → completed`
-events under `coordination/tasks/`. Task event routes are disabled unless
-`--task-signing-key` supplies a base64 Ed25519 seed or private-key file; a path
-prefix alone is not treated as authorization.
+events under `coordination/tasks/`. Task events use schema v2 with a
+`sequence` / `eventHash` / `prevEventHash` hash chain and canonical JSON
+signing payloads; both write and read paths reject broken chains, invalid
+transitions, and proposals that changed after verification. Task event routes
+are disabled unless `--task-signing-key` supplies a base64 Ed25519 seed or
+private-key file; a path prefix alone is not treated as authorization.
+Additional historical public keys can be trusted with repeatable
+`--task-verify-key "<keyId>:<base64pub>"`.
 
 Live lease commands include:
 
@@ -337,6 +342,12 @@ The independent Go coordination module has now verified the `go-testing` provide
 
 The command entry point accepts `--git-remote`, `--git-branch`, `--git-author-name`, and `--git-author-email`; it defaults to `origin`, the checked-out branch, and the service identity.
 
+Evidence HTTP endpoints now share the Task error contract: structured
+`{ error, code, retryable, requestId }` responses, `X-Request-Id` echo, and
+slog JSON operation logs. Bad input is `invalid_request`; Git authority write
+or refresh failures are retryable `authority_unavailable`; projection read
+failures are `service_unavailable`.
+
 ## Local policy trial
 
 The service has one project-local exploratory rule: `max_func_branch > 5` at WARN. It was derived from the sealed calibration P95 of `4.15` and the original `authority.go` production sample of `5.30`; test files remain outside the production governance population. That warning was actionable: `Authority.AppendEvidence` was carrying synchronization, idempotent slot transition, file publication, Git commit/push, and final head verification in one function. The implementation now separates `prepareEvidenceAppend`, pure `upsertEvidence`, and `publishEvidence`.
@@ -368,7 +379,7 @@ Next gaps, in order（design v5.3 §1.6 收敛）：
 - ~~`scope migrate-legacy` command and Task list/query endpoints~~ done: `coordination scope migrate-legacy`、`GET /v1/tasks` + `coordination task list`。
 - ~~Versioned Debt documents with scope references~~ done: `debts/<repo>/<svc>/<debt>.json` Agent-owned 文档、`GET /v1/debts` 只读投影、`coordination debt register/list`。
 - ~~Minimal `protected_paths` inside `authority_hygiene`~~ done: 变更级 warn/block 政策并入 `openarch check`。
-- Append-only replay protection (`prevEventHash`/sequence) and retention policy for service-owned streams.
+- ~~Append-only replay protection (`prevEventHash`/sequence)~~ done（Task v2 哈希链）；retention policy for service-owned streams 仍开放。
 - Multi-instance TTL-backed Lease/Session store or single routed coordinator; cross-process Git write serialization（conditional：真实多项目共仓上线前）。
 - Authn/z, per-project quotas/rate limits, and access/metrics logs for a real multi-project trust domain.
 - e2e smoke/load tests for multi-project shared-branch pushes.
@@ -403,7 +414,9 @@ func main() {
 }
 ```
 
-Agent 提交流程：在 docs-repo 写 `tasks/<repositoryId>/<serviceId>/<taskId>/proposal.json`（含 `requestedBy`/`title`/`hypothesis`，`requestedBy` 必须是合法 identifier）→ commit → push（远端模式）或直接 commit（本地共享模式）→ `openarch coordination task submit --repository-id <id> --service-id <id> --task-id <id> --branch <b> --head-sha <sha>`。服务校验 proposal 在指定 head 存在、`requestedBy` 合法，追加 Ed25519 签名的 `verified` 事件到 `coordination/tasks/**/events.ndjson`；相同 proposal+head 重提幂等返回"已存在"，不同 head 重提拒绝（防重放）。
+如需轮换签名密钥后仍能验证旧事件，启动时用可重复的 `--task-verify-key "<keyId>:<base64pub>"` 注册旧公钥；当前 `--task-signing-key` 对应公钥自动受信。
+
+Agent 提交流程：在 docs-repo 写 `tasks/<repositoryId>/<serviceId>/<taskId>/proposal.json`（含 `requestedBy`/`title`/`hypothesis`，`requestedBy` 必须是合法 identifier）→ commit → push（远端模式）或直接 commit（本地共享模式）→ `openarch coordination task submit --repository-id <id> --service-id <id> --task-id <id> --branch <b> --head-sha <sha>`。服务校验 proposal 在指定 head 存在、`requestedBy` 合法，追加 Ed25519 签名的 schema v2 `verified` 事件到 `coordination/tasks/**/events.ndjson`；相同 proposal+head 重提幂等返回"已存在"，不同 head 重提拒绝（防重放）。
 
 ## 本机验证（2026-08-15）
 

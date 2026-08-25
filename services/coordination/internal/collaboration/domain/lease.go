@@ -15,8 +15,9 @@ var (
 	ErrLeaseStale   = errors.New("semantic lease credential is stale")
 )
 
-// LeaseKey identifies one repository-scoped semantic target. Target is a
-// parser-produced canonical identity; it is not inferred from a file path.
+// LeaseKey identifies one repository-scoped semantic target. Target must be a
+// canonical prefixed identity (file:, function:, or type:); it is not inferred
+// from a raw file path.
 type LeaseKey struct {
 	RepositoryID RepositoryID `json:"repositoryId"`
 	Target       string       `json:"target"`
@@ -26,6 +27,7 @@ func NewLeaseKey(repository RepositoryRef, target string) (LeaseKey, error) {
 	if err := repository.Validate(); err != nil {
 		return LeaseKey{}, err
 	}
+	target = NormalizeTarget(target)
 	if err := validateTarget(target); err != nil {
 		return LeaseKey{}, err
 	}
@@ -43,7 +45,32 @@ func validateTarget(target string) error {
 	if target == "" || len(target) > 512 || strings.TrimSpace(target) != target || strings.ContainsAny(target, "\x00\r\n") {
 		return errors.New("semantic lease target must be a bounded canonical identity")
 	}
+	if !strings.HasPrefix(target, "file:") && !strings.HasPrefix(target, "function:") && !strings.HasPrefix(target, "type:") {
+		return errors.New("semantic lease target must use file:, function:, or type: prefix")
+	}
 	return nil
+}
+
+// NormalizeTarget canonicalizes a semantic lease target. Targets must use a
+// recognized prefix (file:, function:, type:); the prefix is lower-cased and
+// file: path separators are converted to forward slashes. Un-prefixed strings
+// are returned unchanged so validation can reject them with a clear error.
+func NormalizeTarget(target string) string {
+	target = strings.TrimSpace(target)
+	if len(target) < 5 {
+		return target
+	}
+	switch strings.ToLower(target[:5]) {
+	case "file:":
+		return "file:" + strings.ReplaceAll(target[5:], "\\", "/")
+	case "type:":
+		return "type:" + target[5:]
+	case "funct":
+		if len(target) >= 9 && strings.EqualFold(target[:9], "function:") {
+			return "function:" + target[9:]
+		}
+	}
+	return target
 }
 
 type LeaseRequest struct {
@@ -63,6 +90,13 @@ func (request LeaseRequest) Validate() error {
 		return errors.New("lease TTL must be positive")
 	}
 	return nil
+}
+
+// Normalized returns a copy with the semantic target canonicalized. It is safe
+// to call before Validate because normalization never widens the accepted set.
+func (request LeaseRequest) Normalized() LeaseRequest {
+	request.Key.Target = NormalizeTarget(request.Key.Target)
+	return request
 }
 
 type LeaseCredential struct {

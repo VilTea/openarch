@@ -14,7 +14,7 @@ const executable = "openarch.exe";
 const installDir = join(process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "OpenArch", "bin");
 
 const run = (command, args, { silent = false, ...options } = {}) => {
-  const result = spawnSync(command, args, { encoding: "utf8", ...options });
+  const result = spawnSync(command, args, { encoding: "utf8", ...options, windowsHide: true });
   if (!silent && result.stdout) process.stdout.write(result.stdout);
   if (!silent && result.stderr) process.stderr.write(result.stderr);
   if (result.error) throw result.error;

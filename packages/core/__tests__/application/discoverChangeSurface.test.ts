@@ -13,8 +13,8 @@ const parser = () =>
   }).pipe(Effect.provide(TreeSitterParserLive)));
 
 // Requires a real Git worktree diff, so it is an integration test rather than a
-// hermetic unit test. Run explicitly with OPENARCH_RUN_INTEGRATION=1.
-describe.skipIf(!process.env.OPENARCH_RUN_INTEGRATION)("discover change mode (change-surface.v1)", () => {
+// hermetic unit test. Run with `pnpm test:integration`.
+describe.skipIf(process.env.OPENARCH_TEST_SCOPE !== "integration")("discover change mode (change-surface.v1)", () => {
   it("injects changedSymbols and hunk containers from the worktree change set", async () => {
     await withGitRepo([
       { path: "src/lib.ts", content: "export class Service {\n  run() {\n    return load();\n  }\n}\nfunction load() { return true; }\n" },

@@ -40,7 +40,7 @@ func TestTaskListProjectsProposalJoinedWithLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	taskService, err := collaborationapplication.NewTaskService(authority, scopeStore, taskStore, authenticator, time.Now)
+	taskService, err := collaborationapplication.NewTaskService(authority, scopeStore, taskStore, authenticator, noLeaseVerifier{}, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,6 +105,69 @@ func TestTaskListProjectsProposalJoinedWithLifecycle(t *testing.T) {
 	mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/tasks?repositoryId=bad%20id", nil))
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("invalid task filter status = %d", response.Code)
+	}
+}
+
+func TestTaskDetailEndpointReturnsVerifiedChainAndStructuredErrors(t *testing.T) {
+	tempDir := t.TempDir()
+	docsRoot, remoteRoot := initializeAuthorityRepo(t, tempDir)
+	authority, taskService := openTaskVerificationService(t, docsRoot)
+	defer authority.Close()
+	mux := http.NewServeMux()
+	collaborationhttp.RegisterTaskRoutes(mux, taskService)
+
+	agentRoot := filepath.Join(tempDir, "agent-task-detail")
+	runGit(t, tempDir, "clone", "--branch", "main", remoteRoot, agentRoot)
+	runGit(t, agentRoot, "config", "user.name", "Task Agent")
+	runGit(t, agentRoot, "config", "user.email", "task-agent@example.invalid")
+	writeTaskScopeFixture(t, agentRoot)
+	proposalPath := filepath.Join(agentRoot, "tasks", "repo-a", "api", "task-1", "proposal.json")
+	if err := os.MkdirAll(filepath.Dir(proposalPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(proposalPath, taskProposalFixture("task-1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, agentRoot, "add", "repositories/repo-a/scope.json", "services/repo-a/api/scope.json", "tasks/repo-a/api/task-1/proposal.json")
+	runGit(t, agentRoot, "commit", "-m", "agent: submit task proposal")
+	runGit(t, agentRoot, "push", "origin", "HEAD:main")
+	head := runGit(t, agentRoot, "rev-parse", "HEAD")
+
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/tasks/submit", bytes.NewReader(taskSubmissionPayload(t, head))))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("task submit status = %d: %s", response.Code, response.Body.String())
+	}
+
+	response = httptest.NewRecorder()
+	mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/tasks/repo-a/api/task-1", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("task detail status = %d: %s", response.Code, response.Body.String())
+	}
+	var detail domain.TaskDetail
+	if err := json.NewDecoder(response.Body).Decode(&detail); err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Events) != 1 || detail.Events[0].Sequence != 1 || detail.Events[0].EventHash == "" || detail.Events[0].PrevEventHash == "" {
+		t.Fatalf("unexpected task detail events: %+v", detail.Events)
+	}
+
+	response = httptest.NewRecorder()
+	mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/tasks/repo-a/api/missing", nil))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("missing task detail status = %d: %s", response.Code, response.Body.String())
+	}
+	var errorBody struct {
+		Error     string `json:"error"`
+		Code      string `json:"code"`
+		Retryable bool   `json:"retryable"`
+		RequestID string `json:"requestId"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&errorBody); err != nil {
+		t.Fatal(err)
+	}
+	if errorBody.Code != "not_found" || errorBody.Retryable || errorBody.RequestID == "" {
+		t.Fatalf("unexpected structured error: %+v", errorBody)
 	}
 }
 

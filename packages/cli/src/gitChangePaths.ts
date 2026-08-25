@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileHidden } from "@openarch/core";
 
 export type GitChangeSource = "worktree" | "staged";
 
@@ -18,7 +18,7 @@ const splitPaths = (raw: string): readonly string[] => (raw.includes("\0") ? raw
  */
 export const gitChangePathResult = (cwd: string, source: GitChangeSource): GitChangePathsResult => {
   try {
-    const tracked = splitPaths(execFileSync(
+    const tracked = splitPaths(execFileHidden(
       "git",
       source === "staged"
         ? ["diff", "--cached", "--relative", "--name-only", "-z", "--find-renames", "--diff-filter=ACMRD"]
@@ -26,7 +26,7 @@ export const gitChangePathResult = (cwd: string, source: GitChangeSource): GitCh
       { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5000 },
     ));
     if (source === "staged") return { availability: "available", paths: tracked };
-    const untracked = splitPaths(execFileSync(
+    const untracked = splitPaths(execFileHidden(
       "git",
       ["ls-files", "--others", "--exclude-standard", "-z"],
       { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5000 },

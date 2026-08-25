@@ -2,6 +2,48 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格；版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+（待补充）
+
+## [0.1.5] - 2026-08-23
+
+协调服务 Task 生命周期健壮化。
+
+### Added
+
+- **本地协作测试脚本**：`scripts/local-collaboration-test.mjs`——同一项目两个 worktree + 两个脚本化 Agent，验证 scope → task submit → claim → 语义锁 → 编码提交 → evidence → complete 完整闭环，以及同文件抢锁 fail-closed。
+- **Subagent 本地协作 Dogfood**：`scripts/setup-subagent-collab.mjs` + `scripts/cleanup-subagent-collab.mjs`——用两个真实 subagent 在临时 worktree 中并行完成 Core `getCalibration` 与 CLI `task show --json`，严格走协调服务闭环并验证完成。
+- **语义锁等待/搁置验证**：`openarch coordination lease acquire --wait <seconds>`（客户端轮询等待，服务端仍快速失败）；`scripts/lock-wait-defer-test.mjs` 验证“等待释放后获取”和“先搁置做其他任务再重试”两种 Agent 行为。
+- **语义锁 target 规范化**：语义锁 target 必须使用 `file:` / `function:` / `type:` 前缀标识；服务端统一小写前缀、将 `file:` 的 `\` 规范为 `/`，未加前缀的标识拒绝。
+- **质量优化决策门**：`AGENTS.md` / `openarch SKILL.md` 固化“门禁修复自动执行、启发式优化由用户决策、结束回复固定输出质量优化清单”的开发流程，避免质量规范依赖用户反复提醒。
+- **Windows 子进程统一入口**：`packages/core/src/infra/childProcess.ts` 提供 `execFileHidden` / `execHidden` / `spawnSyncHidden`，所有产品 Git/命令子进程默认 `windowsHide: true`，从根上防止终端闪烁回归。
+- **Task 状态细化**：新增 `completed_local` 中间状态，最终 `completed` 必须从 `completed_local` 进入；两个完成状态都要求持有语义锁；`localHeadSHA`/`completedHeadSHA` 由 CLI 从 Git 确定性推导；新增 `task complete-local`、`task complete`（最终）、`task sync`。
+- **Task 依赖协同**：proposal 支持 `dependsOn`；服务端在 claim/complete-local/complete 前校验依赖已完成并检测依赖环；新增 `task wait` 等待依赖完成。
+- **Task 创建与任务规格**：新增 `openarch coordination task create <task-spec.json>`；proposal 支持 `goal/scope/constraints/verification/deliverable`；完成事件绑定 `leaseId` 执行实例。
+- **Task 事件流 v2 哈希链**：`sequence` / `eventHash` / `prevEventHash`，canonical JSON 作为 eventHash 与签名 payload；读取与写入都强制校验链完整性、状态机合法性和 proposal 不可变性。
+- **Task 详情端点**：`GET /v1/tasks/{repositoryId}/{serviceId}/{taskId}` 返回 proposal 摘要与完整 v2 事件链。
+- **结构化错误契约**：Task 相关 HTTP 错误统一为 `{ error, code, retryable, requestId }`；错误码含 `invalid_request` / `not_found` / `state_conflict` / `scope_missing` / `service_unavailable`。
+- **Task 写操作自动重试**：core `submitTask/claimTask/completeTask` 对 retryable 错误自动重试 3 次（指数退避 100ms/400ms），重试共享 `X-Request-Id`。
+- **CLI `task show`** 与 claim/complete 的 `--proposal-sha256` 自动解析。
+- **Task 签名多公钥验证**：支持 `--task-verify-key "<keyId>:<base64pub>"` 轮换验证旧事件。
+- **服务端结构化日志**：`slog` JSON 输出到 stderr，Task 操作带 requestId。
+
+### Changed
+
+- Task 生命周期事件 schema 升级到 `2`，不再兼容 v1（协调服务仍为 dogfood，无正式使用者）。
+- 服务端 Task 读取/列表遇到断链、坏签名或 proposal 与已验证 SHA 不一致时整体 fail-closed。
+- **Evidence 校准 HTTP 接口统一结构化错误**：`{ error, code, retryable, requestId }`；坏输入返回 `invalid_request`，Git/权威写入或刷新失败返回 retryable `authority_unavailable`，校准投影读取失败返回 `service_unavailable`。
+- Evidence/refresh/calibration 成功与失败都带 `X-Request-Id`，服务端用 slog JSON 记录证据摄取、仓库刷新与校准读取。
+- **文档沉淀流程拆分**：`docs check --unfilled` 只验证模板完整性，`docs check --similar` 只计算相似候选；`docs record` 输出分别引导“填写后查未填项、提交前查相似候选”，避免在空模板上过早触发相似度。
+
+### Fixed
+
+- `POST /v1/evidence` 之前把 Git push/权威写入失败也映射成 HTTP 400；现在正确返回 503 `authority_unavailable` + `retryable=true`。
+- 服务端权威写入在客户端断开/超时时不再中断：`AppendEvidence` / `AppendTaskLifecycle` 用 `context.WithoutCancel` 完成 add/commit，避免 docs-repo 留下 staged 未提交的服务端事件。
+- Windows 终端闪烁：为 CLI/core 所有 git 子进程与开发脚本的 `spawnSync`/`execFileSync` 补齐 `windowsHide: true`，避免每次执行 `openarch`/`git` 时弹出控制台窗口。
+- Windows 终端闪烁（服务端）：协调服务 Go git 子进程设置 `CREATE_NO_WINDOW`，避免无控制台服务触发 git 时反复弹出终端窗口。
+
 ## [0.1.4] - 2026-08-20
 
 共享语义关系流水线、定义面信号与发布自动化版。

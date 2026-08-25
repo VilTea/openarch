@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -42,6 +43,7 @@ type config struct {
 	gitAuthorEmail   string
 	taskSigningKey   string
 	taskSigningKeyID string
+	taskVerifyKeys   []string
 	projectionPath   string
 }
 
@@ -54,6 +56,11 @@ func main() {
 	gitAuthorEmail := flag.String("git-author-email", "coordination@openarch.local", "Git author email for service-owned docs-repo commits")
 	taskSigningKey := flag.String("task-signing-key", "", "base64 Ed25519 seed/private-key file required to enable Task verification")
 	taskSigningKeyID := flag.String("task-signing-key-id", "coordination-task-v1", "stable identifier for the Task event signing key")
+	var taskVerifyKeys []string
+	flag.Func("task-verify-key", `additional trusted Ed25519 public key for Task event verification ("<keyId>:<base64pub>"); repeatable`, func(value string) error {
+		taskVerifyKeys = append(taskVerifyKeys, value)
+		return nil
+	})
 	projectionPath := flag.String("projection", "", "local rebuildable projection cache path; empty = system temp dir (disposable, rebuildable from Git)")
 	flag.Parse()
 	cfg := config{
@@ -65,8 +72,10 @@ func main() {
 		gitAuthorEmail:   *gitAuthorEmail,
 		taskSigningKey:   *taskSigningKey,
 		taskSigningKeyID: *taskSigningKeyID,
+		taskVerifyKeys:   taskVerifyKeys,
 		projectionPath:   *projectionPath,
 	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	if err := run(cfg); err != nil {
 		log.Fatal(err)
 	}
@@ -88,18 +97,23 @@ func run(cfg config) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("OpenArch coordination docs-repo remote=%s branch=%s head=%s", descriptor.RemoteURL, descriptor.Branch, descriptor.HeadSHA)
-	log.Printf("OpenArch coordination evidence service listening on %s", cfg.listen)
+	slog.Info("coordination docs-repo descriptor", "remote", descriptor.RemoteURL, "branch", descriptor.Branch, "head", descriptor.HeadSHA)
+	slog.Info("coordination evidence service ready", "listen", cfg.listen)
 	mux := http.NewServeMux()
 	httpapi.Register(mux, service)
 	publisher := events.NewPublisher()
-	if err := registerTaskRoutes(mux, cfg, authority, scopeStore, publisher); err != nil {
+	epoch := uint64(time.Now().Unix())
+	leaseStore, err := memory.New(epoch, time.Second, 10*time.Minute, time.Now)
+	if err != nil {
+		return err
+	}
+	if err := registerTaskRoutes(mux, cfg, authority, scopeStore, leaseStore, publisher); err != nil {
 		return err
 	}
 	if err := registerDebtRoutes(mux, authority); err != nil {
 		return err
 	}
-	registerLiveRoutes(mux, publisher)
+	registerLiveRoutes(mux, publisher, leaseStore)
 	collaborationhttp.RegisterEventRoutes(mux, publisher)
 	return serve(mux, cfg.listen)
 }
@@ -108,15 +122,10 @@ func run(cfg config) error {
 // repository-bound sessions). Both are live runtime state, never Git-backed; a
 // restart bumps the coordinator epoch and invalidates every outstanding
 // credential.
-func registerLiveRoutes(mux *http.ServeMux, publisher *events.Publisher) {
-	epoch := uint64(time.Now().Unix())
-	leaseStore, err := memory.New(epoch, time.Second, 10*time.Minute, time.Now)
-	if err != nil {
-		log.Fatalf("init lease store: %v", err)
-	}
+func registerLiveRoutes(mux *http.ServeMux, publisher *events.Publisher, leaseStore collaborationport.LeaseStore) {
 	collaborationhttp.RegisterLeaseRoutes(mux, leaseStore, publisher)
 
-	sessionStore, err := memory.NewSessionStore(epoch, time.Second, 30*time.Minute, time.Now)
+	sessionStore, err := memory.NewSessionStore(uint64(time.Now().Unix()), time.Second, 30*time.Minute, time.Now)
 	if err != nil {
 		log.Fatalf("init session store: %v", err)
 	}
@@ -140,7 +149,7 @@ func serve(mux *http.ServeMux, listen string) error {
 	defer stop()
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("OpenArch coordination service listening on %s", listen)
+		slog.Info("coordination service listening", "listen", listen)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 			return
@@ -201,16 +210,16 @@ func registerDebtRoutes(mux *http.ServeMux, authority *docsrepo.Authority) error
 		return err
 	}
 	collaborationhttp.RegisterDebtRoutes(mux, debtService)
-	log.Printf("Debt document listing enabled (Agent-owned Git documents)")
+	slog.Info("debt document listing enabled", "kind", "agent-owned-git-documents")
 	return nil
 }
 
-func registerTaskRoutes(mux *http.ServeMux, cfg config, authority *docsrepo.Authority, scopeStore collaborationport.ScopeStore, publisher *events.Publisher) error {
+func registerTaskRoutes(mux *http.ServeMux, cfg config, authority *docsrepo.Authority, scopeStore collaborationport.ScopeStore, leaseStore collaborationport.LeaseVerifier, publisher *events.Publisher) error {
 	if cfg.taskSigningKey == "" {
-		log.Printf("Task verification endpoints disabled: --task-signing-key is required")
+		slog.Warn("task verification endpoints disabled", "reason", "--task-signing-key is required")
 		return nil
 	}
-	authenticator, err := signing.LoadEd25519TaskEventAuthenticator(cfg.taskSigningKeyID, cfg.taskSigningKey)
+	authenticator, err := signing.LoadEd25519TaskEventAuthenticator(cfg.taskSigningKeyID, cfg.taskSigningKey, cfg.taskVerifyKeys...)
 	if err != nil {
 		return err
 	}
@@ -218,7 +227,7 @@ func registerTaskRoutes(mux *http.ServeMux, cfg config, authority *docsrepo.Auth
 	if err != nil {
 		return err
 	}
-	taskService, err := collaborationapplication.NewTaskService(authority, scopeStore, taskStore, authenticator, time.Now)
+	taskService, err := collaborationapplication.NewTaskService(authority, scopeStore, taskStore, authenticator, leaseStore, time.Now)
 	if err != nil {
 		return err
 	}

@@ -3,10 +3,13 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import {
   CoordinationError,
   acquireLease,
+  acquireLeaseWithWait,
   claimTask,
   closeSession,
+  completeLocalTask,
   completeTask,
   fetchDocsRepoDescriptor,
+  getTaskDetail,
   heartbeatSession,
   listDebts,
   listLeases,
@@ -74,6 +77,15 @@ describe("postDocsRepoRefresh", () => {
     await expect(postDocsRepoRefresh("http://127.0.0.1:8787", { repositoryId: "repo-1", branch: "main", headSha: "a".repeat(40) }))
       .rejects.toMatchObject({ cause: "http_status", status: 409 });
   });
+
+  it("retries a retryable refresh error and succeeds", async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({ error: "busy", code: "service_unavailable", retryable: true }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => okDescriptor });
+    const descriptor = await postDocsRepoRefresh("http://127.0.0.1:8787", { repositoryId: "repo-1", branch: "main", headSha: "a".repeat(40) });
+    expect(descriptor).toEqual(okDescriptorFlat);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("postEvidence / submitTask", () => {
@@ -136,24 +148,80 @@ describe("task claim / complete endpoint contracts", () => {
     expect(result).toEqual(resultBody);
   });
 
-  it("completeTask posts to /v1/tasks/complete and omits completedHeadSHA when absent", async () => {
-    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ status: { state: "completed", completedBy: "agent-a" }, created: false }) });
+  it("completeLocalTask posts to /v1/tasks/complete-local with localHeadSHA and target", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ status: { state: "completed_local", completedBy: "agent-a" }, created: true }) });
+    await completeLocalTask("http://127.0.0.1:8787", {
+      repositoryId: "repo-1", serviceId: "svc-1", taskId: "task-1",
+      proposalSha256: "p".repeat(64), completedBy: "agent-a",
+      localHeadSHA: "a".repeat(40), target: "src/feature.ts", leaseId: "lease-1",
+    });
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8787/v1/tasks/complete-local");
+    expect(JSON.parse(String(init.body))).toMatchObject({ localHeadSHA: "a".repeat(40), target: "src/feature.ts" });
+  });
+
+  it("completeTask posts to /v1/tasks/complete with completedHeadSHA and target", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ status: { state: "completed" }, created: true }) });
     await completeTask("http://127.0.0.1:8787", {
       repositoryId: "repo-1", serviceId: "svc-1", taskId: "task-1",
       proposalSha256: "p".repeat(64), completedBy: "agent-a",
+      completedHeadSHA: "a".repeat(40), target: "src/feature.ts", leaseId: "lease-1",
     });
-    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(String(init.body))).not.toHaveProperty("completedHeadSHA");
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8787/v1/tasks/complete");
+    expect(JSON.parse(String(init.body))).toMatchObject({ completedHeadSHA: "a".repeat(40), target: "src/feature.ts" });
+  });
+});
+
+describe("task retry and detail contracts", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("submitTask retries a retryable 503 and succeeds on the second attempt", async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({ error: "busy", code: "service_unavailable", retryable: true }) })
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ status: { state: "verified" }, created: true }) });
+    const result = await submitTask("http://127.0.0.1:8787", {
+      repositoryId: "repo-1", serviceId: "svc-1", taskId: "task-1", branch: "main", headSha: "a".repeat(40),
+    });
+    expect(result.created).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const [firstUrl, firstInit] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const [secondUrl, secondInit] = mockFetch.mock.calls[1] as [string, RequestInit];
+    expect(firstUrl).toBe(secondUrl);
+    expect((firstInit.headers as Record<string, string>)["X-Request-Id"]).toBe((secondInit.headers as Record<string, string>)["X-Request-Id"]);
   });
 
-  it("completeTask includes completedHeadSHA when provided", async () => {
-    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ status: { state: "completed" }, created: false }) });
-    await completeTask("http://127.0.0.1:8787", {
-      repositoryId: "repo-1", serviceId: "svc-1", taskId: "task-1",
-      proposalSha256: "p".repeat(64), completedBy: "agent-a", completedHeadSHA: "a".repeat(40),
-    });
-    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(String(init.body))).toMatchObject({ completedHeadSHA: "a".repeat(40) });
+  it("submitTask does not retry a permanent state conflict", async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 409, json: async () => ({ error: "conflict", code: "state_conflict", retryable: false }) });
+    await expect(submitTask("http://127.0.0.1:8787", {
+      repositoryId: "repo-1", serviceId: "svc-1", taskId: "task-1", branch: "main", headSha: "a".repeat(40),
+    })).rejects.toMatchObject({ cause: "http_status", status: 409 });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("getTaskDetail requests the task path and parses the v2 event chain", async () => {
+    const detail = {
+      task: { repositoryId: "repo-a", serviceId: "svc-a", taskId: "task-1" },
+      title: "clean", hypothesis: "h", requestedBy: "agent-a", proposalSha256: "p".repeat(64),
+      goal: "Add login", scope: ["src/auth"], constraints: ["do not touch schema"],
+      verification: ["pnpm test auth"], deliverable: "summary and diff",
+      status: { state: "verified", proposalSha256: "p".repeat(64) },
+      events: [{
+        schemaVersion: "2", task: { repositoryId: "repo-a", serviceId: "svc-a", taskId: "task-1" },
+        type: "verified", proposalSha256: "p".repeat(64), verifiedHeadSha: "a".repeat(40),
+        sequence: 1, prevEventHash: "0".repeat(64), eventHash: "e".repeat(64),
+        recordedAt: "2026-08-22T00:00:00Z", signerKeyId: "coordination-task-v1", signature: "sig",
+      }],
+    };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => detail });
+    const result = await getTaskDetail("http://127.0.0.1:8787", { repositoryId: "repo-a", serviceId: "svc-a", taskId: "task-1" });
+    expect((mockFetch.mock.calls[0] as [string])[0]).toBe("http://127.0.0.1:8787/v1/tasks/repo-a/svc-a/task-1");
+    expect(result.events[0]?.sequence).toBe(1);
+    expect(result.goal).toBe("Add login");
+    expect(result.scope).toEqual(["src/auth"]);
+    expect(result.constraints).toEqual(["do not touch schema"]);
+    expect(result.verification).toEqual(["pnpm test auth"]);
+    expect(result.deliverable).toBe("summary and diff");
   });
 });
 
@@ -174,21 +242,45 @@ describe("debt / lease / session endpoint contracts", () => {
 
   it("acquireLease posts the key/owner/ttl and parses the lease", async () => {
     const lease = {
-      key: { repositoryId: "repo-a", target: "s1" },
+      key: { repositoryId: "repo-a", target: "file:src/feature.ts" },
       leaseId: "lease-1", owner: "agent-a", fencingToken: 1, coordinatorEpoch: 7,
       expiresAt: new Date().toISOString(),
     };
     mockFetch.mockResolvedValue({ ok: true, status: 201, json: async () => lease });
-    const result = await acquireLease("http://127.0.0.1:8787", { repositoryId: "repo-a", target: "s1", owner: "agent-a", ttlSeconds: 30 });
+    const result = await acquireLease("http://127.0.0.1:8787", { repositoryId: "repo-a", target: "file:src/feature.ts", owner: "agent-a", ttlSeconds: 30 });
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://127.0.0.1:8787/v1/leases/acquire");
-    expect(JSON.parse(String(init.body))).toEqual({ key: { repositoryId: "repo-a", target: "s1" }, owner: "agent-a", ttlSeconds: 30 });
+    expect(JSON.parse(String(init.body))).toEqual({ key: { repositoryId: "repo-a", target: "file:src/feature.ts" }, owner: "agent-a", ttlSeconds: 30 });
     expect(result).toEqual(lease);
+  });
+
+  it("acquireLeaseWithWait polls until a held lease is released", async () => {
+    const lease = {
+      key: { repositoryId: "repo-a", target: "file:src/feature.ts" },
+      leaseId: "lease-1", owner: "agent-b", fencingToken: 2, coordinatorEpoch: 7,
+      expiresAt: new Date().toISOString(),
+    };
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ error: "semantic lease is held" }) })
+      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ error: "semantic lease is held" }) })
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => lease });
+    const result = await acquireLeaseWithWait("http://127.0.0.1:8787", {
+      repositoryId: "repo-a", target: "file:src/feature.ts", owner: "agent-b", ttlSeconds: 30,
+    }, { timeoutMs: 5000, pollMs: 5 });
+    expect(result.leaseId).toBe("lease-1");
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("acquireLeaseWithWait throws when the timeout expires", async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 409, json: async () => ({ error: "semantic lease is held" }) });
+    await expect(acquireLeaseWithWait("http://127.0.0.1:8787", {
+      repositoryId: "repo-a", target: "file:src/feature.ts", owner: "agent-b", ttlSeconds: 30,
+    }, { timeoutMs: 20, pollMs: 5 })).rejects.toMatchObject({ cause: "http_status", status: 409 });
   });
 
   it("renewLease posts the credential and ttl and parses the lease", async () => {
     const lease = {
-      key: { repositoryId: "repo-a", target: "s1" },
+      key: { repositoryId: "repo-a", target: "file:src/feature.ts" },
       leaseId: "lease-1", owner: "agent-a", fencingToken: 2, coordinatorEpoch: 7,
       expiresAt: new Date().toISOString(),
     };

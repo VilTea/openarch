@@ -5,6 +5,7 @@ package evidence_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
@@ -80,6 +81,12 @@ func taskProposalFixture(taskID string) []byte {
 	return []byte("{\n  \"schemaVersion\": \"1\",\n  \"task\": {\"repositoryId\": \"repo-a\", \"serviceId\": \"api\", \"taskId\": \"" + taskID + "\"},\n  \"title\": \"Verify shared task lifecycle\",\n  \"hypothesis\": \"A verified task remains traceable to one proposal head.\",\n  \"requestedBy\": \"agent-a\"\n}\n")
 }
 
+type noLeaseVerifier struct{}
+
+func (noLeaseVerifier) Get(context.Context, collaborationdomain.LeaseKey) (collaborationdomain.Lease, bool, error) {
+	return collaborationdomain.Lease{}, false, nil
+}
+
 func openTaskVerificationService(t *testing.T, docsRoot string) (*docsrepo.Authority, collaborationapplication.TaskService) {
 	t.Helper()
 	authority, err := docsrepo.Open(docsRoot)
@@ -99,7 +106,7 @@ func openTaskVerificationService(t *testing.T, docsRoot string) (*docsrepo.Autho
 	if err != nil {
 		t.Fatal(err)
 	}
-	taskService, err := collaborationapplication.NewTaskService(authority, scopeStore, taskStore, authenticator, time.Now)
+	taskService, err := collaborationapplication.NewTaskService(authority, scopeStore, taskStore, authenticator, noLeaseVerifier{}, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,13 +156,22 @@ func l2TaskRef(taskID string) collaborationdomain.TaskRef {
 }
 
 func l2VerifiedEvent(taskID string) collaborationdomain.TaskLifecycleEvent {
-	return collaborationdomain.TaskLifecycleEvent{
+	event := collaborationdomain.TaskLifecycleEvent{
 		SchemaVersion: collaborationdomain.TaskEventSchemaVersion, Task: l2TaskRef(taskID), Type: "verified",
 		RecordedAt: time.Now().UTC(), SignerKeyID: "test-signer",
-		Signature:       base64.RawStdEncoding.EncodeToString(make([]byte, 64)),
 		ProposalSHA256:  "73b6c4b02e65ae7deb4f6b681c7f72c6679dea3e7de1cb35d8c863bc52029701",
 		VerifiedHeadSHA: "20e4982edbc908c3fec8254c9410d91430f98ca5",
 	}
+	if err := collaborationdomain.LinkLifecycleEvent(nil, &event); err != nil {
+		panic(err)
+	}
+	hash, err := event.ComputeEventHash()
+	if err != nil {
+		panic(err)
+	}
+	event.EventHash = hash
+	event.Signature = base64.RawStdEncoding.EncodeToString(make([]byte, 64))
+	return event
 }
 
 // TestConcurrentServiceWritesSerializeAndAdvanceHead drives concurrent

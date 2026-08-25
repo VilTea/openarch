@@ -4,11 +4,9 @@
 // the local docs-repo); otherwise they fail closed via CoordinationError.
 import type { ScopeDocument } from "@openarch/core";
 import {
-  CoordinationError,
   acquireLease,
-  claimTask,
+  acquireLeaseWithWait,
   closeSession,
-  completeTask,
   debtDocument,
   debtDocumentPath,
   fetchDocsRepoDescriptor,
@@ -16,11 +14,9 @@ import {
   listDebts,
   listLeases,
   listSessions,
-  listTasks,
   postDocsRepoRefresh,
   postEvidence,
   productDocument,
-  readCoordinationConfig,
   registerSession,
   releaseLease,
   renewLease,
@@ -28,30 +24,12 @@ import {
   scopeDocumentPath,
   serviceDocument,
   statusDocsRepo,
-  submitTask,
 } from "@openarch/core";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { collectCoordinationContext } from "../coordinationContext";
 import { parseOptionValue, parseOptionValues as parseRepeatedOption } from "../runtime";
 import type { CommandHandler } from "../runtime";
-
-/** Requires an explicit coordination config; otherwise throws CoordinationError → exit 3. */
-const requireConfigured = (cwd: string): string => {
-  const configured = readCoordinationConfig(cwd);
-  if (configured.state !== "configured") {
-    throw new CoordinationError("http_status", "coordination service is not explicitly configured; run `openarch init --coordination-url <url>`");
-  }
-  return configured.config.url;
-};
-
-/** Requires the service descriptor to match the local docs-repo; otherwise fails closed. */
-const requireAvailable = async (cwd: string): Promise<void> => {
-  const coordination = await collectCoordinationContext(cwd);
-  if (coordination.state !== "available") {
-    throw new CoordinationError("http_status", `coordination service unavailable: ${coordination.detail}`);
-  }
-};
+import { requireAvailable, requireConfigured } from "./coordinationHelpers";
 
 export const bootstrapAction: CommandHandler = async (args, context) => {
   const url = await requireConfigured(context.cwd);
@@ -195,7 +173,7 @@ export const debtListAction: CommandHandler = async (args, context) => {
 };
 
 export const evidenceUploadAction: CommandHandler = async (args, context) => {
-  const file = args[0];
+  const file = args[0] === "upload" ? args[1] : args[0];
   if (!file) {
     console.error("用法: openarch coordination evidence upload <evidence.json>");
     return 3;
@@ -212,88 +190,22 @@ export const evidenceUploadAction: CommandHandler = async (args, context) => {
   return 0;
 };
 
-export const taskSubmitAction: CommandHandler = async (args, context) => {
-  const repositoryId = parseOptionValue(args, "--repository-id");
-  const serviceId = parseOptionValue(args, "--service-id");
-  const taskId = parseOptionValue(args, "--task-id");
-  const branch = parseOptionValue(args, "--branch");
-  const headSha = parseOptionValue(args, "--head-sha");
-  if (!repositoryId || !serviceId || !taskId || !branch || !headSha) {
-    console.error("用法: openarch coordination task submit --repository-id <id> --service-id <id> --task-id <id> --branch <branch> --head-sha <sha>");
-    return 3;
-  }
-  const url = await requireConfigured(context.cwd);
-  await requireAvailable(context.cwd);
-  const result = await submitTask(url, { repositoryId, serviceId, taskId, branch, headSha });
-  console.log(`task ${taskId} ${result.created ? "已创建" : "已存在"}：状态 ${result.status.state}`);
-  return 0;
-};
-
-export const taskListAction: CommandHandler = async (args, context) => {
-  const repositoryId = parseOptionValue(args, "--repository-id");
-  const url = await requireConfigured(context.cwd);
-  await requireAvailable(context.cwd);
-  const tasks = await listTasks(url, repositoryId);
-  if (tasks.length === 0) {
-    console.log("当前没有任务。");
-    return 0;
-  }
-  for (const task of tasks) {
-    const scope = `${task.task.repositoryId}/${task.task.serviceId}/${task.task.taskId}`;
-    const claimedBy = task.status.claimedBy ? ` claimedBy=${task.status.claimedBy}` : "";
-    const completedBy = task.status.completedBy ? ` completedBy=${task.status.completedBy}` : "";
-    console.log(`${scope}  state=${task.status.state}${claimedBy}${completedBy}  title=${task.title}`);
-  }
-  return 0;
-};
-
-export const taskClaimAction: CommandHandler = async (args, context) => {
-  const repositoryId = parseOptionValue(args, "--repository-id");
-  const serviceId = parseOptionValue(args, "--service-id");
-  const taskId = parseOptionValue(args, "--task-id");
-  const proposalSha256 = parseOptionValue(args, "--proposal-sha256");
-  const claimedBy = parseOptionValue(args, "--claimed-by");
-  if (!repositoryId || !serviceId || !taskId || !proposalSha256 || !claimedBy) {
-    console.error("用法: openarch coordination task claim --repository-id <id> --service-id <id> --task-id <id> --proposal-sha256 <sha> --claimed-by <executor>");
-    return 3;
-  }
-  const url = await requireConfigured(context.cwd);
-  await requireAvailable(context.cwd);
-  const result = await claimTask(url, { repositoryId, serviceId, taskId, proposalSha256, claimedBy });
-  console.log(`task ${taskId} ${result.created ? "已认领" : "已存在"}：状态 ${result.status.state}${result.status.claimedBy ? ` 执行者 ${result.status.claimedBy}` : ""}`);
-  return 0;
-};
-
-export const taskCompleteAction: CommandHandler = async (args, context) => {
-  const repositoryId = parseOptionValue(args, "--repository-id");
-  const serviceId = parseOptionValue(args, "--service-id");
-  const taskId = parseOptionValue(args, "--task-id");
-  const proposalSha256 = parseOptionValue(args, "--proposal-sha256");
-  const completedBy = parseOptionValue(args, "--completed-by");
-  const completedHeadSHA = parseOptionValue(args, "--completed-head-sha");
-  if (!repositoryId || !serviceId || !taskId || !proposalSha256 || !completedBy) {
-    console.error("用法: openarch coordination task complete --repository-id <id> --service-id <id> --task-id <id> --proposal-sha256 <sha> --completed-by <executor> [--completed-head-sha <sha>]");
-    return 3;
-  }
-  const url = await requireConfigured(context.cwd);
-  await requireAvailable(context.cwd);
-  const result = await completeTask(url, { repositoryId, serviceId, taskId, proposalSha256, completedBy, completedHeadSHA });
-  console.log(`task ${taskId} ${result.created ? "已完成" : "已存在"}：状态 ${result.status.state}${result.status.completedBy ? ` 执行者 ${result.status.completedBy}` : ""}`);
-  return 0;
-};
-
+export { taskClaimAction, taskCompleteAction, taskCompleteLocalAction, taskCreateAction, taskListAction, taskShowAction, taskSubmitAction, taskSyncAction, taskWaitAction } from "./coordinationTaskActions";
 export const leaseAcquireAction: CommandHandler = async (args, context) => {
   const repositoryId = parseOptionValue(args, "--repository-id");
   const target = parseOptionValue(args, "--target");
   const owner = parseOptionValue(args, "--owner");
   const ttlSeconds = Number(parseOptionValue(args, "--ttl") ?? "30");
-  if (!repositoryId || !target || !owner || !Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
-    console.error("用法: openarch coordination lease acquire --repository-id <id> --target <target> --owner <executor> [--ttl <seconds>]");
+  const waitSeconds = Number(parseOptionValue(args, "--wait") ?? "0");
+  if (!repositoryId || !target || !owner || !Number.isFinite(ttlSeconds) || ttlSeconds <= 0 || !Number.isFinite(waitSeconds) || waitSeconds < 0) {
+    console.error("用法: openarch coordination lease acquire --repository-id <id> --target <target> --owner <executor> [--ttl <seconds>] [--wait <seconds>]");
     return 3;
   }
   const url = await requireConfigured(context.cwd);
   await requireAvailable(context.cwd);
-  const lease = await acquireLease(url, { repositoryId, target, owner, ttlSeconds });
+  const lease = waitSeconds > 0
+    ? await acquireLeaseWithWait(url, { repositoryId, target, owner, ttlSeconds }, { timeoutMs: waitSeconds * 1000 })
+    : await acquireLease(url, { repositoryId, target, owner, ttlSeconds });
   console.log(`已获取语义锁：${lease.key.repositoryId}/${lease.key.target}`);
   console.log(`  leaseId=${lease.leaseId} owner=${lease.owner} fencingToken=${lease.fencingToken} epoch=${lease.coordinatorEpoch} expiresAt=${lease.expiresAt}`);
   return 0;

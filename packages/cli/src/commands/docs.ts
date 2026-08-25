@@ -1,8 +1,7 @@
-import { execFileSync, execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import {
-  checkDocuments, documentStoreObservability, MACHINE_CONTRACT_VERSIONS, readDocumentDispositions, recordDocumentDisposition,
+  checkDocuments, documentStoreObservability, execFileHidden, execHidden, MACHINE_CONTRACT_VERSIONS, readDocumentDispositions, recordDocumentDisposition,
   resolveDocumentStores, unresolvedSimilarityCandidates, type DocumentCheckReport, type DocumentStore,
 } from "@openarch/core";
 import { CommandHandler, parseOptionValue, parseOptionValues } from "../runtime";
@@ -13,7 +12,7 @@ import { statusCommand } from "./status";
 const gitPaths = (gitRoot: string, staged: boolean): readonly string[] => {
   try {
     const command = staged ? "git diff --cached --name-only --diff-filter=ACM" : "git diff --name-only --diff-filter=ACM";
-    return execSync(command, { cwd: gitRoot, encoding: "utf8", timeout: 5000 }).split(/\r?\n/).map((path) => path.trim()).filter((path) => path.toLowerCase().endsWith(".md"));
+    return execHidden(command, { cwd: gitRoot, encoding: "utf8", timeout: 5000 }).split(/\r?\n/).map((path) => path.trim()).filter((path) => path.toLowerCase().endsWith(".md"));
   } catch {
     return [];
   }
@@ -25,7 +24,7 @@ const stagedContent = (gitRoot: string, paths: readonly string[]): ReadonlyMap<s
     const repositoryPath = relative(gitRoot, path).replace(/\\/g, "/");
     if (!repositoryPath || repositoryPath.startsWith("../")) continue;
     try {
-      content.set(resolve(gitRoot, path), execFileSync("git", ["show", `:${repositoryPath}`], { cwd: gitRoot, encoding: "utf8", timeout: 5000 }));
+      content.set(resolve(gitRoot, path), execFileHidden("git", ["show", `:${repositoryPath}`], { cwd: gitRoot, encoding: "utf8", timeout: 5000 }));
     } catch { /* deleted or not staged */ }
   }
   return content;
@@ -45,6 +44,28 @@ const explicitAbsolutePaths = (store: DocumentStore, paths: readonly string[]): 
 const storeRelativePath = (store: DocumentStore, path: string): string | undefined => {
   const value = relative(store.scopeRoot, path).replace(/\\/g, "/");
   return value && !value.startsWith("../") ? value : undefined;
+};
+
+type DocsCheckMode = "all" | "unfilled" | "similarity";
+
+const resolveCheckMode = (unfilledOnly: boolean, similarOnly: boolean): DocsCheckMode | undefined => {
+  if (unfilledOnly && similarOnly) return "all";
+  if (unfilledOnly) return "unfilled";
+  if (similarOnly) return "similarity";
+  return undefined;
+};
+
+const printSimilarityOnly = (result: DocumentCheckReport, locale: "zh" | "en"): void => {
+  console.log(message(locale, "docs.heading"));
+  console.log(message(locale, "docs.scope", { scope: result.scopeId }));
+  if (result.candidates.length === 0) {
+    console.log(message(locale, "docs.noCandidates"));
+    return;
+  }
+  console.log(message(locale, "docs.candidates", { count: result.candidates.length }));
+  for (const candidate of result.candidates) {
+    console.log(message(locale, "docs.candidate", { left: candidate.left, right: candidate.right, minhash: candidate.minHashSimilarity.toFixed(2), distance: candidate.simHashDistance }));
+  }
 };
 
 const jsonReport = (stores: readonly DocumentStore[], reports: readonly DocumentCheckReport[]): void => {
@@ -172,7 +193,9 @@ export const docsCommand: CommandHandler = (args, context) => {
   const staged = rest.includes("--staged");
   const json = rest.includes("--json");
   const unfilledOnly = rest.includes("--unfilled");
+  const similarOnly = rest.includes("--similar");
   const explicit = parseOptionValues(rest, "--changed");
+  const checkMode = resolveCheckMode(unfilledOnly, similarOnly);
   const reports: DocumentCheckReport[] = [];
   for (const store of stores) {
     const inputs = explicit.length > 0
@@ -189,9 +212,14 @@ export const docsCommand: CommandHandler = (args, context) => {
       for (const path of result.unfilled) console.log(message(locale, "docs.unfilledEntry", { path }));
       continue;
     }
+    if (similarOnly) {
+      printSimilarityOnly(result, locale);
+      continue;
+    }
     print(result, store.scopeRoot, locale);
   }
   if (json) jsonReport(stores, reports);
   const unfilledCount = reports.reduce((total, report) => total + report.unfilled.length, 0);
-  return (unfilledOnly || explicit.length > 0 || staged) && unfilledCount > 0 ? 1 : 0;
+  const gateUnfilled = !similarOnly && (unfilledOnly || explicit.length > 0 || staged);
+  return gateUnfilled && unfilledCount > 0 ? 1 : 0;
 };

@@ -259,7 +259,7 @@ describe("openarch-schemas: GovernanceState 契约", () => {
     changes: { worktree: { paths: 1, sourcePaths: 1 }, staged: { paths: 0, sourcePaths: 0 } },
   });
 
-  it("已初始化仓库的真实状态快照通过 state schema", async () => {
+  it.skipIf(process.env.OPENARCH_TEST_SCOPE !== "integration")("已初始化仓库的真实状态快照通过 state schema", async () => {
     const state = await collectGovernanceState({
       ...DEFAULTS,
       cwd: repoRoot,

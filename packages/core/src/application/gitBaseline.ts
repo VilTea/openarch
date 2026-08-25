@@ -3,8 +3,8 @@
 // clone 后（未 scan）也能计算本次未提交改动的冲击量（I_push / D_MR）。
 // 这是"初次扫描从 git 恢复原始状态做变更对比"官方口径的实现——用 HEAD blob
 // 重建 before 度量，而不是要求用户先 scan。
-import { execFileSync } from "node:child_process";
 import { relative } from "node:path";
+import { execFileHidden } from "../infra/childProcess";
 import { Effect } from "effect";
 import type { ParserService } from "../port/ParserService";
 import type { SemanticBeforeMetrics } from "./semanticDiff";
@@ -13,7 +13,7 @@ import { readGitBlobs } from "./gitBlobBatch";
 /** git HEAD commit sha（非 git 仓库时返回 undefined）。 */
 export const gitHeadSha = (cwd: string): string | undefined => {
   try {
-    return execFileSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8", timeout: 10000 }).trim() || undefined;
+    return execFileHidden("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8", timeout: 10000 }).trim() || undefined;
   } catch {
     return undefined;
   }

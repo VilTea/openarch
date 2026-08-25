@@ -197,6 +197,9 @@ func (s *TaskStore) decodeLifecycleEvents(payload []byte, path string, task doma
 		}
 		records = append(records, event)
 	}
+	if err := domain.ValidateLifecycleChain(records); err != nil {
+		return nil, fmt.Errorf("invalid task lifecycle chain at %q: %w", path, err)
+	}
 	return records, nil
 }
 

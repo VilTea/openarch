@@ -21,7 +21,7 @@ func TestStoreUsesFencingAndExpiresLeases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	key, err := domain.NewLeaseKey(repository, "services/coordination#Authority.AppendEvidence")
+	key, err := domain.NewLeaseKey(repository, "function:Authority.AppendEvidence")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,8 +61,8 @@ func TestStoreListReturnsOnlyUnexpiredLeases(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository, _ := domain.NewRepositoryRef("repo-main")
-	short, _ := domain.NewLeaseKey(repository, "services/coordination#short")
-	long, _ := domain.NewLeaseKey(repository, "services/coordination#long")
+	short, _ := domain.NewLeaseKey(repository, "function:short")
+	long, _ := domain.NewLeaseKey(repository, "function:long")
 	if _, err := store.Acquire(context.Background(), domain.LeaseRequest{Key: short, Owner: "agent-a", TTL: time.Second}); err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestStoreRejectsOutOfBoundsTTLAndInvalidLeaseKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository, _ := domain.NewRepositoryRef("repo-main")
-	key, _ := domain.NewLeaseKey(repository, "file.ts#function")
+	key, _ := domain.NewLeaseKey(repository, "function:file.ts#function")
 	if _, err := store.Acquire(context.Background(), domain.LeaseRequest{Key: key, Owner: "agent-a", TTL: time.Millisecond}); err == nil {
 		t.Fatal("out-of-bounds TTL was accepted")
 	}
@@ -108,7 +108,7 @@ func TestConcurrentAcquireSameKeyExactlyOneWinner(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository, _ := domain.NewRepositoryRef("repo-main")
-	key, _ := domain.NewLeaseKey(repository, "services/coordination#Authority.AppendEvidence")
+	key, _ := domain.NewLeaseKey(repository, "function:Authority.AppendEvidence")
 	const workers = 10
 	results := make(chan error, workers)
 	for i := 0; i < workers; i++ {
@@ -143,7 +143,7 @@ func TestConcurrentRenewSameCredentialAllSucceedAndExtend(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository, _ := domain.NewRepositoryRef("repo-main")
-	key, _ := domain.NewLeaseKey(repository, "services/coordination#Authority.AppendEvidence")
+	key, _ := domain.NewLeaseKey(repository, "function:Authority.AppendEvidence")
 	lease, err := store.Acquire(context.Background(), domain.LeaseRequest{Key: key, Owner: "agent-a", TTL: 10 * time.Second})
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +180,7 @@ func TestConcurrentReleaseIsIdempotentAndLeavesNoLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository, _ := domain.NewRepositoryRef("repo-main")
-	key, _ := domain.NewLeaseKey(repository, "services/coordination#Authority.AppendEvidence")
+	key, _ := domain.NewLeaseKey(repository, "function:Authority.AppendEvidence")
 	lease, err := store.Acquire(context.Background(), domain.LeaseRequest{Key: key, Owner: "agent-a", TTL: 10 * time.Second})
 	if err != nil {
 		t.Fatal(err)

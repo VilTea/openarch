@@ -1,5 +1,5 @@
-import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { execFileHidden } from "../infra/childProcess";
 import { relative, resolve } from "node:path";
 import { isAnalyzableProjectFile, readProjectFileKindRules, readProjectLanguages } from "../projectFiles";
 import type { GovernancePopulation } from "../domain/fileParticipation";
@@ -11,7 +11,7 @@ export { collectGitCommitHistory, type GitCommitHistory } from "./gitCommitHisto
 type GitStatus = { readonly path: string; readonly beforePath?: string; readonly kind: ChangeSetFile["kind"] };
 
 const git = (cwd: string, args: readonly string[]): string =>
-  execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5000 });
+  execFileHidden("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5000 });
 
 const gitPrefix = (cwd: string): string => git(cwd, ["rev-parse", "--show-prefix"]).trim().replace(/\\/g, "/");
 

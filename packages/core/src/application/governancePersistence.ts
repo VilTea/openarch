@@ -1,5 +1,5 @@
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { execFileHidden } from "../infra/childProcess";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { DEFAULT_HISTORY_RAW_WINDOW_DAYS } from "../domain/historyRetention";
 import { atomicWriteTextIfChanged } from "../adapter/storage/AtomicWriter";
@@ -102,7 +102,7 @@ export const setGovernancePersistence = async (cwd: string, persistence: Governa
 
 const gitPath = (cwd: string, args: readonly string[]): string | undefined => {
   try {
-    return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: GIT_METADATA_TIMEOUT_MS }).trim() || undefined;
+    return execFileHidden("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: GIT_METADATA_TIMEOUT_MS }).trim() || undefined;
   } catch {
     return undefined;
   }

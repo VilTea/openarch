@@ -5,7 +5,7 @@ import { exitCodeFromError } from "../exit-code";
 import { collectCoordinationContext } from "../coordinationContext";
 import { printAnalysisError } from "../runtime";
 import type { CommandHandler } from "../runtime";
-import { bootstrapAction, debtListAction, debtRegisterAction, evidenceUploadAction, leaseAcquireAction, leaseListAction, leaseReleaseAction, leaseRenewAction, refreshAction, scopeMigrateAction, scopeRegisterAction, sessionCloseAction, sessionHeartbeatAction, sessionListAction, sessionRegisterAction, taskClaimAction, taskCompleteAction, taskListAction, taskSubmitAction } from "./coordinationActions";
+import { bootstrapAction, debtListAction, debtRegisterAction, evidenceUploadAction, leaseAcquireAction, leaseListAction, leaseReleaseAction, leaseRenewAction, refreshAction, scopeMigrateAction, scopeRegisterAction, sessionCloseAction, sessionHeartbeatAction, sessionListAction, sessionRegisterAction, taskClaimAction, taskCompleteAction, taskCompleteLocalAction, taskCreateAction, taskListAction, taskShowAction, taskSubmitAction, taskSyncAction, taskWaitAction } from "./coordinationActions";
 
 const usage = "用法: openarch coordination <status|bootstrap|refresh|scope|debt|evidence|task|claim|complete|lease|session> [...]";
 
@@ -41,15 +41,20 @@ export const coordinationCommand: CommandHandler = async (args, context) => {
   if (action === "task") {
     const [maybeSub, ...subRest] = rest;
     // 向后兼容 v0.1.2 形态 `task --repository-id ...`（缺省 submit）；显式子命令为 submit/list。
-    const sub = maybeSub === "submit" || maybeSub === "list" ? maybeSub : maybeSub === undefined || maybeSub.startsWith("--") ? "submit" : maybeSub;
+    const sub = maybeSub === "submit" || maybeSub === "create" || maybeSub === "list" || maybeSub === "show" || maybeSub === "complete-local" || maybeSub === "sync" || maybeSub === "wait" ? maybeSub : maybeSub === undefined || maybeSub.startsWith("--") ? "submit" : maybeSub;
     const taskArgs = (sub === "submit" && maybeSub !== "submit") ? rest : subRest;
     const taskHandlers: Readonly<Record<string, CommandHandler | undefined>> = {
       submit: taskSubmitAction,
+      create: taskCreateAction,
       list: taskListAction,
+      show: taskShowAction,
+      "complete-local": taskCompleteLocalAction,
+      sync: taskSyncAction,
+      wait: taskWaitAction,
     };
     const taskHandler = taskHandlers[sub];
     if (!taskHandler) {
-      console.error("用法: openarch coordination task <submit|list> [...]（list 支持 --repository-id <id> 过滤）");
+      console.error("用法: openarch coordination task <submit|create|list|show|complete-local|sync|wait> [...]（list 支持 --repository-id <id> 过滤）");
       return 3;
     }
     try {

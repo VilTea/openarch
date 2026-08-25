@@ -38,6 +38,7 @@ export const recordCommand: CommandHandler = async (args, context) => {
   const recordedPath = result.filePath;
   console.log(message(locale, "record.created", { path: recordedPath, category: result.category }));
   console.log(message(locale, "record.check", { path: recordedPath }));
+  console.log(message(locale, "record.checkSimilar", { path: recordedPath }));
   console.log(message(locale, "record.commit"));
   return 0;
 };

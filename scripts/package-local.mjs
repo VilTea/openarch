@@ -11,7 +11,7 @@ const pnpmEntry = process.env.npm_execpath;
 const run = (args, cwd = root, options = {}) => {
   const command = pnpmEntry ? process.execPath : "pnpm";
   const commandArgs = pnpmEntry ? [pnpmEntry, ...args] : args;
-  const result = spawnSync(command, commandArgs, { cwd, encoding: "utf8", ...options });
+  const result = spawnSync(command, commandArgs, { cwd, encoding: "utf8", ...options, windowsHide: true });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
   if (result.error) throw result.error;

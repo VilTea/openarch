@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "id": "symbol-calibration:e6fcbade345cd04bbe6d29a4830e4ba8fcc63e16ab4e040fbfb386c5430a6110",
+  "language": "typescript",
+  "providerId": "typescript-symbol-use",
+  "declarationFamily": "callable",
+  "commonPopulationFingerprint": "8b01602b7199c2e0e1a154b0646cfe1d4b36fa87b446105c8364dc1f0e6ffb0d",
+  "samples": [
+    {
+      "id": "openarch-self:typescript\u0000packages/core/src/application/testBloatMetrics.ts\u0000function\u0000codeSimilarityEvidence",
+      "language": "typescript",
+      "providerId": "typescript-symbol-use",
+      "declarationFamily": "callable",
+      "commonPopulationFingerprint": "8b01602b7199c2e0e1a154b0646cfe1d4b36fa87b446105c8364dc1f0e6ffb0d",
+      "expected": "matched",
+      "observed": "matched",
+      "availability": "available"
+    },
+    {
+      "id": "openarch-self:typescript\u0000packages/core/src/application/testBloatMetrics.ts\u0000function\u0000codeSimilarityRatio",
+      "language": "typescript",
+      "providerId": "typescript-symbol-use",
+      "declarationFamily": "callable",
+      "commonPopulationFingerprint": "8b01602b7199c2e0e1a154b0646cfe1d4b36fa87b446105c8364dc1f0e6ffb0d",
+      "expected": "matched",
+      "observed": "matched",
+      "availability": "available"
+    },
+    {
+      "id": "openarch-self:typescript\u0000packages/core/src/application/testBloatMetrics.ts\u0000function\u0000fixtureBoilerplateLines",
+      "language": "typescript",
+      "providerId": "typescript-symbol-use",
+      "declarationFamily": "callable",
+      "commonPopulationFingerprint": "8b01602b7199c2e0e1a154b0646cfe1d4b36fa87b446105c8364dc1f0e6ffb0d",
+      "expected": "rejected",
+      "observed": "rejected",
+      "availability": "available"
+    },
+    {
+      "id": "openarch-self:typescript\u0000packages/core/src/application/testBloatMetrics.ts\u0000function\u0000fixtureCallTexts",
+      "language": "typescript",
+      "providerId": "typescript-symbol-use",
+      "declarationFamily": "callable",
+      "commonPopulationFingerprint": "8b01602b7199c2e0e1a154b0646cfe1d4b36fa87b446105c8364dc1f0e6ffb0d",
+      "expected": "rejected",
+      "observed": "rejected",
+      "availability": "available"
+    },
+    {
+      "id": "openarch-self:typescript\u0000packages/core/src/application/testBloatMetrics.ts\u0000function\u0000fixtureLines",
+      "language": "typescript",
+      "providerId": "typescript-symbol-use",
+      "declarationFamily": "callable",
+      "commonPopulationFingerprint": "8b01602b7199c2e0e1a154b0646cfe1d4b36fa87b446105c8364dc1f0e6ffb0d",
+      "expected": "rejected",
+      "observed": "rejected",
+      "availability": "available"
+    },
+    {
+      "id": "openarch-self:typescript\u0000packages/core/src/application/testBloatMetrics.ts\u0000function\u0000lineCount",
+      "language": "typescript",
+      "providerId": "typescript-symbol-use",
+      "declarationFamily": "callable",
+      "commonPopulationFingerprint": "8b01602b7199c2e0e1a154b0646cfe1d4b36fa87b446105c8364dc1f0e6ffb0d",
+      "expected": "matched",
+      "observed": "matched",
+      "availability": "available"
+    },
+    {
+      "id": "openarch-self:typescript\u0000packages/core/src/application/testBloatMetrics.ts\u0000function\u0000listTestFiles",
+      "language": "typescript",
+      "providerId": "typescript-symbol-use",
+      "declarationFamily": "callable",
+      "commonPopulationFingerprint": "8b01602b7199c2e0e1a154b0646cfe1d4b36fa87b446105c8364dc1f0e6ffb0d",
+      "expected": "matched",
+      "observed": "matched",
+      "availability": "available"
+    },
+    {
+      "id": "openarch-self:typescript\u0000packages/core/src/application/testBloatMetrics.ts\u0000function\u0000normalizeCallText",
+      "language": "typescript",
+      "providerId": "typescript-symbol-use",
+      "declarationFamily": "callable",
+      "commonPopulationFingerprint": "8b01602b7199c2e0e1a154b0646cfe1d4b36fa87b446105c8364dc1f0e6ffb0d",
+      "expected": "rejected",
+      "observed": "rejected",
+      "availability": "available"
+    },
+    {
+      "id": "openarch-self:typescript\u0000packages/core/src/application/testBloatMetrics.ts\u0000function\u0000queryLineCount",
+      "language": "typescript",
+      "providerId": "typescript-symbol-use",
+      "declarationFamily": "callable",
+      "commonPopulationFingerprint": "8b01602b7199c2e0e1a154b0646cfe1d4b36fa87b446105c8364dc1f0e6ffb0d",
+      "expected": "matched",
+      "observed": "matched",
+      "availability": "available"
+    },
+    {
+      "id": "openarch-self:typescript\u0000packages/core/src/application/testBloatMetrics.ts\u0000function\u0000sizeDispersion",
+      "language": "typescript",
+      "providerId": "typescript-symbol-use",
+      "declarationFamily": "callable",
+      "commonPopulationFingerprint": "8b01602b7199c2e0e1a154b0646cfe1d4b36fa87b446105c8364dc1f0e6ffb0d",
+      "expected": "matched",
+      "observed": "matched",
+      "availability": "available"
+    },
+    {
+      "id": "openarch-self:typescript\u0000packages/core/src/application/testBloatMetrics.ts\u0000function\u0000testBloatMetrics",
+      "language": "typescript",
+      "providerId": "typescript-symbol-use",
+      "declarationFamily": "callable",
+      "commonPopulationFingerprint": "8b01602b7199c2e0e1a154b0646cfe1d4b36fa87b446105c8364dc1f0e6ffb0d",
+      "expected": "matched",
+      "observed": "matched",
+      "availability": "available"
+    },
+    {
+      "id": "openarch-self:typescript\u0000packages/core/src/application/testBloatMetrics.ts\u0000function\u0000testGrowthRatio",
+      "language": "typescript",
+      "providerId": "typescript-symbol-use",
+      "declarationFamily": "callable",
+      "commonPopulationFingerprint": "8b01602b7199c2e0e1a154b0646cfe1d4b36fa87b446105c8364dc1f0e6ffb0d",
+      "expected": "matched",
+      "observed": "matched",
+      "availability": "available"
+    },
+    {
+      "id": "openarch-self:typescript\u0000packages/core/src/application/testBloatMetrics.ts\u0000function\u0000totalLines",
+      "language": "typescript",
+      "providerId": "typescript-symbol-use",
+      "declarationFamily": "callable",
+      "commonPopulationFingerprint": "8b01602b7199c2e0e1a154b0646cfe1d4b36fa87b446105c8364dc1f0e6ffb0d",
+      "expected": "matched",
+      "observed": "matched",
+      "availability": "available"
+    },
+    {
+      "id": "openarch-self:typescript\u0000packages/core/src/application/testBloatMetrics.ts\u0000function\u0000walk",
+      "language": "typescript",
+      "providerId": "typescript-symbol-use",
+      "declarationFamily": "callable",
+      "commonPopulationFingerprint": "8b01602b7199c2e0e1a154b0646cfe1d4b36fa87b446105c8364dc1f0e6ffb0d",
+      "expected": "matched",
+      "observed": "matched",
+      "availability": "available"
+    }
+  ],
+  "positiveSampleCount": 10,
+  "negativeSampleCount": 4,
+  "availability": "available",
+  "eligible": true,
+  "reasons": []
+}

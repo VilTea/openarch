@@ -1,7 +1,7 @@
 {
   "name": "openarch",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.1.5",
   "type": "module",
   "engines": {
     "node": ">=20.0.0"
@@ -12,7 +12,11 @@
     "release:local": "node scripts/package-local.mjs",
     "release:binary": "node scripts/package-binary.mjs",
     "release:local-command": "pnpm release:binary && node scripts/install-local-binary.mjs",
-    "test": "pnpm -r test",
+    "test": "node scripts/test.mjs unit",
+    "test:unit": "node scripts/test.mjs unit",
+    "test:integration": "node scripts/test.mjs integration",
+    "test:collab": "node scripts/local-collaboration-test.mjs",
+    "test:lock": "node scripts/lock-wait-defer-test.mjs",
     "lint": "eslint packages/ --ext .ts --ignore-pattern '**/dist/**' && pnpm -r lint"
   },
   "devDependencies": {

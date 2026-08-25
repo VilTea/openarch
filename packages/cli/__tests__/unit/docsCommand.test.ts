@@ -82,6 +82,36 @@ describe("docs check", () => {
     expect(output.mock.calls.flat().join("\n")).toContain("[UNFILLED] wisdom/patterns/open.md");
   });
 
+  it("runs similarity verification separately with --similar", () => {
+    const project = tempDir();
+    gitInit(project);
+    initializeProjectDocumentStore(project);
+    const first = join(project, "docs", "openarch", "wisdom", "patterns", "first.md");
+    const second = join(project, "docs", "openarch", "wisdom", "patterns", "second.md");
+    writeFileSync(first, "# Parser boundary\n\nUse one parser authority for every language.");
+    writeFileSync(second, "# Parser boundary\n\nUse one parser authority for every supported language.");
+    const output = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    expect(docsCommand(["check", "--similar"], { cwd: project, rawArgv: [], locale: "zh" })).toBe(0);
+    const rendered = output.mock.calls.flat().join("\n");
+    expect(rendered).toContain("Candidates: 1");
+  });
+
+  it("keeps unfilled template verification separate from similarity candidates", () => {
+    const project = tempDir();
+    gitInit(project);
+    initializeProjectDocumentStore(project);
+    const template = join(project, "docs", "openarch", "wisdom", "patterns", "open.md");
+    writeFileSync(template, "# Open question\n来源: openarch docs record\n\n## 背景\n<!-- 必填：什么改动触发了这条记录？ -->\n");
+    execFileSync("git", ["add", "docs/openarch/wisdom/patterns/open.md"], { cwd: project });
+    const output = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    expect(docsCommand(["check", "--staged", "--unfilled"], { cwd: project, rawArgv: [], locale: "zh" })).toBe(1);
+    const rendered = output.mock.calls.flat().join("\n");
+    expect(rendered).toContain("[UNFILLED] wisdom/patterns/open.md");
+    expect(rendered).not.toContain("Candidates:");
+  });
+
   it("prints the docs-check-json-v1 machine contract", () => {
     const project = tempDir();
     initializeProjectDocumentStore(project);
@@ -105,6 +135,7 @@ describe("docs check", () => {
 
     const rendered = output.mock.calls.flat().join("\n");
     expect(rendered).toContain("填写完成后运行: openarch docs check --changed");
+    expect(rendered).toContain("提交前运行: openarch docs check --changed");
     expect(rendered).not.toContain("文档相似检查:");
   });
 

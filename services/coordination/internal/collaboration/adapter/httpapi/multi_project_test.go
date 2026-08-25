@@ -44,7 +44,7 @@ func TestLiveReadViewsFilterByRepositoryID(t *testing.T) {
 
 	for _, repositoryID := range []string{"repo-a", "repo-b"} {
 		post("/v1/leases/acquire", map[string]any{
-			"key":        map[string]string{"repositoryId": repositoryID, "target": "function#handle"},
+			"key":        map[string]string{"repositoryId": repositoryID, "target": "function:handle"},
 			"owner":      "agent-" + repositoryID,
 			"ttlSeconds": 30,
 		}, http.StatusCreated)

@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+const maxServicePushAttempts = 3
+
 type gitClient struct {
 	root       string
 	remote     string
@@ -151,12 +153,8 @@ func (g gitClient) refreshFromRemoteWithServiceDescendants(ctx context.Context, 
 	if strings.TrimSpace(expectedBranch) != "" && strings.TrimSpace(expectedBranch) != g.branch {
 		return RemoteDescriptor{}, fmt.Errorf("refresh branch %q does not match configured docs-repo branch %q", expectedBranch, g.branch)
 	}
-	dirty, err := g.hasPathChanges(ctx, ".")
-	if err != nil {
+	if err := g.requireCleanWorktreeForRemoteRefresh(ctx); err != nil {
 		return RemoteDescriptor{}, err
-	}
-	if dirty {
-		return RemoteDescriptor{}, fmt.Errorf("docs-repo service worktree has uncommitted changes; refusing refresh")
 	}
 	if !g.local {
 		if _, err := g.run(ctx, "fetch", "--prune", g.remote, g.branch); err != nil {
@@ -179,6 +177,27 @@ func (g gitClient) refreshFromRemoteWithServiceDescendants(ctx context.Context, 
 		return RemoteDescriptor{}, err
 	}
 	return g.descriptor(ctx)
+}
+
+// requireCleanWorktreeForRemoteRefresh ensures a remote-mode refresh never
+// resets over uncommitted work. Local mode shares the worktree directly and
+// performs no reset, so uncommitted agent documents do not block read refresh.
+func (g gitClient) requireCleanWorktreeForRemoteRefresh(ctx context.Context) error {
+	if g.local {
+		return nil
+	}
+	dirty, err := g.hasPathChanges(ctx, ".")
+	if err != nil {
+		return err
+	}
+	if !dirty {
+		return nil
+	}
+	status, statusErr := g.run(ctx, "status", "--porcelain")
+	if statusErr != nil {
+		status = "(unable to list changes)"
+	}
+	return fmt.Errorf("docs-repo service worktree has uncommitted changes; refusing refresh:\n%s", strings.TrimSpace(status))
 }
 
 // validateRefreshHead accepts an advertised head that is an ancestor of remote
@@ -241,8 +260,84 @@ func (g gitClient) advanceWorktree(ctx context.Context, remoteHead string) error
 	return nil
 }
 
+// syncBeforeOwnedWrite fast-forwards a clean remote-mode worktree to the
+// remote branch before a service-owned write. This keeps service commits based
+// on the latest shared truth instead of failing with a generic "not
+// synchronized" error when another agent advanced the docs-repo.
+func (g gitClient) syncBeforeOwnedWrite(ctx context.Context) error {
+	if g.local {
+		return nil
+	}
+	if _, err := g.run(ctx, "fetch", "--prune", g.remote, g.branch); err != nil {
+		return fmt.Errorf("fetch before service write: %w", err)
+	}
+	remoteHead, err := g.remoteHead(ctx)
+	if err != nil {
+		return err
+	}
+	localHead, err := g.run(ctx, "rev-parse", "HEAD")
+	if err != nil {
+		return err
+	}
+	localHead = strings.TrimSpace(localHead)
+	remoteHead = strings.TrimSpace(remoteHead)
+	if localHead == remoteHead {
+		return nil
+	}
+	if !g.isAncestor(ctx, localHead, remoteHead) {
+		return fmt.Errorf("docs-repo local head %q diverged from remote branch %s/%s", localHead, g.remote, g.branch)
+	}
+	if _, err := g.run(ctx, "reset", "--hard", remoteHead); err != nil {
+		return fmt.Errorf("advance docs-repo worktree before service write: %w", err)
+	}
+	return nil
+}
+
+// pushOwnedCommit pushes the service-owned HEAD and, on a non-fast-forward,
+// fetches and rebases the local service commit onto the remote branch before
+// retrying. The caller only observes success after local and remote agree.
+func (g gitClient) pushOwnedCommit(ctx context.Context) error {
+	var lastErr error
+	for attempt := 0; attempt < maxServicePushAttempts; attempt++ {
+		if _, err := g.run(ctx, "push", g.remote, "HEAD:refs/heads/"+g.branch); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		if attempt == maxServicePushAttempts-1 {
+			break
+		}
+		if err := g.rebaseOntoRemote(ctx); err != nil {
+			return err
+		}
+	}
+	return fmt.Errorf("authority commit was created locally but push failed after %d attempts: %w", maxServicePushAttempts, lastErr)
+}
+
+func (g gitClient) rebaseOntoRemote(ctx context.Context) error {
+	if _, err := g.run(ctx, "fetch", "--prune", g.remote, g.branch); err != nil {
+		return fmt.Errorf("fetch before rebase: %w", err)
+	}
+	remoteHead, err := g.remoteHead(ctx)
+	if err != nil {
+		return err
+	}
+	localHead, err := g.run(ctx, "rev-parse", "HEAD")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(localHead) == strings.TrimSpace(remoteHead) {
+		return nil
+	}
+	if _, err := g.run(ctx, "rebase", g.remote+"/"+g.branch); err != nil {
+		_, _ = g.run(ctx, "rebase", "--abort")
+		return fmt.Errorf("rebase service-owned commit onto remote failed: %w", err)
+	}
+	return nil
+}
+
 func (g gitClient) isAncestor(ctx context.Context, ancestor string, descendant string) bool {
-	return exec.CommandContext(ctx, "git", "-C", g.root, "merge-base", "--is-ancestor", ancestor, descendant).Run() == nil
+	return gitCommand(ctx, g.root, "merge-base", "--is-ancestor", ancestor, descendant).Run() == nil
 }
 
 func (g gitClient) remoteHead(ctx context.Context) (string, error) {
@@ -282,7 +377,7 @@ func redactRemoteURL(raw string) string {
 }
 
 func (g gitClient) hasDiff(ctx context.Context, args ...string) (bool, error) {
-	command := exec.CommandContext(ctx, "git", append([]string{"-C", g.root, "diff", "--quiet"}, args...)...)
+	command := gitCommand(ctx, g.root, append([]string{"diff", "--quiet"}, args...)...)
 	err := command.Run()
 	if err == nil {
 		return false, nil
@@ -314,7 +409,7 @@ func (g gitClient) hasPathChanges(ctx context.Context, path string) (bool, error
 }
 
 func (g gitClient) run(ctx context.Context, args ...string) (string, error) {
-	command := exec.CommandContext(ctx, "git", append([]string{"-C", g.root}, args...)...)
+	command := gitCommand(ctx, g.root, args...)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))

@@ -86,23 +86,57 @@ openarch coordination refresh --repository-id repo-1 --branch main --head-sha <s
 
 ```bash
 # 0. 前提：服务以 --task-signing-key 启动（密钥生成见 services/coordination/README.md）
-# 1. 写 proposal 到 docs-repo：tasks/<repo>/<svc>/<task>/proposal.json
-#    {"schemaVersion":"1","task":{...},"requestedBy":"agent-1","title":"...","hypothesis":"..."}
+# 1. 创建 Task spec（推荐用文件承载结构化任务）
+#    cat > task.json <<'EOF'
+#    {
+#      "schemaVersion": "1",
+#      "task": {"repositoryId": "repo-1", "serviceId": "svc-a", "taskId": "task-1"},
+#      "title": "...",
+#      "hypothesis": "...",
+#      "requestedBy": "agent-1",
+#      "dependsOn": [{"repositoryId": "repo-1", "serviceId": "svc-a", "taskId": "task-0"}],
+#      "goal": "...",
+#      "scope": ["src/auth"],
+#      "constraints": ["不修改数据库 schema"],
+#      "verification": ["pnpm test auth"],
+#      "deliverable": "说明根因、改动、验证结果、剩余风险"
+#    }
+#    EOF
+#    openarch coordination task create task.json
+#    → 生成 tasks/<repo>/<svc>/<task>/proposal.json
 # 2. commit + push
 # 3. 提交验证：
 openarch coordination task submit --repository-id repo-1 --service-id svc-a --task-id task-1 \
   --branch main --head-sha <sha>
 #    → "task task-1 已创建：状态 verified"（幂等：同 proposal+head 重提返回"已存在"）
 
-# 4. 认领（需 verified）
+# 4. 查看详情（proposal + v2 事件链）
+openarch coordination task show --repository-id repo-1 --service-id svc-a --task-id task-1
+#    → 显示状态、proposalSha256、事件链（sequence/eventHash/prevEventHash/signerKeyId）
+
+# 5. 认领（需 verified；--proposal-sha256 可省略，自动解析）
 openarch coordination task claim --repository-id repo-1 --service-id svc-a --task-id task-1 \
-  --proposal-sha256 <sha256> --claimed-by agent-2
+  [--proposal-sha256 <sha256>] --claimed-by agent-2
 #    → "已认领：状态 claimed 执行者 agent-2"
 
-# 5. 完成（需 claimed 且执行者一致）
+# 6. 本地办结（需 claimed、持有语义锁；localHeadSHA 由 CLI 自动从 git HEAD 推导）
+openarch coordination task complete-local --repository-id repo-1 --service-id svc-a --task-id task-1 \
+  [--proposal-sha256 <sha256>] --completed-by agent-2 --target <target> --lease-id <leaseId>
+#    → "已本地办结：状态 completed_local"
+
+# 7. 最终完成（需 completed_local、持有语义锁；completedHeadSHA 由 CLI 自动从已 push 的 origin HEAD 推导）
 openarch coordination task complete --repository-id repo-1 --service-id svc-a --task-id task-1 \
-  --proposal-sha256 <sha256> --completed-by agent-2 [--completed-head-sha <sha>]
+  [--proposal-sha256 <sha256>] --completed-by agent-2 --target <target> --lease-id <leaseId>
 #    → "已完成：状态 completed"
+
+# 8. 按任务记录的 HEAD 同步本地项目
+openarch coordination task sync --repository-id repo-1 --service-id svc-a --task-id task-1
+#    → 读取 completedHeadSHA，fetch origin 并对齐当前 worktree
+
+# 9. 等待依赖完成后再认领
+openarch coordination task wait --repository-id repo-1 --service-id svc-a --task-id task-1 \
+  [--timeout 300] [--interval 5]
+#    → 轮询 dependsOn 中的 Task，全部 completed 后提示可以认领
 ```
 
 **前提**：作用域已登记（service 必须存在）；proposal 在指定 head 存在且 `requestedBy` 合法；服务有签名密钥。
@@ -111,10 +145,9 @@ openarch coordination task complete --repository-id repo-1 --service-id svc-a --
 ### 3.5 语义锁（Session/租约）
 
 ```bash
-# 获取（默认 TTL 30s，范围 1s~10m）
-openarch coordination lease acquire --repository-id repo-1 --target service/svc-a \
-  --owner agent-2 [--ttl 30]
+# 获取（默认 TTL 30s，范围 1s~10m；--wait 表示锁被持有时客户端轮询等待）
 #    → 已获取语义锁；记录 leaseId/fencingToken/epoch 供续期与释放
+#    → 不加 --wait 时锁被持有一律快速失败（Agent 可选择先做其他任务）
 
 # 续期（携带完整 credential）
 openarch coordination lease renew --lease-id <id> --owner agent-2 \
@@ -194,3 +227,4 @@ openarch coordination session list --repository-id repo-b
 - **签名**：Task 事件由服务 Ed25519 私钥签名，Agent 只能 push proposal，不能伪造事件
 - **租约**：fencing token + epoch 防陈旧/重放；不写 Git，重启即失效
 - **无凭据**：coordination 配置只存 http(s) 基址，不含 token
+- **错误契约**：Task 写操作失败返回结构化错误 `{ error, code, retryable, requestId }`；submit/claim/complete 为幂等写，core 客户端对 retryable 错误自动重试（3 次，100ms/400ms 指数退避）

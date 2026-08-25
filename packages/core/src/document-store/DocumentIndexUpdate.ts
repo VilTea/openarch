@@ -10,6 +10,8 @@ export interface DocumentCheckInput {
   readonly changedPaths?: readonly string[];
   /** Absolute path -> staged bytes. Used by pre-commit to avoid reading unstaged worktree content. */
   readonly stagedContent?: ReadonlyMap<string, string>;
+  /** Which verification to run. Defaults to all. */
+  readonly mode?: "all" | "unfilled" | "similarity";
 }
 
 export interface DocumentIndexUpdate {

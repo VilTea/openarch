@@ -17,3 +17,10 @@ type LeaseStore interface {
 	// expiring read model, never a durable fact source.
 	List(context.Context) ([]domain.Lease, error)
 }
+
+// LeaseVerifier is the narrow read-only view TaskService needs to enforce
+// that completion stages happen while the completing agent still holds the
+// semantic lock for the declared target.
+type LeaseVerifier interface {
+	Get(context.Context, domain.LeaseKey) (domain.Lease, bool, error)
+}

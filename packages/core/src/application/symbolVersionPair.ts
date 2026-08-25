@@ -1,5 +1,5 @@
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { execFileHidden } from "../infra/childProcess";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, posix, resolve } from "node:path";
@@ -16,7 +16,7 @@ import { isTypeScriptRevisionConfig, symbolRevisionSupportPaths } from "../symbo
 import type { SymbolUseReport } from "../symbol-use/types";
 
 const git = (cwd: string, args: readonly string[]): string =>
-  execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 10000, maxBuffer: 64 * 1024 * 1024 });
+  execFileHidden("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 10000, maxBuffer: 64 * 1024 * 1024 });
 
 const gitPaths = (cwd: string, revision: string): readonly string[] =>
   git(cwd, ["ls-tree", "-r", "-z", "--name-only", revision]).split("\0").filter(Boolean).sort();

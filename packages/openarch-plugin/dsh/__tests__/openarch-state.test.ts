@@ -54,7 +54,7 @@ const fakeExec = (stdout) => async () => ({ stdout, stderr: "" });
 
 const freshTmpDir = () => mkdtempSync(join(tmpdir(), "openarch-dsh-"));
 
-describe.skipIf(!hasBaseline)("openarch-state: 状态采集（真实仓库工件）", () => {
+describe.skipIf(process.env.OPENARCH_TEST_SCOPE !== "integration")("openarch-state: 状态采集（真实仓库工件）", () => {
   it("在已初始化仓库上采集有界状态快照", async () => {
     const state = await collectGovernanceState({
       ...DEFAULTS,
@@ -226,7 +226,7 @@ describe("openarch-state: fail-closed 与简报渲染", () => {
     expect(ok.context.schema).toBe("context-json-v1");
   });
 
-  it("简报只报告事实且保持简短", async () => {
+  it.skipIf(process.env.OPENARCH_TEST_SCOPE !== "integration")("简报只报告事实且保持简短", async () => {
     const state = await collectGovernanceState({
       ...DEFAULTS,
       cwd: repoRoot,
@@ -265,7 +265,7 @@ describe("openarch-state: 有界缓存", () => {
     expect(again.initialized).toBe(false);
   });
 
-  it("TTL 内 get() 复用快照（每轮采集 = context + contract 两条命令，只跑一轮）", async () => {
+  it.skipIf(process.env.OPENARCH_TEST_SCOPE !== "integration")("TTL 内 get() 复用快照（每轮采集 = context + contract 两条命令，只跑一轮）", async () => {
     let calls = 0;
     const cache = createGovernanceCache({
       ...DEFAULTS,

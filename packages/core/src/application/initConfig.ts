@@ -2,8 +2,8 @@
 import { Effect } from "effect";
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { execFileSync } from "node:child_process";
 import { IoError } from "../errors/errors";
+import { execFileHidden } from "../infra/childProcess";
 import { detectProjectLanguages } from "../languageSupport";
 
 export interface InitConfigResult {
@@ -103,7 +103,7 @@ export const writeInitConfig = (cwd: string): Effect.Effect<InitConfigResult, Io
         if (!configExisted) {
           // 尝试从 git 恢复（rm -rf .openarch 后 git checkout 已有版本）
           try {
-            execFileSync("git", ["checkout", "--", ".openarch/config.yml"], { cwd, stdio: "pipe", timeout: 5000 });
+            execFileHidden("git", ["checkout", "--", ".openarch/config.yml"], { cwd, stdio: "pipe", timeout: 5000 });
             configRecovered = existsSync(configPath);
           } catch { /* not in git */ }
           if (!existsSync(configPath)) writeFileSync(configPath, buildDefaultConfigYml(detectDefaultLanguages(cwd)));

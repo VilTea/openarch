@@ -112,6 +112,7 @@ export * from "./adapter/lock/AdvisoryLock";
 // infra path helpers (CLI uses these to avoid hardcoded ".openarch/" strings)
 export { openarchBase, baselineDir, baselineIndex, configPath, historyDir, docsRepoDir, implicitDepsPath, implicitDepsRulesDir, testGovernanceRulesDir, projectRoot, toRelative, toAbsolute } from "./infra/paths";
 export { globSync } from "./infra/glob";
+export { execFileHidden, execHidden, spawnSyncHidden } from "./infra/childProcess";
 // 隐式依赖发现引擎
 export { discover } from "./application/discover";
 export type { DiscoverInput, DiscoverReport } from "./application/discover";

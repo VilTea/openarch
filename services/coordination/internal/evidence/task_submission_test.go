@@ -39,7 +39,7 @@ func TestAgentTaskProposalIsVerifiedOnceAndCannotBeReplaced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	taskService, err := collaborationapplication.NewTaskService(authority, scopeStore, taskStore, authenticator, time.Now)
+	taskService, err := collaborationapplication.NewTaskService(authority, scopeStore, taskStore, authenticator, noLeaseVerifier{}, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}

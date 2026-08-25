@@ -13,7 +13,7 @@ const version = JSON.parse(readFileSync(join(root, "packages", "cli", "package.j
 const requireCore = createRequire(join(root, "packages", "core", "package.json"));
 
 const run = (command, args, cwd = root) => {
-  const result = spawnSync(command, args, { cwd, encoding: "utf8" });
+  const result = spawnSync(command, args, { cwd, encoding: "utf8", windowsHide: true });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
   if (result.error) throw result.error;

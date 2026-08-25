@@ -1,8 +1,8 @@
 import { Effect } from "effect";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
 import { bucketKeys, codeIndexedDocument, minHashSimilarity, type IndexedDocument } from "../document-store/DocumentFingerprint";
+import { execFileHidden } from "../infra/childProcess";
 import { normalizeRepositoryPath } from "../script-runtime/projectFacts";
 import { fixtureBoilerplateByFile, fixtureBoilerplateLines, fixtureCallTexts, normalizeCallText } from "./fixtureBoilerplate";
 import type { ParserService } from "../port/ParserService";
@@ -170,7 +170,7 @@ const sizeDispersion = (files: readonly string[]): { dispersion: number; maxFile
 /** 近 N 提交测试行增量 / 生产行增量（git numstat——外部事实，失败返回 0）。 */
 export const testGrowthRatio = (cwd: string, commits = 25): number => {
   try {
-    const output = execFileSync("git", ["log", `--numstat`, `-${commits}`], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    const output = execFileHidden("git", ["log", `--numstat`, `-${commits}`], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
     let testDelta = 0;
     let sourceDelta = 0;
     for (const line of output.split(/\r?\n/)) {

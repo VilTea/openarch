@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileHidden } from "../infra/childProcess";
 
 export const MAX_GIT_BLOB_BYTES = 512 * 1024;
 
@@ -17,7 +17,7 @@ interface GitBlobInfo { readonly size?: number; }
 const nul = 0;
 
 const gitBuffer = (cwd: string, args: readonly string[], input: Buffer): Buffer =>
-  execFileSync("git", args, { cwd, input, encoding: "buffer", stdio: ["pipe", "pipe", "pipe"], timeout: 30000, maxBuffer: 128 * 1024 * 1024 }) as Buffer;
+  execFileHidden("git", args, { cwd, input, encoding: "buffer", stdio: ["pipe", "pipe", "pipe"], timeout: 30000, maxBuffer: 128 * 1024 * 1024 }) as Buffer;
 
 const batchInput = (requests: readonly GitBlobRequest[]): Buffer => Buffer.from(`${requests.map((request) => request.object).join("\0")}\0`);
 

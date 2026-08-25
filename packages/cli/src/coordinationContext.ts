@@ -1,5 +1,4 @@
-import { execFileSync } from "node:child_process";
-import { CoordinationError, fetchDocsRepoDescriptor, readCoordinationConfig, statusDocsRepo, type DocsRepoDescriptor } from "@openarch/core";
+import { CoordinationError, execFileHidden, fetchDocsRepoDescriptor, readCoordinationConfig, statusDocsRepo, type DocsRepoDescriptor } from "@openarch/core";
 
 export interface CoordinationContextFact {
   readonly state: "not_configured" | "unavailable" | "available";
@@ -13,11 +12,11 @@ const localDocsRemote = (cwd: string): { remote: string; branch: string } | unde
   const docs = statusDocsRepo(cwd).config;
   if (!docs) return undefined;
   try {
-    const branch = execFileSync("git", ["branch", "--show-current"], { cwd: docs.target, encoding: "utf8", timeout: 5000 }).trim();
+    const branch = execFileHidden("git", ["branch", "--show-current"], { cwd: docs.target, encoding: "utf8", timeout: 5000 }).trim();
     // Local-mode docs-repo (type: "local") has no origin remote; the shared
     // directory itself is the authority, so its target path is the remote.
     if (docs.type === "local") return { remote: docs.target, branch };
-    return { remote: execFileSync("git", ["remote", "get-url", "origin"], { cwd: docs.target, encoding: "utf8", timeout: 5000 }).trim(), branch };
+    return { remote: execFileHidden("git", ["remote", "get-url", "origin"], { cwd: docs.target, encoding: "utf8", timeout: 5000 }).trim(), branch };
   } catch { return undefined; }
 };
 

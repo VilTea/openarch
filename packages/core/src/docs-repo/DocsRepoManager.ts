@@ -5,8 +5,8 @@
 //
 // §3.3 核心设计假设：docs-repo 是协作状态的唯一事实源。
 // 中心化服务仅为其实时缓存层。Phase 1 已通过 git pull/push 实现基础协作。
-import { execFileSync, execSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { execFileHidden, execHidden } from "../infra/childProcess";
 import { existsSync, mkdirSync, readFileSync, copyFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { createSymlink, readSymlinkTarget, removeSymlink, isSymlinkValid } from "./SymlinkManager";
@@ -104,7 +104,7 @@ export const associateFromUrl = (url: string, cwd: string): AssociateResult => {
 
   if (!wasCloned) {
     // `--` keeps a remote beginning with '-' from becoming a Git option; execFileSync never opens a shell.
-    execFileSync("git", ["clone", "--depth=1", "--", url, cloneTarget], { cwd, stdio: "pipe", timeout: 30000 });
+    execFileHidden("git", ["clone", "--depth=1", "--", url, cloneTarget], { cwd, stdio: "pipe", timeout: 30000 });
     createStandardDirs(cloneTarget);  // 首次 clone 建标准目录
   }
 
@@ -162,15 +162,15 @@ export const checkSyncStatus = (cwd: string): SyncStatus | null => {
   if (!existsSync(join(gitDir, ".git"))) return { behind: 0, ahead: 0, hasConflict: false, remote: null };
 
   try {
-    execSync("git fetch --quiet", { cwd: gitDir, stdio: "pipe", timeout: 15000 });
+    execHidden("git fetch --quiet", { cwd: gitDir, stdio: "pipe", timeout: 15000 });
 
-    const local = execSync("git rev-parse HEAD", { cwd: gitDir, encoding: "utf8", timeout: 5000 }).trim();
+    const local = execHidden("git rev-parse HEAD", { cwd: gitDir, encoding: "utf8", timeout: 5000 }).trim();
     let remote = null;
-    try { remote = execSync("git rev-parse @{u}", { cwd: gitDir, encoding: "utf8", timeout: 5000 }).trim(); } catch { /* no upstream */ }
+    try { remote = execHidden("git rev-parse @{u}", { cwd: gitDir, encoding: "utf8", timeout: 5000 }).trim(); } catch { /* no upstream */ }
     if (!remote) return { behind: 0, ahead: 0, hasConflict: false, remote: null };
 
-    const behind = parseInt(execSync(`git rev-list --count HEAD..@{u}`, { cwd: gitDir, encoding: "utf8", timeout: 5000 }).trim(), 10) || 0;
-    const ahead = parseInt(execSync(`git rev-list --count @{u}..HEAD`, { cwd: gitDir, encoding: "utf8", timeout: 5000 }).trim(), 10) || 0;
+    const behind = parseInt(execHidden(`git rev-list --count HEAD..@{u}`, { cwd: gitDir, encoding: "utf8", timeout: 5000 }).trim(), 10) || 0;
+    const ahead = parseInt(execHidden(`git rev-list --count @{u}..HEAD`, { cwd: gitDir, encoding: "utf8", timeout: 5000 }).trim(), 10) || 0;
 
     return { behind, ahead, hasConflict: false, remote };
   } catch {

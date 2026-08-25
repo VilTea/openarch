@@ -36,13 +36,18 @@ export const checkDocuments = (input: DocumentCheckInput): DocumentCheckReport =
       inputFingerprint: capabilityFingerprint,
     });
   }
+  const mode = input.mode ?? "all";
   return {
     availability: "available",
     scopeId: input.store.scopeId,
     indexed: updated.entries.size,
     updated: [...updated.changed].filter((path) => updated.entries.has(path)).length,
-    candidates: findDocumentSimilarityCandidates(updated.entries, updated.changed, input.store.scopeId),
-    unfilled: unfilledDocuments(input.store, updated.changed, input.stagedContent),
+    candidates: mode === "all" || mode === "similarity"
+      ? findDocumentSimilarityCandidates(updated.entries, updated.changed, input.store.scopeId)
+      : [],
+    unfilled: mode === "all" || mode === "unfilled"
+      ? unfilledDocuments(input.store, updated.changed, input.stagedContent)
+      : [],
   };
 };
 

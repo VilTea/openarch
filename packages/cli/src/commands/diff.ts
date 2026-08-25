@@ -1,8 +1,7 @@
-import { execSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { LAMBDA_AST, collectSymbolUseReports, collectTypeScriptSymbolVersionPair, diff, prefilterStaticBoundEmpty, readHistoryRetentionPolicy, staticConsumerFilesFor, reconcileBaseline, sealPendingEvidence, symbolUseDemandForProfiles, symbolUseRequestPolicy, type ChangeKind, type SymbolUseDemand, type SymbolUseReport, type SymbolVersionPairReport } from "@openarch/core";
+import { LAMBDA_AST, collectSymbolUseReports, collectTypeScriptSymbolVersionPair, diff, execHidden, prefilterStaticBoundEmpty, readHistoryRetentionPolicy, staticConsumerFilesFor, reconcileBaseline, sealPendingEvidence, symbolUseDemandForProfiles, symbolUseRequestPolicy, type ChangeKind, type SymbolUseDemand, type SymbolUseReport, type SymbolVersionPairReport } from "@openarch/core";
 import { exitCodeFromError } from "../exit-code";
 import { renderDiffReport, type DiffReportView } from "../report/diffReport";
 import { message, type Locale } from "../i18n";
@@ -49,7 +48,7 @@ const verifyStagedEvidence = (paths: readonly string[], cwd: string): number => 
 };
 
 const baseRevision = (cwd: string): string => {
-  try { return execSync("git rev-parse HEAD", { cwd, encoding: "utf8", timeout: 5000 }).trim() || "uncommitted-base"; }
+  try { return execHidden("git rev-parse HEAD", { cwd, encoding: "utf8", timeout: 5000 }).trim() || "uncommitted-base"; }
   catch { return "uncommitted-base"; }
 };
 

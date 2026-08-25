@@ -2,6 +2,7 @@ package evidence_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"github.com/openarch/openarch/services/coordination/internal/evidence/adapter/docsrepo"
 	"github.com/openarch/openarch/services/coordination/internal/evidence/adapter/httpapi"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -122,5 +124,37 @@ func TestEvidenceIsAggregatedAndCalibrationStaysReviewOnly(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(tempDir, "projection.ndjson")); err != nil {
 		t.Fatalf("projection file missing: %v", err)
+	}
+}
+
+func TestConcurrentIngestSameEvidenceConverges(t *testing.T) {
+	tempDir := t.TempDir()
+	docsRoot, remoteRoot := initializeAuthorityRepo(t, tempDir)
+	authority, err := docsrepo.Open(docsRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer authority.Close()
+	evidence := sample("opaque-concurrent")
+	const workers = 8
+	var wait sync.WaitGroup
+	errs := make(chan error, workers)
+	for i := 0; i < workers; i++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			errs <- authority.AppendEvidence(context.Background(), evidence)
+		}()
+	}
+	wait.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent ingest failed: %v", err)
+		}
+	}
+	remoteEvidence := runGitDir(t, remoteRoot, "show", "main:evidence/validation.ndjson")
+	if lines := strings.Count(strings.TrimSpace(remoteEvidence), "\n") + 1; lines != 1 {
+		t.Fatalf("concurrent duplicate ingest persisted %d records, want exactly 1", lines)
 	}
 }

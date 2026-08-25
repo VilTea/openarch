@@ -1,8 +1,7 @@
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
-import { openarchBase } from "@openarch/core";
+import { execFileHidden, openarchBase } from "@openarch/core";
 
 export interface StoredEvidence { readonly file: string; readonly sha256: string; }
 
@@ -42,14 +41,14 @@ export const missingStagedEvidence = (staged: readonly StoredEvidence[], history
 };
 
 const repositoryPath = (cwd: string, path: string): string => {
-  const prefix = execFileSync("git", ["rev-parse", "--show-prefix"], {
+  const prefix = execFileHidden("git", ["rev-parse", "--show-prefix"], {
     cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5000,
   }).trim().replace(/\\/g, "/");
   return `${prefix}${normalizePath(path)}`;
 };
 
 const stagedSha256 = (cwd: string, path: string): string =>
-  createHash("sha256").update(execFileSync("git", ["show", `:${repositoryPath(cwd, path)}`], {
+  createHash("sha256").update(execFileHidden("git", ["show", `:${repositoryPath(cwd, path)}`], {
     cwd, encoding: "buffer", stdio: ["ignore", "pipe", "pipe"], timeout: 5000,
   })).digest("hex");
 
@@ -57,12 +56,12 @@ export const stagedEvidenceForPaths = (paths: readonly string[], cwd = process.c
   paths.map((path) => ({ file: path, sha256: stagedSha256(cwd, path) }));
 
 const stagedHistoryEvidence = (cwd: string): readonly { readonly evidence?: readonly StoredEvidence[] }[] => {
-  const paths = execFileSync("git", ["diff", "--cached", "--name-only", "--diff-filter=AM", "-z", "--relative", "--", ".openarch/history"], {
+  const paths = execFileHidden("git", ["diff", "--cached", "--name-only", "--diff-filter=AM", "-z", "--relative", "--", ".openarch/history"], {
     cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5000,
   }).split("\0").map((path) => path.trim()).filter(Boolean);
   return paths.flatMap((path) => {
     try {
-      return [JSON.parse(execFileSync("git", ["show", `:${repositoryPath(cwd, path)}`], {
+      return [JSON.parse(execFileHidden("git", ["show", `:${repositoryPath(cwd, path)}`], {
         cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5000,
       }))];
     } catch { return []; }

@@ -113,6 +113,42 @@ func TestLocalModeOperatesWithoutRemote(t *testing.T) {
 	}
 }
 
+func TestLocalRefreshToleratesUncommittedAgentChanges(t *testing.T) {
+	tempDir := t.TempDir()
+	docsRoot := filepath.Join(tempDir, "local-docs")
+	if err := os.MkdirAll(docsRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGitTest(t, docsRoot, "init", "--initial-branch=main")
+	runGitTest(t, docsRoot, "config", "user.name", "Local Test")
+	runGitTest(t, docsRoot, "config", "user.email", "local-test@example.invalid")
+	if err := os.WriteFile(filepath.Join(docsRoot, "README.md"), []byte("# local\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGitTest(t, docsRoot, "add", "README.md")
+	runGitTest(t, docsRoot, "commit", "-m", "bootstrap local")
+
+	client, err := newGitClient(context.Background(), docsRoot, authorityConfig{remote: "", branch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := runGitTest(t, docsRoot, "rev-parse", "HEAD")
+	// Another agent is in the middle of writing an uncommitted proposal/scope file.
+	proposalPath := filepath.Join(docsRoot, "tasks", "repo-a", "svc-a", "task-1", "proposal.json")
+	if err := os.MkdirAll(filepath.Dir(proposalPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(proposalPath, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.refreshFromRemote(context.Background(), "main", head); err != nil {
+		t.Fatalf("local refresh should tolerate uncommitted agent changes: %v", err)
+	}
+	if _, err := client.refreshFromRemoteWithServiceDescendants(context.Background(), "main", head, true); err != nil {
+		t.Fatalf("local refresh-with-descendants should tolerate uncommitted agent changes: %v", err)
+	}
+}
+
 // TestRefreshConcurrentWithCommitSeesConsistentHead interleaves goroutine
 // commits with read-only descriptor snapshots on a local-mode client and
 // asserts every observed head is a complete, resolvable commit (git HEAD

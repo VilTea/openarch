@@ -40,6 +40,7 @@ func (s *Store) Acquire(ctx context.Context, request domain.LeaseRequest) (domai
 	if err := contextError(ctx); err != nil {
 		return domain.Lease{}, err
 	}
+	request.Key.Target = domain.NormalizeTarget(request.Key.Target)
 	if err := request.Validate(); err != nil {
 		return domain.Lease{}, err
 	}
@@ -116,6 +117,7 @@ func (s *Store) Get(ctx context.Context, key domain.LeaseKey) (domain.Lease, boo
 	if err := contextError(ctx); err != nil {
 		return domain.Lease{}, false, err
 	}
+	key.Target = domain.NormalizeTarget(key.Target)
 	if err := key.Validate(); err != nil {
 		return domain.Lease{}, false, err
 	}

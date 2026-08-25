@@ -3,7 +3,7 @@
 // design TD-17 Phase A。
 import { Effect } from "effect";
 import { resolve } from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileHidden } from "../infra/childProcess";
 import { ParserService } from "../port/ParserService";
 import { isAnalyzableProjectFile, listProjectSourceFiles, resolveProjectExtensions } from "../projectFiles";
 import { globSync } from "../infra/glob";
@@ -82,7 +82,7 @@ const gitDiffHunks = (cwd: string, source: "staged" | "worktree"): ReadonlyMap<s
   const args = ["diff", "--unified=0", ...(source === "staged" ? ["--cached"] : []), "--relative", "-z", "HEAD"];
   let raw = "";
   try {
-    raw = execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5000 });
+    raw = execFileHidden("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5000 });
   } catch {
     return new Map();
   }

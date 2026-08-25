@@ -108,10 +108,14 @@ func (a *Authority) RefreshFromRemoteContaining(ctx context.Context, expectedBra
 func (a *Authority) AppendEvidence(ctx context.Context, evidence domain.ValidationEvidence) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.prepareOwnedMutation(ctx); err != nil {
+	// Service-owned writes are atomic with respect to the shared docs-repo. A
+	// client that disconnects mid-write must not leave the worktree staged but
+	// uncommitted, so the whole mutation runs detached from request cancellation.
+	writeCtx := context.WithoutCancel(ctx)
+	if err := a.prepareOwnedMutation(writeCtx); err != nil {
 		return err
 	}
-	existing, err := a.readEvidenceAtHead(ctx)
+	existing, err := a.readEvidenceAtHead(writeCtx)
 	if err != nil {
 		return err
 	}
@@ -123,16 +127,13 @@ func (a *Authority) AppendEvidence(ctx context.Context, evidence domain.Validati
 	if err != nil {
 		return err
 	}
-	return a.publishOwnedFile(ctx, defaultEvidenceFile, payload, fmt.Sprintf("coordination: upsert validation evidence for %s", evidence.Provider.ID))
+	return a.publishOwnedFile(writeCtx, defaultEvidenceFile, payload, fmt.Sprintf("coordination: upsert validation evidence for %s", evidence.Provider.ID))
 }
 
 // prepareOwnedMutation is shared by the narrowly declared service-owned
 // writers. A dedicated service worktree must be clean before any commit, so a
 // task event can never accidentally include an Agent-owned document.
 func (a *Authority) prepareOwnedMutation(ctx context.Context) error {
-	if err := a.git.ensureSynchronized(ctx); err != nil {
-		return err
-	}
 	staged, err := a.git.hasDiff(ctx, "--cached")
 	if err != nil {
 		return err
@@ -147,7 +148,7 @@ func (a *Authority) prepareOwnedMutation(ctx context.Context) error {
 	if dirty {
 		return fmt.Errorf("docs-repo service worktree has uncommitted changes; refusing service-owned commit")
 	}
-	return nil
+	return a.git.syncBeforeOwnedWrite(ctx)
 }
 
 // upsertEvidence is the pure calibration-slot transition. It preserves the
@@ -179,6 +180,10 @@ func upsertEvidence(existing []domain.ValidationEvidence, evidence domain.Valida
 // concrete artifact contract; callers cannot choose an arbitrary docs-repo
 // path and thereby bypass Agent ownership.
 func (a *Authority) publishOwnedFile(ctx context.Context, path string, payload []byte, message string) error {
+	// Always detach from request cancellation for the add/commit critical
+	// section: once the file is written and staged, we must finish the commit
+	// or the shared worktree is left dirty.
+	writeCtx := context.WithoutCancel(ctx)
 	if !isServiceOwnedPath(path) {
 		return fmt.Errorf("service-owned path %q is not allowed", path)
 	}
@@ -187,10 +192,10 @@ func (a *Authority) publishOwnedFile(ctx context.Context, path string, payload [
 		return err
 	}
 	path = filepath.ToSlash(path)
-	if _, err := a.git.run(ctx, "add", "--", path); err != nil {
+	if _, err := a.git.run(writeCtx, "add", "--", path); err != nil {
 		return err
 	}
-	if _, err := a.git.run(ctx,
+	if _, err := a.git.run(writeCtx,
 		"-c", "user.name="+a.git.authorName,
 		"-c", "user.email="+a.git.authorMail,
 		"commit", "--only", "-m", message, "--", path,
@@ -198,11 +203,11 @@ func (a *Authority) publishOwnedFile(ctx context.Context, path string, payload [
 		return err
 	}
 	if !a.git.local {
-		if _, err := a.git.run(ctx, "push", a.git.remote, "HEAD:refs/heads/"+a.git.branch); err != nil {
-			return fmt.Errorf("authority commit was created locally but push failed; it is not shared truth until push succeeds: %w", err)
+		if err := a.git.pushOwnedCommit(writeCtx); err != nil {
+			return err
 		}
 	}
-	return a.git.ensureSynchronized(ctx)
+	return a.git.ensureSynchronized(writeCtx)
 }
 
 func isServiceOwnedPath(path string) bool {
@@ -260,11 +265,17 @@ func (a *Authority) AppendTaskLifecycle(ctx context.Context, event collaboration
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.prepareOwnedMutation(ctx); err != nil {
+	// See AppendEvidence: client cancellation must not interrupt a service-owned
+	// docs-repo mutation after staging, which would leave a dirty worktree.
+	writeCtx := context.WithoutCancel(ctx)
+	if err := a.prepareOwnedMutation(writeCtx); err != nil {
 		return err
 	}
-	existing, err := a.readTaskLifecycleAtHead(ctx, event.Task)
+	existing, err := a.readTaskLifecycleAtHead(writeCtx, event.Task)
 	if err != nil {
+		return err
+	}
+	if err := collaborationdomain.ValidateLifecycleChain(existing); err != nil {
 		return err
 	}
 	for _, current := range existing {
@@ -275,11 +286,15 @@ func (a *Authority) AppendTaskLifecycle(ctx context.Context, event collaboration
 			return nil
 		}
 	}
-	payload, err := marshalNDJSON(append(existing, event))
+	next := append(append([]collaborationdomain.TaskLifecycleEvent{}, existing...), event)
+	if err := collaborationdomain.ValidateLifecycleChain(next); err != nil {
+		return err
+	}
+	payload, err := marshalNDJSON(next)
 	if err != nil {
 		return err
 	}
-	return a.publishOwnedFile(ctx, collaborationdomain.TaskLifecyclePath(event.Task), payload, "coordination: verify task "+event.Task.TaskID)
+	return a.publishOwnedFile(writeCtx, collaborationdomain.TaskLifecyclePath(event.Task), payload, "coordination: verify task "+event.Task.TaskID)
 }
 
 func (a *Authority) readTaskLifecycleAtHead(ctx context.Context, task collaborationdomain.TaskRef) ([]collaborationdomain.TaskLifecycleEvent, error) {
@@ -300,7 +315,9 @@ func (a *Authority) readTaskLifecycleAtHead(ctx context.Context, task collaborat
 	scanner.Buffer(make([]byte, 1024), 64<<10)
 	for scanner.Scan() {
 		var event collaborationdomain.TaskLifecycleEvent
-		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+		decoder := json.NewDecoder(strings.NewReader(scanner.Text()))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&event); err != nil {
 			return nil, err
 		}
 		if err := event.Validate(); err != nil || event.Task != task {
