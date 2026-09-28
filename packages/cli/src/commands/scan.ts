@@ -57,13 +57,16 @@ export const scanCommand: CommandHandler = async (args, context) => {
   const fileKindRules = readProjectFileKindRules(projectCwd);
   const scope = createAnalysisScope(projectLanguages, fileKindRules);
   const gateConfig = await loadGateConfig();
+  // 项目 config.yml 的绝对路径（§6/Q2 形状身份的唯一来源）。此前只在 config 变化检测里
+  // 局部拼过一次；现在提为具名常量并同时传给 scan —— `projectConfigPath()` 默认按
+  // `process.cwd()` 解析，而 `projectCwd` 在有显式 cwd 时与 cwd 不同（会读到别的项目）。
+  const projectConfigFile = resolve(projectCwd, ".openarch", "config.yml");
   // P2-1（2026-08-11 体验反馈）：config.yml 内容变化时增量 scan 必须自动退化全量重建，
   // 否则 per-file sha256 身份对比对配置不敏感，策略改动后指标与策略匹配不更新。
   let configChanged = false;
   if (!rebuild && rawPatterns.length === 0) {
     const indexPath = resolve(projectCwd, ".openarch", "baseline", "_index.json");
-    const cfgPath = resolve(projectCwd, ".openarch", "config.yml");
-    const currentConfigHash = configSnapshotSha256(cfgPath);
+    const currentConfigHash = configSnapshotSha256(projectConfigFile);
     if (currentConfigHash !== undefined && existsSync(indexPath)) {
       try {
         const meta = JSON.parse(readFileSync(indexPath, "utf8")).meta as { configSnapshotSha256?: unknown } | undefined;
@@ -79,9 +82,13 @@ export const scanCommand: CommandHandler = async (args, context) => {
     analysisScope: scope,
     completeScope: rawPatterns.length === 0,
     incremental: incrementalScan,
-    // 全量/rebuild 时无需整仓 hash 一遍再 parse 一遍（性能：避免重复读盘）。
-    ...(incrementalScan ? { sourceSnapshotSha256: sourceSnapshotSha256(paths, projectCwd) } : {}),
-    ...(rawPatterns.length === 0 ? { configSnapshotSha256: configSnapshotSha256(resolve(projectCwd, ".openarch", "config.yml")) } : {}),
+    configPath: projectConfigFile,
+    // 只有在会真正持久化时才计算整仓内容身份（completeScope 与它同条件）。
+    // 校准 2026-09-25：此前只在增量路径写入，于是 `scan --rebuild`（以及因 config 变化
+    // 自动退化全量）写出的 index 没有 sourceSnapshotSha256，`baseline.freshness`
+    // 按构造永久为 unknown —— 而发行版技能恰好要求改配置后必须 --rebuild。
+    ...(rawPatterns.length === 0 ? { sourceSnapshotSha256: sourceSnapshotSha256(paths, projectCwd) } : {}),
+    ...(rawPatterns.length === 0 ? { configSnapshotSha256: configSnapshotSha256(projectConfigFile) } : {}),
     calibrationWeights: gateConfig.crlStateWeights,
     structuralPolicies: gateConfig.structuralPolicies,
     sealCalibration,

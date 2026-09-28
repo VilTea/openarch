@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { scanMarkdown } from "./MarkdownStructure";
 
 export const INDEX_VERSION = "1" as const;
 export const MINHASH_SIZE = 64;
@@ -14,17 +15,21 @@ export interface IndexedDocument {
   readonly title?: string;
 }
 
-const normalize = (text: string): string => text
-  .replace(/^---[\s\S]*?---\s*/u, "")
-  .replace(/```[\s\S]*?```/gu, " ")
-  .replace(/<!--([\s\S]*?)-->/gu, " ")
+/** 文档指纹的归一化：只丢弃**结构上已证明**不是正文的区间（frontmatter 与闭合围栏内的代码），
+ *  HTML 注释按 `MarkdownStructure` 的单遍状态机剥离（围栏内不生效）。
+ *  未闭合围栏 / 未闭合注释的文本保留在指纹里——证明不了就不删，避免产出"看似干净"的指纹。 */
+const normalize = (text: string): string => scanMarkdown(text).lines
+  .filter((line) => !line.inFence && !line.frontmatter)
+  .map((line) => line.text)
+  .join("\n")
   .normalize("NFKC")
   .toLocaleLowerCase()
   .replace(/\s+/gu, " ")
   .trim();
 
-const featuresOf = (text: string): readonly string[] => {
-  const chars = [...normalize(text)];
+/** char 3-gram shingle：调用方已持有归一化文本时直接复用，避免对同一文本重复归一化。 */
+const shinglesOf = (normalized: string): readonly string[] => {
+  const chars = [...normalized];
   if (chars.length <= 3) return chars.length > 0 ? [chars.join("")] : [];
   return Array.from({ length: chars.length - 2 }, (_, index) => chars.slice(index, index + 3).join(""));
 };
@@ -56,12 +61,17 @@ export const codeFeaturesOf = (content: string, window = 3): readonly string[] =
   return features;
 };
 
-export const codeIndexedDocument = (path: string, content: string): IndexedDocument => ({
-  path,
-  contentSha256: contentSha256(content),
-  minHash: minHashOf(codeFeaturesOf(content)),
-  simHash: simHashOf(codeFeaturesOf(content)),
-});
+/** 同一文本只归一化一次：`minHash` 与 `simHash` 复用同一份特征集合（审计 C-8：
+ *  旧实现把 `codeFeaturesOf(content)` 调了两次，块级窗口 stride = window/2 时整篇被重复归一化 4.0×）。 */
+export const codeIndexedDocument = (path: string, content: string): IndexedDocument => {
+  const features = codeFeaturesOf(content);
+  return {
+    path,
+    contentSha256: contentSha256(content),
+    minHash: minHashOf(features),
+    simHash: simHashOf(features),
+  };
+};
 
 const simHashOf = (features: readonly string[]): string => {
   const weights = Array.from({ length: 64 }, () => 0);
@@ -78,7 +88,8 @@ export const contentSha256 = (content: string): string => createHash("sha256").u
 
 export const indexedDocument = (path: string, content: string): IndexedDocument => {
   const normalized = normalize(content);
-  const features = featuresOf(content);
+  // 标题与特征共用同一次归一化结果（`featuresOf(content)` 内部也是"先 normalize 再切 shingle"）。
+  const features = shinglesOf(normalized);
   const title = normalized.match(/^#\s+([^\n]+)/u)?.[1];
   return { path, contentSha256: contentSha256(content), minHash: minHashOf(features), simHash: simHashOf(features), ...(title ? { title } : {}) };
 };

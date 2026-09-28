@@ -50,8 +50,34 @@ describe("governance diagnostics report", () => {
     })).join("\n");
 
     expect(lines).toContain("架构门禁: WARN");
-    expect(lines).toContain("[WARN] Go 函数局部复杂度试行 WARN: max_func_branch > 5 → services/x/task.go");
-    expect(lines).toContain("[WARN] domain 局部负担过高: path_class == \"domain\" && crl_local > 0.55 → packages/core/src/domain/y.ts");
+    // 校准 2026-09-25：review 面与 gate 面同源——带裁决模式，措辞为调查式而非命令式
+    expect(lines).toContain("  [WARN][强制] Go 函数局部复杂度试行 WARN: max_func_branch > 5 → services/x/task.go → 先调查触发事实；修复、记录接受决定或经审计重新校准由项目所有者决定。");
+    expect(lines).toContain("  [WARN][强制] domain 局部负担过高: path_class == \"domain\" && crl_local > 0.55 → packages/core/src/domain/y.ts → 先调查触发事实；修复、记录接受决定或经审计重新校准由项目所有者决定。");
+    expect(lines).not.toContain("建议: 修复该文件");
+  });
+
+  it("标注 NOT_CONFIGURED：0 条规则不等于 clean（校准 2026-09-25）", () => {
+    const render = (antiPatterns: unknown) => renderGovernanceDiagnostics(assembleGovernanceEvaluation({
+      gate: { code: 0, verdict: "PASS", lines: [], configuredRules: 1, evaluatedFiles: 0, report: { metrics: [], result: { verdict: "PASS", triggered: [] }, report: false } } as never,
+      review: { nFiles: 0, hasData: false, entries: [], p95: undefined, top3: [] },
+      antiPatterns,
+      tests: { state: "unavailable", reason: "no provider" },
+    })).join("\n");
+
+    // 没有任何规则被执行、也没有失败 ⇒ 明确标未配置，避免 "Rules: 0 / Findings: 0" 被读成 clean。
+    expect(render({ state: "available", value: { rulesRun: 0, hits: [], errors: [], unavailable: [], sourcesRun: [], ruleFailures: [], pruning: [] } }))
+      .toContain("NOT_CONFIGURED: 未安装任何项目规则；0 不代表 clean");
+    // 有规则被执行 ⇒ 照常显示计数，不加标记。
+    const withRules = render({ state: "available", value: { rulesRun: 2, hits: [], errors: [], unavailable: [], sourcesRun: [], ruleFailures: [], pruning: [] } });
+    expect(withRules).toContain("已执行规则: 2");
+    expect(withRules).not.toContain("NOT_CONFIGURED");
+    // 规则加载失败/不可用 ⇒ 已有各自的明细行，不得重复声称"未配置"。
+    const withFailure = render({ state: "available", value: { rulesRun: 0, hits: [], errors: ["bad rule"], unavailable: [], sourcesRun: [], ruleFailures: [], pruning: [] } });
+    expect(withFailure).not.toContain("NOT_CONFIGURED");
+    expect(withFailure).toContain("[RULE ERROR] bad rule");
+    const withUnavailable = render({ state: "available", value: { rulesRun: 0, hits: [], errors: [], unavailable: ["provider down"], sourcesRun: [], ruleFailures: [], pruning: [] } });
+    expect(withUnavailable).not.toContain("NOT_CONFIGURED");
+    expect(withUnavailable).toContain("[UNAVAILABLE] provider down");
   });
 
   it("renders definition-footprint signal with language-level P95 threshold", () => {

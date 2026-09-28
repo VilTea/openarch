@@ -3,6 +3,7 @@
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { parameterPropertyMap } from "./openarch-contract.mjs";
 import { loadCliContext } from "./openarch-state.mjs";
 import { execSeamOf, sessionCwdOf } from "./openarch-tools-run.mjs";
 import { renderContextText } from "./openarch-tools-render.mjs";
@@ -13,7 +14,7 @@ export function buildContextTool(deps) {
   return {
     name: "openarch_context",
     description: "读取 OpenArch 项目治理事实（配置、baseline 状态、变更计数、就绪状态）。只读、秒级；输出为稳定 JSON 契约的摘要。",
-    parameters: { type: "object", properties: {} },
+    parameters: parameterPropertyMap({ type: "object", properties: {} }),
     isConcurrencySafe: () => true,
     timeoutMs: 60_000,
     output: {

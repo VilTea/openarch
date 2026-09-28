@@ -1,5 +1,6 @@
 import { type GateAppOutput } from "@openarch/core";
 import { type Locale, message } from "../i18n";
+import { renderThresholdVisibility } from "./gate/calibration";
 import { renderStructuralSections } from "./gate/structure";
 import { renderTriggers, renderUnavailable } from "./gate/triggers";
 
@@ -16,6 +17,9 @@ export const renderGateReport = (output: GateAppOutput, locale: Locale): readonl
   const lines = [
     message(locale, "gate.heading"),
     message(locale, "gate.verdict", { verdict: verdictText }),
+    // WARN 不是整改指令（单一权威陈述，仅在 WARN 时输出一次）：
+    // 只读报告的 Agent 必须知道修复、记录接受或经审计校准由项目所有者决定。
+    ...(verdict === "WARN" ? [message(locale, "gate.warnAdvisory")] : []),
     message(locale, "gate.evaluated", { files: output.report.metrics.length }),
     ...renderTriggers(locale, output),
   ];
@@ -40,6 +44,8 @@ export const renderGateReport = (output: GateAppOutput, locale: Locale): readonl
     lines.push(...calibrationShifts.map((shift) => message(locale, "gate.calibrationShift", { path: shift.path, sealed: shift.gateLocalBurden.toFixed(3), observed: shift.observedLocalBurden.toFixed(3), previousRules: shift.gateRules.join(",") || message(locale, "gate.none"), observedRules: shift.observedRules.join(",") || message(locale, "gate.none") })));
   }
   if (output.configuredRules === 0) lines.push(message(locale, "gate.unconfigured"), message(locale, "gate.unconfiguredAction"));
+  // 阈值可见性：仅在报告模式下输出，且永不影响 verdict/exit code。
+  if (output.report.report) lines.push(...renderThresholdVisibility(locale, output));
   if (output.report.report) lines.push(...renderStructuralSections(locale, output), "", "---", message(locale, "gate.footer"));
   return lines;
 };

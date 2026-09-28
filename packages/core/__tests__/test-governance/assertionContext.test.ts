@@ -11,6 +11,8 @@ const dir = join(tmpdir(), `openarch-assertion-context-${Date.now()}`);
 const helper = join(dir, "test-helpers.ts");
 const other = join(dir, "subject.ts");
 const javaHelper = join(dir, "TestHelpers.java");
+const javaMockitoHelper = join(dir, "MockitoHelpers.java");
+const javaBusinessVerify = join(dir, "BusinessVerifier.java");
 const pyHelper = join(dir, "test_helpers.py");
 const goTarget = join(dir, "lease.go");
 
@@ -29,6 +31,21 @@ beforeAll(() => {
     "public class TestHelpers {",
     "  public void validateUserCreated(User u) { assertNotNull(u); assertEquals(\"active\", u.status); }",
     "  public String render(User u) { return u.toString(); }",
+    "}",
+  ].join("\n"));
+  writeFileSync(javaMockitoHelper, [
+    "package demo;",
+    "import static org.mockito.Mockito.verify;",
+    "public class MockitoHelpers {",
+    "  public void assertVerified(Service proxy) { verify(proxy); }",
+    "  public String render(Service proxy) { return proxy.toString(); }",
+    "}",
+  ].join("\n"));
+  // 门控对照：同名 verify 调用但 helper 文件未 import org.mockito ⇒ 不是断言包装。
+  writeFileSync(javaBusinessVerify, [
+    "package demo;",
+    "public class BusinessVerifier {",
+    "  public void verifyUser(User u) { verify(u); }",
     "}",
   ].join("\n"));
   writeFileSync(pyHelper, [
@@ -64,6 +81,16 @@ describe("collectWrapperExports（跨文件 helper 断言，2026-08-12 调研落
     expect(names.has("render")).toBe(false);
   }, 15000);
 
+  it("extracts Java helper methods that wrap Mockito verify, gated on the helper's own mockito import (defect 2)", async () => {
+    const parser = await Effect.runPromise(parserIn());
+    const names = await collectWrapperExports(parser, javaMockitoHelper, "java");
+    expect(names.has("assertVerified")).toBe(true);
+    expect(names.has("render")).toBe(false);
+    // 同一名字集合 + 同一门控：未 import org.mockito 的同名业务方法不当作断言包装。
+    const business = await collectWrapperExports(parser, javaBusinessVerify, "java");
+    expect(business.has("verifyUser")).toBe(false);
+  }, 15000);
+
   it("extracts Python helper functions whose body contains an assert statement", async () => {
     const parser = await Effect.runPromise(parserIn());
     const names = await collectWrapperExports(parser, pyHelper, "python");
@@ -97,6 +124,16 @@ describe("resolveCrossFileAssertionScope", () => {
     ], new Set(), cache);
     expect(scope.isWrapperCall("validateUserCreated")).toBe(true);
     expect(scope.isWrapperCall("validate_created")).toBe(true);
+    expect(scope.isWrapperCall("render")).toBe(false);
+  }, 15000);
+
+  it("aggregates cross-file wrappers that wrap Mockito verify (defect 2, cross-file path)", async () => {
+    const parser = await Effect.runPromise(parserIn());
+    const cache = new Map<string, ReadonlySet<string>>();
+    const scope = await resolveCrossFileAssertionScope(parser, [
+      { resolvedPath: javaMockitoHelper.replace(/\\/g, "/") },
+    ], new Set(), cache);
+    expect(scope.isWrapperCall("assertVerified")).toBe(true);
     expect(scope.isWrapperCall("render")).toBe(false);
   }, 15000);
 

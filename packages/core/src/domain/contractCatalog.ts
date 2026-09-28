@@ -21,9 +21,20 @@ export interface MachineContractDescriptor {
 /** `openarch contract --json` 自身输出的 schema 版本。 */
 export const CONTRACT_CATALOG_SCHEMA = "contract-catalog-json-v1" as const;
 
-/** 各机器契约当前版本常量：CLI 输出与目录共用同一来源，禁止分散字符串。 */
+/**
+ * 各机器契约当前版本常量：CLI 输出与目录共用同一来源，禁止分散字符串。
+ *
+ * **这些版本值不得静默变更。** 外部插件（DSH 插件不能 import 本 TS 源码）在
+ * `packages/openarch-plugin/dsh/host/openarch-contracts.mjs` 持有本地镜像；
+ * core↔镜像的对齐由 `__tests__/contract-sync/pluginContractMirror.test.ts` 强制，
+ * 镜像自身的防漂移由插件包 `dsh/__tests__/openarch-contract-mirror.test.ts` 守住。
+ * 改这里必须同步那两处，并考虑 bump 后旧值是否需要 `status: "deprecated"` 记录。
+ */
 export const MACHINE_CONTRACT_VERSIONS = {
   contextJson: "context-json-v1",
+  // test-governance-json 保持 v1：新增的逐条 finding 投影（decision.findings）是非破坏性
+  // 追加字段，遵循本文件契约纪律第 3 条（消费者 fail-closed，缺省即旧行为）；
+  // 插件的识别面只校验 schema id，`decision` 为 additionalProperties:true，故无需协同 bump。
   testGovernanceJson: "test-governance-json-v1",
   testGovernanceProviderListJson: "test-governance-provider-list-v1",
   rulesFactsJson: "rules-facts-json-v1",
@@ -41,7 +52,15 @@ export const machineContractDescriptors = (): readonly MachineContractDescriptor
     id: "test-governance-json",
     version: MACHINE_CONTRACT_VERSIONS.testGovernanceJson,
     status: "current",
-    summary: "Test governance collection, provider coverage boundaries, summaries, and adapter suggestions.",
+    // 伴读载荷必须在这里被点名，否则就是"事实存在但没有入口"：`test --bloat` 的 `bloat` 子载荷
+    // （`score` / `triggered` / `availableWeight` / `parts[]{name,value,threshold,weight,contribution,
+    // availability,reason}` / `similarityBuckets` / 文件证据 / `weakAssertionShapesSource`）
+    // **没有自己的 schema 字段**，它是本契约内的伴读子载荷 ⇒ **刻意不为它另立 id**
+    // （目录里出现一个线上读不到的 id 属幻影契约）。
+    // 纪律：report-only；不可测时省略取值并给 `availability` + `reason`，绝不写 0；不持久化、不参与裁决。
+    // `weakAssertionShapesSource`（`project`|`builtin`，2026-09-27 §6/Q1）是**可选追加**披露字段：
+    // 说明弱断言判据生效的是项目声明的名单还是内置默认；消费方按缺省 fail-closed，schema 版本不 bump。
+    summary: "Test governance collection, provider coverage boundaries, per-finding locations (decision.findings), summaries, adapter suggestions, and the report-only TEST_BLOAT companion payload (parts[](value/threshold/weight/availability/reason), weakAssertionShapesSource, shapes identity in baseline meta — no separate schema field on purpose).",
   },
   {
     id: "test-governance-provider-list-json",

@@ -44,6 +44,48 @@ const branchWeight = (kind: BranchClass | undefined): number => {
   return 0;
 };
 
+/**
+ * 沿“容器”节点下钻到第一条真实语句。
+ *
+ * 容器 = 语法上的包裹层（block / statement_block / statement_list /
+ * Rust 的 expression_statement）。块内第一条真正要看的节点是它的
+ * **第一个具名子节点**：用 `children` 会拿到 `{` 这类匿名 token。
+ *
+ * 这条约束是本次整改的核心（认知点原则 §3.2 消除平行实现）：
+ * 0.1.5 里 TS 与 Java 各写了一份卫语句判据，且互相镜像 ——
+ * `TsAstSemantics` 用 `children[0]` 读块，于是带花括号的卫语句被读成 `{`（记普通分支），
+ * 只有无花括号形态才算卫语句；`JavaStrategy` 用 `namedChildren[0]`，于是只有带花括号形态才算卫语句。
+ * 两边的“正确形态”恰好是对方的漏判形态。
+ */
+export const firstStatementIn = (
+  node: Node | null | undefined,
+  containerTypes: ReadonlySet<string>,
+): Node | undefined => {
+  let current = node ?? undefined;
+  // namedChildren[0] 严格下钻，循环必然终止。
+  while (current && containerTypes.has(current.type)) current = current.namedChildren[0];
+  return current;
+};
+
+export interface GuardClauseSemantics {
+  /** 跳转语句节点类型（return/throw/break/continue/goto/fallthrough…）。 */
+  readonly jumpTypes: ReadonlySet<string>;
+  /** 需要下钻的包裹层节点类型（块、语句列表、表达式语句包装）。 */
+  readonly containerTypes: ReadonlySet<string>;
+}
+
+/**
+ * 卫语句判据的**唯一权威实现**：语言只声明“什么算跳转”和“什么算包裹层”，
+ * 判据本身不再由各语言复制。带/不带花括号的单语句形态因此天然等价。
+ */
+export const createGuardClauseDetector = (
+  semantics: GuardClauseSemantics,
+): ((ifNode: Node) => boolean) =>
+  (ifNode) => {
+    const first = firstStatementIn(ifNode.childForFieldName?.("consequence"), semantics.containerTypes);
+    return first !== undefined && semantics.jumpTypes.has(first.type);
+  };
+
 export const countNodeTypes = (node: Node, types: ReadonlySet<string>): number => {
   let count = types.has(node.type) ? 1 : 0;
   for (const child of node.children) count += countNodeTypes(child, types);
@@ -80,21 +122,37 @@ const collectCommentLines = (node: Node, lines: Set<number>): void => {
 
 const functionInfo = (node: Node, semantics: LanguageStructuralSemantics): FunctionInfo => {
   const calls: string[] = [];
+  const callCounts: Record<string, number> = {};
+  const shape = { ordinaryIf: 0, guardIf: 0, caseCount: 0 };
   const visit = (current: Node, isRoot = false): number => {
     // Nested functions own their own complexity and calls. They are collected by
     // the outer traversal rather than being folded into the containing function.
     if (!isRoot && semantics.functionTypes.has(current.type)) return 0;
     if (semantics.callNodeTypes.has(current.type)) {
       const target = semantics.callTarget(current);
-      if (target) calls.push(target.name);
+      if (target) {
+        calls.push(target.name);
+        callCounts[target.name] = (callCounts[target.name] ?? 0) + 1;
+      }
     }
-    return branchWeight(semantics.classifyBranch(current))
+    const kind = semantics.classifyBranch(current);
+    if (kind === "ordinary") shape.ordinaryIf += 1;
+    else if (kind === "guard") shape.guardIf += 1;
+    else if (kind === "case") shape.caseCount += 1;
+    return branchWeight(kind)
       + current.children.reduce((sum, child) => sum + visit(child), 0);
   };
+  // 先完成遍历再读 shape：形态计数与加权值来自同一次遍历，避免两套口径。
+  const branchCount = visit(node, true);
   return {
     name: semantics.functionName(node),
-    branchCount: visit(node, true),
+    line: node.startPosition.row + 1,
+    branchCount,
     calls: [...new Set(calls)],
+    callCounts,
+    ordinaryBranches: shape.ordinaryIf,
+    guardBranches: shape.guardIf,
+    caseBranches: shape.caseCount,
   };
 };
 

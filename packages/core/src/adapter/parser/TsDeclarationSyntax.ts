@@ -41,7 +41,10 @@ export const tsDeclarationSyntax: DeclarationSyntax = {
     return undefined;
   },
   nameOf: declarationName,
-  isPublic: (node, inherited) => inherited && !/^(private|protected)\b/.test(node.text.trim()),
+  // TypeScript/JavaScript 类与接口成员默认 public，因此这里**使用**继承语义
+  // （与 Java/Rust 的“默认私有”相对）。这是语言语义差异，不是判据分叉：
+  // 判定入口仍然是 SemanticDeclarations 的唯一 isPublic 契约。
+  isPublic: (node, context) => context.inheritedPublic && !/^(private|protected)\b/.test(node.text.trim()),
   contractCompatibilityOf: (node) => ["property_signature", "method_signature"].includes(node.type)
     && /\?\s*(?::|\()/.test(node.text) ? "additive" : undefined,
   isReExport: (node) => node.type === "export_specifier" && node.parent?.parent?.type === "export_statement"

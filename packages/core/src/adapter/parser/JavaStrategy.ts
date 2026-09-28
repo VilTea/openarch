@@ -4,23 +4,24 @@ import type { FileAst } from "../../domain/ast";
 import { collectImportSources, type ImportSyntax } from "./ImportExtraction";
 import { javaModuleResolver } from "./JavaModuleResolver";
 import { resolveImportRefs } from "./ModuleResolver";
-import { collectSemanticSurface, type DeclarationSyntax } from "./SemanticDeclarations";
-import { collectStructuralFacts, type BranchClass, type LanguageStructuralSemantics } from "./StructuralFacts";
+import { collectSemanticSurface, type DeclarationSyntax, type DeclarationVisibilityContext } from "./SemanticDeclarations";
+import { collectStructuralFacts, createGuardClauseDetector, type BranchClass, type LanguageStructuralSemantics } from "./StructuralFacts";
 import { createTreeSitterRuntime } from "./TreeSitterRuntime";
 import { collectInvocationBindings, directTypeName, type InvocationBindingSemantics } from "./InvocationBindingFacts";
 
 const runtime = createTreeSitterRuntime("tree-sitter-java.wasm");
 const functionTypes = new Set(["method_declaration", "constructor_declaration", "lambda_expression"]);
-const jumpTypes = new Set(["return_statement", "throw_statement", "break_statement", "continue_statement"]);
 
-const isGuardClause = (node: Node): boolean => {
-  const consequence = node.childForFieldName?.("consequence");
-  const first = consequence?.namedChildren[0];
-  return !!first && jumpTypes.has(first.type);
-};
+// 卫语句判据来自共享实现。Java 允许 `if (c) return;` 与 `if (c) { return; }` 两种等价形态，
+// 判据必须同时接受：历史实现只下钻具名子节点，于是无花括号形态被全额计费（1.0 而非 0.3），
+// 给同一行加花括号就能让指标降 70%（纯度量 artifact）。
+const guardClause = createGuardClauseDetector({
+  jumpTypes: new Set(["return_statement", "throw_statement", "break_statement", "continue_statement"]),
+  containerTypes: new Set(["block"]),
+});
 
 const classifyBranch = (node: Node): BranchClass | undefined => {
-  if (node.type === "if_statement") return isGuardClause(node) ? "guard" : "ordinary";
+  if (node.type === "if_statement") return guardClause(node) ? "guard" : "ordinary";
   if (node.type === "switch_expression") return "ordinary";
   if (node.type === "switch_label") return "case";
   return undefined;
@@ -85,6 +86,17 @@ const declarationName = (node: Node): string | undefined =>
     ?? node.namedChildren.find((child) => child.type === "identifier" || child.type === "variable_declarator")?.childForFieldName?.("name")?.text
     ?? node.namedChildren.find((child) => child.type === "identifier")?.text;
 
+/**
+ * Java 成员可见性：类/枚举/record 成员默认**包级私有**，只有显式 `public` 才对外；
+ * 接口/注解成员（containerKind === "interface"）才是隐式 public。
+ *
+ * 0.1.5 的 `inherited || hasPublicModifier(node)` 让公有类的每个成员都继承 public，
+ * 新增的 private static 助手因此被判为公共合同变更（public_method_sig）。
+ * 这里不再使用 `inherited`，只依据容器类型与显式修饰符。
+ */
+const javaMemberIsPublic = (node: Node, context: DeclarationVisibilityContext): boolean =>
+  hasPublicModifier(node) || (context.inheritedPublic && context.containerKind === "interface");
+
 const javaDeclarationSyntax: DeclarationSyntax = {
   isImport: (node) => node.type === "import_declaration" || node.type === "package_declaration",
   isIgnored: (node) => node.type === "comment",
@@ -97,7 +109,7 @@ const javaDeclarationSyntax: DeclarationSyntax = {
     return undefined;
   },
   nameOf: declarationName,
-  isPublic: (node, inherited) => inherited || hasPublicModifier(node),
+  isPublic: javaMemberIsPublic,
   bodyOf: (node) => node.childForFieldName?.("body")
     ?? node.namedChildren.find((child) => ["class_body", "interface_body", "enum_body", "block"].includes(child.type)),
 };
@@ -139,6 +151,7 @@ export const parseJavaText = (filePath: string, text: string) => Effect.gen(func
 });
 
 export const queryJava = runtime.query;
+export const queryTextJava = runtime.queryText;
 
 /** Lexical Java bindings only: typed parameters/local constructors; inheritance, fields and DI remain unavailable. */
 const javaBindingSemantics: InvocationBindingSemantics = {

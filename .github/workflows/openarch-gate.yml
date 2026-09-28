@@ -5,7 +5,7 @@
 name: OpenArch Gate
 on:
   pull_request:
-    branches: [main]
+    branches: [release]
     paths:
       - 'packages/**'
       - '.openarch/**'

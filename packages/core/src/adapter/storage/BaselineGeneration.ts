@@ -5,6 +5,7 @@ import type { BaselineSnapshot } from "../../port/StorageService";
 import { atomicWriteJson } from "./AtomicWriter";
 import { retryTransientFileOperation } from "./TransientFileRetry";
 import { baselineShardFileName } from "./BaselineShard";
+import { mapWithConcurrency } from "../../infra/boundedConcurrency";
 import { normalizeBaselineSnapshot, readBaselineGenerationDirectory, shardManifestDigest, snapshotIdentity } from "./BaselineGenerationValidation";
 
 export const baselineDirFor = (root: string) => join(root, "baseline");
@@ -73,6 +74,16 @@ const stagingPaths = (root: string) => {
   return { active, staging: `${active}.staging-${token}`, backup: `${active}.backup-${token}` };
 };
 
+/**
+ * 分片写入的并发度（D1 取证 2026-09-27）。
+ *
+ * 缺陷：这里原本是 `for (const entry of snapshot.entries) await atomicWriteJson(...)` ——
+ * 完全串行。实测（本仓 663 文件，仓库所在卷）单次小 JSON 的 atomic 写（写临时文件 + rename）
+ * 约 **64ms**，串行即 **~42s**；而解析整个仓库只要 ~4s。分片路径互不相同、发布是**整目录 rename**，
+ * 写入顺序没有任何语义，因此改为有界并发。失败仍由调用方的 try/catch 清理 staging。
+ */
+const SHARD_WRITE_CONCURRENCY = 16;
+
 const writeStagingGeneration = async (staging: string, active: string, snapshot: BaselineSnapshot): Promise<void> => {
   mkdirSync(staging, { recursive: true });
   // 写库剪枝（校准 2026-08-08）：增量 scan 只重算少量分片——staging 先复制 active
@@ -87,11 +98,10 @@ const writeStagingGeneration = async (staging: string, active: string, snapshot:
       rmSync(join(staging, baselineShardFileName(deleted)), { force: true });
     }
     const changed = new Set(snapshot.changedPaths.map((path) => baselineShardFileName(path)));
-    for (const entry of snapshot.entries) {
-      if (changed.has(baselineShardFileName(entry.path))) await atomicWriteJson(join(staging, baselineShardFileName(entry.path)), entry);
-    }
+    const changedEntries = snapshot.entries.filter((entry) => changed.has(baselineShardFileName(entry.path)));
+    await mapWithConcurrency(changedEntries, (entry) => atomicWriteJson(join(staging, baselineShardFileName(entry.path)), entry), SHARD_WRITE_CONCURRENCY);
   } else {
-    for (const entry of snapshot.entries) await atomicWriteJson(join(staging, baselineShardFileName(entry.path)), entry);
+    await mapWithConcurrency(snapshot.entries, (entry) => atomicWriteJson(join(staging, baselineShardFileName(entry.path)), entry), SHARD_WRITE_CONCURRENCY);
   }
   // 发布时把「index 内容指纹 + 分片目录 stat manifest」摘要写进 index：
   // 后续只读校验可先比较 manifest，一致时跳过重复深解析；任何 index 或分片

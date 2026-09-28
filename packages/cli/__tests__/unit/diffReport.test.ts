@@ -10,6 +10,7 @@ const detail = (beforeSource: "git" | "baseline" | "unavailable" = "git") => ({
     externalPassthrough: { before: beforeSource === "unavailable" ? null : 2, after: 1, delta: beforeSource === "unavailable" ? null : -1, normalizedDelta: beforeSource === "unavailable" ? null : -0.01 },
   }, deterioration: beforeSource === "unavailable" ? 0 : 0.04, improvement: beforeSource === "unavailable" ? 0 : 0.01 },
   exposure: { before: beforeSource === "unavailable" ? null : 0.2, after: 0.3, delta: beforeSource === "unavailable" ? null : 0.1 },
+  shape: { connectednessBefore: beforeSource === "unavailable" ? null : 0.9, connectednessAfter: beforeSource === "unavailable" ? null : 0.6, moduleShapeDelta: beforeSource === "unavailable" ? null : 0.3, functionCountDelta: beforeSource === "unavailable" ? null : 12, singleCallSiteRatioDelta: beforeSource === "unavailable" ? null : 0.56 },
 });
 
 const report = (overrides: Partial<Parameters<typeof renderDiffReport>[0]> = {}) => ({
@@ -25,6 +26,34 @@ describe("renderDiffReport", () => {
     expect(lines).toContain("外部编排 -1.0（加权归一化 -0.01）");
     expect(lines).toContain("局部恶化 +0.04，改善 -0.01；暴露 Δα=+0.100");
     expect(lines).toContain("文件级结构传播上界");
+  });
+
+  it("renders cognitive-point shape alongside D_MR without folding it into the sum", () => {
+    const lines = renderDiffReport(report()).join("\n");
+    // 认知点形态是并列事实：机械分解可以让 gate 变绿而这里同时变差。
+    expect(lines).toContain("认知点形态:");
+    expect(lines).toContain("不连通形态(1-connectedness) Δ +0.300（正=更碎）");
+    expect(lines).toContain("函数/声明数 Δ +12（正=新增了抽象）");
+    // 单调用点助手占比与"更碎"并读：图仍连通但助手只用一次的比例升高。
+    expect(lines).toContain("单调用点助手占比 Δ +0.560（正=新增的抽象里只用一次的更多）");
+    // 它不得改变局部负担的求和口径。
+    expect(lines).toContain("局部恶化 +0.04，改善 -0.01；暴露 Δα=+0.100");
+  });
+
+  it("旧证据缺少单调用点字段时静默跳过，不渲染 NaN", () => {
+    // shape 存在但缺后加字段（会话内更早持久化的证据）：不得抛错或渲染 NaN。
+    const legacy = { ...detail(), shape: { connectednessBefore: 0.9, connectednessAfter: 0.6, moduleShapeDelta: 0.3, functionCountDelta: 12 } } as unknown as ReturnType<typeof detail>;
+    const lines = renderDiffReport(report({ evidence: { mrDetail: [legacy], crl: new Map() } })).join("\n");
+    expect(lines).toContain("不连通形态(1-connectedness) Δ +0.300");
+    expect(lines).not.toContain("单调用点助手占比");
+    expect(lines).not.toContain("NaN");
+  });
+
+  it("omits the shape clause when a persisted record predates the field", () => {
+    const legacy = { ...detail(), shape: undefined } as unknown as ReturnType<typeof detail>;
+    const lines = renderDiffReport(report({ evidence: { mrDetail: [legacy], crl: new Map() } })).join("\n");
+    expect(lines).not.toContain("认知点形态");
+    expect(lines).toContain("局部恶化 +0.04，改善 -0.01；暴露 Δα=+0.100");
   });
 
   it("explains a zero D_MR as no local-burden deterioration", () => {
@@ -201,12 +230,76 @@ describe("renderDiffReport", () => {
         changeSurfaces: {
           availability: "unavailable",
           surfaces: [],
-          unavailableLanguages: [{ language: "go", reason: "gopls, go prerequisites unavailable" }],
+          unavailableLanguages: [{ language: "go", reason: "gopls, go prerequisites unavailable", files: ["src/api.go"] }],
         },
       },
     })).join("\n");
     expect(lines).toContain("变更面分析不可用: go（gopls, go prerequisites unavailable）");
+    expect(lines).toContain("→ 受影响文件: src/api.go");
     expect(lines).not.toContain("C_push=");
+  });
+
+  it("区分「证据缺口」与「已确证的 0 消费者」（校准 2026-09-25）", () => {
+    const withGap = renderDiffReport(report({
+      summary: { iPush: 4, dMR: 0, deltas: [{ file: "src/api.ts", alphaStruct: 0.4, deltaI: 4 }], historyEntryId: "pending-id", evidenceState: "pending" },
+      evidence: {
+        mrDetail: [], crl: new Map(),
+        changeSurfaces: {
+          availability: "available",
+          surfaces: [],
+          unavailableLanguages: [{ language: "java", reason: "jdtls unavailable", files: ["src/A.java", "src/B.java"] }],
+          symbolEvidenceGaps: [
+            { file: "src/A.java", language: "java", kind: "provider-unavailable", anchors: ["A.run"], reason: "jdtls, javac prerequisites unavailable" },
+            { file: "src/C.ts", language: "typescript", kind: "static-bound-empty", anchors: ["C.run"], reason: "静态上界为空：0 消费者是结构性结论，非符号级确证" },
+          ],
+        },
+        impactPlan: [{
+          file: "src/A.java", publicContracts: [], implementationUnits: [], dependencyUnits: [], directConsumers: [],
+          symbolConsumers: [], actions: [],
+          evidenceGap: { file: "src/A.java", language: "java", kind: "provider-unavailable", anchors: ["A.run"], reason: "jdtls, javac prerequisites unavailable" },
+        }],
+      },
+    })).join("\n");
+    expect(withGap).toContain("受影响文件: src/A.java, src/B.java");
+    expect(withGap).toContain("符号/可见性证据缺口（空消费者列表表示未知，不等于已确证的 0）");
+    expect(withGap).toContain("[证据不可用] src/A.java: jdtls, javac prerequisites unavailable");
+    // 静态上界为空也必须留下缺口：否则文件看起来"已完全解析"。
+    expect(withGap).toContain("[静态上界为空（未查询符号证据）] src/C.ts");
+    expect(withGap).toContain("证据缺口: jdtls, javac prerequisites unavailable（symbolConsumers 为空表示未知，不是已确证的 0）");
+
+    // 证据可用且真的 0 消费者 ⇒ 不得出现缺口措辞。
+    const resolved = renderDiffReport(report({
+      summary: { iPush: 4, dMR: 0, deltas: [{ file: "src/api.ts", alphaStruct: 0.4, deltaI: 4 }], historyEntryId: "pending-id", evidenceState: "pending" },
+      evidence: {
+        mrDetail: [], crl: new Map(),
+        changeSurfaces: {
+          availability: "available", surfaces: [], unavailableLanguages: [], symbolEvidenceGaps: [],
+        },
+        impactPlan: [{
+          file: "src/api.ts", publicContracts: [], implementationUnits: [], dependencyUnits: [], directConsumers: [],
+          symbolConsumers: [], actions: [],
+        }],
+      },
+    })).join("\n");
+    expect(resolved).not.toContain("符号/可见性证据缺口");
+    expect(resolved).not.toContain("证据缺口:");
+  });
+
+  it("旧证据缺少 files/gaps 字段时不抛错、也不编造缺口", () => {
+    // changeSurfaces 会随 evidence 持久化，旧记录没有这些加法字段。
+    const legacy = renderDiffReport(report({
+      summary: { iPush: 4, dMR: 0, deltas: [], historyEntryId: "pending-id", evidenceState: "pending" },
+      evidence: {
+        mrDetail: [], crl: new Map(),
+        changeSurfaces: {
+          availability: "unavailable", surfaces: [],
+          unavailableLanguages: [{ language: "go", reason: "gopls unavailable" }],
+        } as never,
+      },
+    })).join("\n");
+    expect(legacy).toContain("变更面分析不可用: go");
+    expect(legacy).not.toContain("受影响文件");
+    expect(legacy).not.toContain("符号/可见性证据缺口");
   });
 
   it("does not describe an unavailable before fact as regression", () => {

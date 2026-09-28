@@ -6,16 +6,17 @@
 
 | 文档 | 用途 |
 |------|------|
-| [phase1-spark-guide.md](./phase1-spark-guide.md) | 星火燎原：根据地选择、三步路线图、开发前准备清单（含 init/hook/MR 仪式） |
-| [demo-scenario-spec.md](./demo-scenario-spec.md) | Phase 1 验证场景规格（CRL「温水煮青蛙」demo） |
-| [protracted-strategy-assessment.md](./protracted-strategy-assessment.md) | 持久战略：阶段判断、转折点、检查点（四阶段含 Phase 4） |
-| [internal/design.md](./internal/design.md) | 完整设计 v5.3 living spec（v5.2 定稿 + 2026-08 dogfood 修订：cut/revised/active 分类） |
+| phase1-spark-guide.md | 星火燎原：根据地选择、三步路线图、开发前准备清单（含 init/hook/MR 仪式） |
+| demo-scenario-spec.md | Phase 1 验证场景规格（CRL「温水煮青蛙」demo） |
+| protracted-strategy-assessment.md | 持久战略：阶段判断、转折点、检查点（四阶段含 Phase 4） |
+| design.md | 完整设计 v5.3 living spec（v5.2 定稿 + 2026-08 dogfood 修订：cut/revised/active 分类） |
+| [language-parser-extension.md](./language-parser-extension.md) | 语言/parser 扩展模板：登记唯一语言权威、共享事实边界、`UNAVAILABLE ≠ 0`、fixture 矩阵 |
 
 ## 归档文档
 
 | 文档 | 用途 |
 |------|------|
-| [archive/design2-v5.0-vision.md](./archive/design2-v5.0-vision.md) | v5.0 愿景版（保护路径 / Git 协议 / Phase 4 / Skill 集成）。已并入 v5.2，保留作历史参考。 |
+| archive/design2-v5.0-vision.md | v5.0 愿景版（保护路径 / Git 协议 / Phase 4 / Skill 集成）。已并入 v5.2，保留作历史参考。 |
 
 **当前状态**：0.1.2 已发布——防腐主线命令族、符号级变更面、LSP 语义校准、发布管线与 Go 协调服务 M0（Task verified/claimed/completed、lease/session/SSE）均已落地；剩余未实现设计按 v5.3 §1.6 的 cut/revised/active 分类执行。
 
@@ -32,7 +33,7 @@
 
 | 版本 | 状态 | 说明 |
 |------|------|------|
-| v5.0 | 归档（[internal/archive/](./internal/archive/)） | 愿景版：保护路径、Git 协议、Phase 4、Skill 集成 |
+| v5.0 | 归档（internal/archive/） | 愿景版：保护路径、Git 协议、Phase 4、Skill 集成 |
 | v5.1 | 归档（已并入） | 工程评审修订：指标职责表、packages 结构、性能约束、不做清单 |
-| v5.2 | 定稿后被 v5.3 覆盖（[internal/design.md](./internal/design.md)） | v5.0 + v5.1 合并版 |
-| **v5.3** | **当前 living spec**（[internal/design.md](./internal/design.md)） | 2026-08 dogfood 修订：未实现设计的 cut/revised/active 分类 |
+| v5.2 | 定稿后被 v5.3 覆盖（design.md） | v5.0 + v5.1 合并版 |
+| **v5.3** | **当前 living spec**（design.md） | 2026-08 dogfood 修订：未实现设计的 cut/revised/active 分类 |

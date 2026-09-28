@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import { execFileSync } from "node:child_process";
 import { rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { ParserService } from "../../src/port/ParserService";
 import { enrichCochangeSets, enrichCoordinationCandidates, pruneUncorroboratedCochangeSets } from "../../src/application/evolutionEvidence";
@@ -31,6 +32,18 @@ const parserFor = (cwd: string): ParserService => ({
   query: () => Effect.succeed([]),
   supportedLanguages: Effect.succeed(["typescript"]),
 });
+
+/**
+ * 本次分析事实必须来自临时目录内的 fixture 仓库，而不是被测仓库自身的 Git
+ * 历史（历史随每次提交变化 ⇒ 同一断言在不同 commit 上结果不同）。
+ */
+const expectTemporaryFixtureRoot = (cwd: string): void => {
+  const temporaryRoot = tmpdir().replace(/\\/g, "/").replace(/\/+$/, "");
+  expect(resolve(cwd).replace(/\\/g, "/")).toMatch(new RegExp(`^${temporaryRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
+};
+
+/** 仓库内绝不存在的 revision：全零对象名是合法 hex，但不会被解析为提交。 */
+const ABSENT_REVISION = "0".repeat(40);
 
 describe("enrichCoordinationCandidates", () => {
   it("confirms a historical import introduced with a new direct member", async () => {
@@ -66,44 +79,53 @@ describe("enrichCoordinationCandidates", () => {
   });
 
   it("reports unavailable when historical source cannot be read", async () => {
-    const candidate = {
-      coordinator: "src/catalog.ts",
-      members: ["src/member.ts"],
-      events: [{ member: "src/member.ts", commitId: "missing-revision" }],
-      coordinatorLoc: 10,
-      averageMemberLoc: 10,
-      directImportCount: 1,
-      commitCount: 1,
-      occurrences: 1,
-      historyEntries: ["missing-revision"],
-      maxInDegree: 0,
-      maxAlphaStruct: 0,
-    };
-    const result = await enrichCoordinationCandidates(process.cwd(), [candidate], parserFor(process.cwd()));
+    // fixture 仓库里只有 baseline 提交；ABSENT_REVISION 在其中必然不可读，
+    // 因此 unavailable 事实不再取决于被测仓库自身的历史内容。
+    await withGitRepo([], async (cwd) => {
+      const candidate = {
+        coordinator: "src/catalog.ts",
+        members: ["src/member.ts"],
+        events: [{ member: "src/member.ts", commitId: ABSENT_REVISION }],
+        coordinatorLoc: 10,
+        averageMemberLoc: 10,
+        directImportCount: 1,
+        commitCount: 1,
+        occurrences: 1,
+        historyEntries: [ABSENT_REVISION],
+        maxInDegree: 0,
+        maxAlphaStruct: 0,
+      };
+      const result = await enrichCoordinationCandidates(cwd, [candidate], parserFor(cwd));
 
-    expect(result.candidates[0]?.historicalEvidence).toEqual({
-      status: "unavailable", inspectedEvents: 1, confirmedEvents: 0, unavailableEvents: 1,
+      expectTemporaryFixtureRoot(cwd);
+      expect(result.candidates[0]?.historicalEvidence).toEqual({
+        status: "unavailable", inspectedEvents: 1, confirmedEvents: 0, unavailableEvents: 1,
+      });
     });
   });
 
   it("shares the coordination event budget before sampling a second event from any surface", async () => {
-    const candidates = Array.from({ length: 6 }, (_, index) => ({
-      coordinator: `src/catalog-${index}.ts`,
-      members: [`src/member-${index}.ts`],
-      events: Array.from({ length: 3 }, (_, event) => ({ member: `src/member-${index}-${event}.ts`, commitId: `missing-${index}-${event}` })),
-      coordinatorLoc: 10,
-      averageMemberLoc: 10,
-      directImportCount: 1,
-      commitCount: 3,
-      occurrences: 3,
-      historyEntries: [`missing-${index}-0`],
-      maxInDegree: 0,
-      maxAlphaStruct: 0,
-    }));
-    const result = await enrichCoordinationCandidates(process.cwd(), candidates, parserFor(process.cwd()));
+    await withGitRepo([], async (cwd) => {
+      const candidates = Array.from({ length: 6 }, (_, index) => ({
+        coordinator: `src/catalog-${index}.ts`,
+        members: [`src/member-${index}.ts`],
+        events: Array.from({ length: 3 }, (_, event) => ({ member: `src/member-${index}-${event}.ts`, commitId: ABSENT_REVISION })),
+        coordinatorLoc: 10,
+        averageMemberLoc: 10,
+        directImportCount: 1,
+        commitCount: 3,
+        occurrences: 3,
+        historyEntries: [ABSENT_REVISION],
+        maxInDegree: 0,
+        maxAlphaStruct: 0,
+      }));
+      const result = await enrichCoordinationCandidates(cwd, candidates, parserFor(cwd));
 
-    expect(result.trace).toMatchObject({ candidatesSelected: 6, candidatesDeferred: 0, eventsSelected: 12, unavailableEvents: 12 });
-    expect(result.candidates.map((candidate) => candidate.historicalEvidence?.inspectedEvents)).toEqual([2, 2, 2, 2, 2, 2]);
+      expectTemporaryFixtureRoot(cwd);
+      expect(result.trace).toMatchObject({ candidatesSelected: 6, candidatesDeferred: 0, eventsSelected: 12, unavailableEvents: 12 });
+      expect(result.candidates.map((candidate) => candidate.historicalEvidence?.inspectedEvents)).toEqual([2, 2, 2, 2, 2, 2]);
+      expect(result.candidates.map((candidate) => candidate.historicalEvidence?.status)).toEqual(["unavailable", "unavailable", "unavailable", "unavailable", "unavailable", "unavailable"]);
+    });
   });
 
   it("confirms aligned semantic changes for selected co-change members without reading unrelated deleted files", async () => {
@@ -145,6 +167,7 @@ describe("enrichCoordinationCandidates", () => {
         dominantChangeKinds: ["function_body"],
       });
       expect(result.trace).toMatchObject({ candidatesSelected: 1, commitsSelected: 3, alignedCommits: 3, unavailableCommits: 0 });
+      expectTemporaryFixtureRoot(cwd);
     });
   });
 

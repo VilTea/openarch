@@ -1,8 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
-import { load } from "js-yaml";
+import { isAbsolute, relative } from "node:path";
 import { minimatch } from "minimatch";
 import { toPosixPath } from "../infra/paths";
+import { projectConfigPath, readProjectConfig } from "../projectFiles";
 import { capabilityAssetPath, resolveDocumentStore } from "./DocumentStore";
 
 export interface CapabilityDriftSignal {
@@ -33,15 +32,14 @@ const patternsOf = (value: unknown): { readonly patterns: readonly string[]; rea
  * maintenance observation once the asset has been updated.
  */
 export const capabilityDriftSignal = (cwd: string, changedPaths: readonly string[]): CapabilityDriftSignal => {
-  const configFile = resolve(cwd, ".openarch/config.yml");
+  // 读取走 `readProjectConfig`（config.yml 唯一读取权威，D-G13）：不再 `existsSync` + 自己 `load`。
+  // report-only 语义不变（读不出来 ⇒ error 字段 + 不匹配任何路径），但原因带上解析错误原文。
+  const read = readProjectConfig(projectConfigPath(cwd));
   let configured: { readonly patterns: readonly string[]; readonly error?: string } = { patterns: [] };
-  if (existsSync(configFile)) {
-    try {
-      const parsed = load(readFileSync(configFile, "utf8")) as DriftConfig | undefined;
-      configured = patternsOf(parsed?.governance?.capability_watch);
-    } catch {
-      configured = { patterns: [], error: "capability_watch 配置无法解析（report-only）" };
-    }
+  if (read.status === "invalid") {
+    configured = { patterns: [], error: `capability_watch 配置无法解析（report-only）：${read.error}` };
+  } else if (read.status === "ok") {
+    configured = patternsOf((read.value as DriftConfig | undefined)?.governance?.capability_watch);
   }
   if (configured.error || configured.patterns.length === 0 || changedPaths.length === 0) {
     return { watch: configured.patterns, matched: [], ...(configured.error ? { error: configured.error } : {}) };

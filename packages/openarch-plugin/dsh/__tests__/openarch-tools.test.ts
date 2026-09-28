@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { apply, name, renderGateText, renderTestText, renderContractText, sessionCwdOf, verdictOf } from "../host/openarch-tools.mjs";
-
+import { projectParameterSchema } from "../host/openarch-contract.mjs";
 const freshTmpDir = () => mkdtempSync(join(tmpdir(), "openarch-tools-"));
 
 /** 构造最小假 ctx：tools 注册表 + 可选服务映射 + 测试接缝。 */
@@ -80,9 +80,19 @@ describe("openarch-tools: 注册面", () => {
     const { byName, section } = mount();
     expect(Object.keys(byName).sort()).toEqual(["openarch_check", "openarch_context", "openarch_contract", "openarch_review", "openarch_scan", "openarch_test"]);
     for (const tool of Object.values(byName)) {
-      expect(tool.parameters?.type).toBe("object");
-      expect(tool.parameters?.properties).toBeTypeOf("object");
+      // 参数面是 DSH 的 ParameterSchemaSpec 属性映射（隐式开放对象根），
+      // 不是 JSON Schema 包壳：每个属性自带 type，根上没有 type/properties。
+      expect(tool.parameters?.type, `${tool.name} 不应再是 JSON Schema 包壳`).toBeUndefined();
+      expect(tool.parameters?.properties, `${tool.name} 不应再是 JSON Schema 包壳`).toBeUndefined();
+      for (const [key, node] of Object.entries(tool.parameters ?? {})) {
+        expect(typeof node?.type, `${tool.name}.${key} 缺 type`).toBe("string");
+        expect(node?.required === undefined || node.required === true, `${tool.name}.${key} required 只能是 true`).toBe(true);
+      }
     }
+    // 投影回模型侧 wire 形状：仍是 {type:"object",properties} 的开放根 JSON Schema。
+    const wireOfCheck = projectParameterSchema({ type: "object", properties: byName.openarch_check.parameters });
+    expect(wireOfCheck.type).toBe("object");
+    expect(wireOfCheck.properties.worktree).toEqual({ type: "boolean", description: "验证工作树未暂存改动（默认）。" });
     expect(section.section).toHaveBeenCalledTimes(1);
     const reg = section.section.mock.calls[0][0];
     expect(reg.name).toBe("tool:openarch");
@@ -249,7 +259,14 @@ describe("openarch-tools: openarch_test", () => {
     verdict: "WARN",
     decision: {
       verdict: "WARN",
-      findingCount: 2,
+      findingCount: 3,
+      // D-G15 夹具：逐条 finding 与 kind 直方图（默认项目 triggered 为空，Agent 靠这两项下手）
+      // D-G18：第三条来自未入 baseline 的测试文件（provider 采集范围改为实时发现集合）。
+      findings: [
+        { file: "a.test.ts", case: "x", kind: "missing_assertion", line: 12, confidence: "low", evidence: ["no recognised assertion"] },
+        { file: "b.test.ts", case: "y", kind: "empty_test_body", line: 7, confidence: "low", evidence: ["empty body"] },
+        { file: "c.test.ts", case: "z", kind: "missing_assertion", line: 3, confidence: "low", evidence: ["no assertion"], unbaselined: true },
+      ],
       triggered: [{ level: "warn", kind: "missing_assertion", file: "a.test.ts", testName: "x" }],
       exemptedCount: 0,
       errors: [],
@@ -356,7 +373,22 @@ describe("openarch-tools: openarch_test", () => {
     expect(value.verdict).toBe("PASS"); // CLI exit 0
     expect(value.testGovernance.schema).toBe("test-governance-json-v1");
     expect(value.testGovernance.coverage.testFiles).toBe(4);
-    expect(value.testGovernance.decision.findingCount).toBe(2);
+    expect(value.testGovernance.decision.findingCount).toBe(3);
+    // D-G15：Agent 面必须能看到 finding 的构成与样本（默认项目 triggered 为空，
+    // 此前只拿到一个数字 ⇒ 无从下手）。直方图按 kind 聚合，明细有界。
+    expect(value.testGovernance.decision.kinds).toEqual({ missing_assertion: 2, empty_test_body: 1 });
+    expect(value.testGovernance.decision.findings).toHaveLength(3);
+    // D-G18：样本恒带 `unbaselined` 布尔（false = 已入 baseline），Agent 不必区分"缺键/旧插件"。
+    expect(value.testGovernance.decision.findings[0]).toEqual({
+      file: "a.test.ts", case: "x", kind: "missing_assertion", line: 12, confidence: "low", evidence: "no recognised assertion", unbaselined: false,
+    });
+    // D-G18：来源标记随 finding 一起投影，且未入 baseline 的条数单独可见（样本被截断也不丢）。
+    expect(value.testGovernance.decision.unbaselinedFindingCount).toBe(1);
+    expect(value.testGovernance.decision.findings[2]).toEqual({
+      file: "c.test.ts", case: "z", kind: "missing_assertion", line: 3, confidence: "low", evidence: "no assertion", unbaselined: true,
+    });
+    expect(value.testGovernance.decision.findingsTruncated).toBe(0);
+    expect(value.testGovernance.testCaseSpans.availability).toBe("partial");
     expect(value.testGovernance.providers[0].providerId).toBe("vitest");
     expect(value.testGovernance.suggestedAdapters.providers).toEqual(["vitest"]);
     expect(value.testGovernance.bloat.triggered).toBe(false);

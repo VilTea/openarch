@@ -453,6 +453,11 @@
           "type": "object",
           "additionalProperties": true
         },
+        "testCaseSpans": {
+          "$comment": "D-G15：用例体事实域的可用性（availability/reason）。Agent 据此判断 DRY/DAMP 体界判据是否生效；它对应 CLI 契约里与 coverage 平级的 collection.testCaseSpans，故不塞进 coverage。",
+          "type": ["object", "null"],
+          "additionalProperties": true
+        },
         "providers": {
           "type": "array",
           "items": {

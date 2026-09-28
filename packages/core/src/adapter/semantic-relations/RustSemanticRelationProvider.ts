@@ -1,9 +1,12 @@
-import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { basename, delimiter, dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+// packages/core/src/adapter/semantic-relations/RustSemanticRelationProvider.ts
+//
+// Rust 语义关系 provider：LSP 会话/进程生命周期、kernel 契约与报告装配。
+// Rust 语言映射（query、锚点、候选、工作区风险）在 `RustSemanticSyntax.ts`，
+// 那一层不持有会话，可被独立特征化。
+import { delimiter, dirname, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { Effect } from "effect";
-import type { ParserService, QueryCapture, QueryMatch } from "../../port/ParserService";
-import type { LspLaunchSpec, LspSession } from "../lsp/NodeLspSession";
+import type { LspSession } from "../lsp/NodeLspSession";
 import {
   relationDefinitionLocations,
   relationLaunch,
@@ -17,55 +20,28 @@ import {
   type LspResolutionKernel,
   type PipelineRuntime,
 } from "./semanticRelationPipeline";
-import { captureOf, DIAGNOSTIC_READINESS_TIMEOUT_MS, LSP_REQUEST_TIMEOUT_MS, unavailableFor } from "./semanticRelationShared";
+import { DIAGNOSTIC_READINESS_TIMEOUT_MS, LSP_REQUEST_TIMEOUT_MS, unavailableFor } from "./semanticRelationShared";
+import {
+  TARGET_KINDS,
+  canonicalWorkspaceUri,
+  collectRustCandidates,
+  collectRustDeclarations,
+  collectRustSyntaxWorkspaceRisks,
+  collectRustWorkspaceRisks,
+  declarationFor,
+  declarationSymbol,
+  implementsSourceKinds,
+  typeAnchorFor,
+  SOURCE_KINDS,
+  type RelationCandidate,
+  type RustDeclaration,
+  type RustImpl,
+  type RustTarget,
+  type TypeAnchor,
+} from "./RustSemanticSyntax";
+import type { ParserService } from "../../port/ParserService";
 import type { SemanticRelationProvider, SemanticRelationRequest } from "../../semantic-relations/provider";
 import type { SemanticRelationFact, SemanticRelationReport, SemanticRelationSymbol } from "../../semantic-relations/types";
-
-type RustSymbolKind = "struct" | "enum" | "trait";
-
-interface RustDeclaration {
-  readonly file: string;
-  readonly name: string;
-  readonly kind: RustSymbolKind;
-  readonly qualifiedName: string;
-  readonly startLine: number;
-  readonly endLine: number;
-  readonly startIndex: number;
-}
-
-interface RustImpl {
-  readonly file: string;
-  readonly startLine: number;
-  readonly endLine: number;
-  readonly typeRef: QueryCapture;
-  readonly traitRef?: QueryCapture;
-  resolvedSource?: RustDeclaration | null;
-}
-
-interface TypeAnchor {
-  readonly name: string;
-  readonly startIndex: number;
-}
-
-interface RelationCandidate {
-  readonly kind: SemanticRelationFact["kind"];
-  readonly file: string;
-  readonly line: number;
-  readonly target: TypeAnchor;
-  readonly source?: RustDeclaration;
-  readonly sourceImpl?: RustImpl;
-}
-
-interface RustTarget {
-  readonly declaration: RustDeclaration;
-  readonly file: string;
-}
-
-interface RustModuleRange {
-  readonly name: string;
-  readonly startLine: number;
-  readonly endLine: number;
-}
 
 interface RustResolutionStats {
   failedRequests: number;
@@ -78,339 +54,8 @@ export interface RustSemanticRelationRuntime extends PipelineRuntime {
   readonly parser?: ParserService;
 }
 
-const DECLARATION_QUERY = "[(struct_item name: (type_identifier) @name) @struct (enum_item name: (type_identifier) @name) @enum (trait_item name: (type_identifier) @name) @trait]";
-const MODULE_QUERY = "(mod_item name: (identifier) @modName body: (declaration_list) @modBody)";
-const IMPL_QUERY = "(impl_item type: (_) @typeRef) @impl";
-const TRAIT_IMPL_QUERY = "(impl_item trait: (_) @traitRef type: (_) @typeRef) @impl";
-const FIELD_QUERY = "(field_declaration name: (field_identifier) @fieldName type: (_) @typeRef)";
-const PARAMETER_QUERY = "(function_item parameters: (parameters (parameter type: (_) @typeRef)))";
-const RETURN_QUERY = "(function_item return_type: (_) @typeRef)";
-const STRUCT_EXPRESSION_QUERY = "(struct_expression name: (type_identifier) @typeRef)";
-const MACRO_QUERY = "(macro_invocation) @macro";
-const ATTR_IDENTIFIER_QUERY = "(attribute_item (attribute (identifier) @name))";
-const ATTR_SCOPED_QUERY = "(attribute_item (attribute (scoped_identifier) @name))";
-
-/**
- * Resolves the type name a definition request must point at. Rust type nodes
- * are a closed set of node types but QueryCapture deliberately does not expose
- * the node type, so the anchor is derived from the captured text:
- * - references/pointers are unwrapped (`&'a mut Request` -> `Request`),
- * - generic arguments are cut at the first `<` (`Vec<u8>` -> `Vec`),
- * - path types keep their last segment (`crate::foo::Bar<T>` -> `Bar`).
- * Structural type forms (tuple/array/function/dyn/impl) cannot name a
- * repository struct/enum/trait directly and are skipped, never guessed.
- */
-const typeAnchorFor = (source: string, capture: QueryCapture): TypeAnchor | undefined => {
-  const startIndex = capture.startIndex;
-  if (startIndex === undefined || capture.endIndex === undefined) return undefined;
-  const original = capture.text;
-  if (!original.trim()) return undefined;
-  if (/^(\(|\[|!|fn\b|dyn\b|impl\b)/.test(original.trim())) return undefined;
-  let body = original;
-  let removed = 0;
-  for (let pass = 0; pass < 4; pass += 1) {
-    const stripped = body
-      .replace(/^&\s*(?:'[A-Za-z_][A-Za-z0-9_]*\s*)?(?:mut\s+)?/, "")
-      .replace(/^\*\s*(?:const|mut)\s*/, "");
-    if (stripped === body) break;
-    removed += body.length - stripped.length;
-    body = stripped;
-  }
-  if (!body.trim()) return undefined;
-  const genericAt = body.indexOf("<");
-  const rawHead = genericAt >= 0 ? body.slice(0, genericAt) : body;
-  const leading = rawHead.length - rawHead.trimStart().length;
-  const head = rawHead.slice(leading);
-  if (!head || /^(\(|\[|!|fn\b|dyn\b|impl\b|_)/.test(head)) return undefined;
-  const lastSeparator = head.lastIndexOf("::");
-  const segment = head.slice(lastSeparator + 2);
-  const match = /([A-Za-z_][A-Za-z0-9_]*)\s*$/.exec(segment);
-  if (!match) return undefined;
-  return { name: match[1], startIndex: startIndex + removed + leading + (lastSeparator >= 0 ? lastSeparator + 2 : 0) + match.index };
-};
-
-const declarationFor = (
-  declarations: readonly RustDeclaration[],
-  file: string,
-  line: number,
-): RustDeclaration | undefined =>
-  declarations.find((declaration) => declaration.file === file && line >= declaration.startLine && line <= declaration.endLine);
-
-const implFor = (impls: readonly RustImpl[], file: string, line: number): RustImpl | undefined =>
-  impls.find((impl) => impl.file === file && line >= impl.startLine && line <= impl.endLine);
-
-const declarationSymbol = (declaration: RustDeclaration, file: string): SemanticRelationSymbol => ({
-  id: `rust:repository:${file}:${declaration.qualifiedName}`,
-  name: declaration.name,
-  kind: declaration.kind,
-  scope: "repository",
-  file,
-  line: declaration.startLine,
-});
-
 const unavailable = (reason: string): SemanticRelationReport =>
   unavailableFor({ language: "rust", providerId: "rust-rust-analyzer-semantic-relations", evidenceSource: "lsp" }, reason);
-
-const SOURCE_KINDS: readonly RustSymbolKind[] = ["struct", "enum", "trait"];
-const TARGET_KINDS: Readonly<Record<SemanticRelationFact["kind"], readonly RustSymbolKind[]>> = {
-  implements: ["trait"],
-  field_type: ["struct", "enum", "trait"],
-  parameter_type: ["struct", "enum", "trait"],
-  return_type: ["struct", "enum", "trait"],
-  instantiates: ["struct"],
-  extends: [],
-  embeds: [],
-};
-
-/** A bare `impl Type` carries no trait, so it never produces an `implements` fact. */
-const implementsSourceKinds: readonly RustSymbolKind[] = ["struct", "enum"];
-
-const queryRust = (parser: ParserService, file: string, pattern: string): Promise<readonly QueryMatch[]> =>
-  Effect.runPromise(parser.query(file, pattern).pipe(Effect.catchAll(() => Effect.succeed([]))));
-
-const readCargoWorkspaceRisk = (cargoToml: string): string | undefined => {
-  try {
-    const manifest = readFileSync(cargoToml, "utf8");
-    return /^\s*\[workspace\]/m.test(manifest)
-      ? "Cargo workspace manifests are outside the calibrated single-crate semantic-relations scope"
-      : undefined;
-  } catch {
-    return "Rust Cargo.toml could not be read";
-  }
-};
-
-const collectRustWorkspaceRisks = (
-  cwd: string,
-  files: readonly string[],
-  sources: ReadonlyMap<string, string>,
-): readonly string[] => {
-  const risks: string[] = [];
-  const cargoToml = join(cwd, "Cargo.toml");
-  const cargoRisk = existsSync(cargoToml)
-    ? readCargoWorkspaceRisk(cargoToml)
-    : "Rust semantic relations require a Cargo.toml crate rooted at the governed project";
-  risks.push(...(cargoRisk ? [cargoRisk] : []));
-  risks.push(...(files.some((file) => basename(file) === "build.rs")
-    ? ["Rust build scripts are outside the calibrated semantic-relations scope"]
-    : []));
-  for (const source of sources.values()) {
-    if (/#\s*\[\s*cfg(?:_|\s|\()/.test(source)) {
-      risks.push("Rust conditional compilation is outside the calibrated semantic-relations scope");
-      break;
-    }
-  }
-  return risks;
-};
-
-const collectRustSyntaxWorkspaceRisks = async (
-  parser: ParserService,
-  cwd: string,
-  files: readonly string[],
-  sources: ReadonlyMap<string, string>,
-): Promise<readonly string[]> => {
-  const risks = [...collectRustWorkspaceRisks(cwd, files, sources)];
-  for (const file of files) {
-    const [macroMatches, attrIdentifierMatches, attrScopedMatches] = await Promise.all([
-      queryRust(parser, file, MACRO_QUERY),
-      queryRust(parser, file, ATTR_IDENTIFIER_QUERY),
-      queryRust(parser, file, ATTR_SCOPED_QUERY),
-    ]);
-    if (macroMatches.length > 0) {
-      risks.push("Rust macro expansion is outside the calibrated semantic-relations scope");
-    }
-    if (attrIdentifierMatches.some((match) => {
-      const name = captureOf(match, "name")?.text;
-      return name !== undefined && ["derive", "proc_macro", "proc_macro_attribute", "proc_macro_derive"].includes(name);
-    })) {
-      risks.push("Rust derive or proc-macro expansion is outside the calibrated semantic-relations scope");
-    }
-    if (attrScopedMatches.length > 0) {
-      risks.push("Rust path attribute macros are outside the calibrated semantic-relations scope");
-    }
-  }
-  return [...new Set(risks)];
-};
-
-const moduleRangesFromMatches = (matches: readonly QueryMatch[]): RustModuleRange[] => {
-  const ranges: RustModuleRange[] = [];
-  for (const match of matches) {
-    const name = captureOf(match, "modName");
-    const body = captureOf(match, "modBody");
-    if (!name || name.startLine === undefined || !body || body.startLine === undefined || body.endLine === undefined) continue;
-    ranges.push({ name: name.text, startLine: body.startLine, endLine: body.endLine });
-  }
-  return ranges;
-};
-
-const declarationsFromRustMatches = (
-  file: string,
-  matches: readonly QueryMatch[],
-  moduleRanges: readonly RustModuleRange[],
-): RustDeclaration[] => {
-  const declarations: RustDeclaration[] = [];
-  for (const match of matches) {
-    const name = captureOf(match, "name");
-    const item = captureOf(match, "struct") ?? captureOf(match, "enum") ?? captureOf(match, "trait");
-    if (!name || !item || name.startLine === undefined || name.startIndex === undefined || item.endLine === undefined) continue;
-    const kind: RustSymbolKind = captureOf(match, "struct") ? "struct" : captureOf(match, "enum") ? "enum" : "trait";
-    const enclosingModules = moduleRanges
-      .filter((module) => name.startLine! >= module.startLine && name.startLine! <= module.endLine)
-      .sort((left, right) => left.startLine - right.startLine)
-      .map((module) => module.name);
-    declarations.push({
-      file,
-      name: name.text,
-      kind,
-      qualifiedName: [...enclosingModules, name.text].join("::"),
-      startLine: name.startLine,
-      endLine: item.endLine,
-      startIndex: name.startIndex,
-    });
-  }
-  return declarations;
-};
-
-const collectRustDeclarations = async (
-  parser: ParserService,
-  files: readonly string[],
-): Promise<readonly RustDeclaration[]> => {
-  const declarations: RustDeclaration[] = [];
-  for (const file of files) {
-    const [moduleMatches, declarationMatches] = await Promise.all([
-      queryRust(parser, file, MODULE_QUERY),
-      queryRust(parser, file, DECLARATION_QUERY),
-    ]);
-    declarations.push(...declarationsFromRustMatches(file, declarationMatches, moduleRangesFromMatches(moduleMatches)));
-  }
-  return declarations;
-};
-
-const collectRustImpls = (
-  file: string,
-  implMatches: readonly QueryMatch[],
-  traitImplMatches: readonly QueryMatch[],
-): RustImpl[] => {
-  const traitRefByType = new Map<string, QueryCapture>();
-  for (const match of traitImplMatches) {
-    const traitRef = captureOf(match, "traitRef");
-    const typeRef = captureOf(match, "typeRef");
-    if (!traitRef || !typeRef || typeRef.startIndex === undefined || typeRef.endIndex === undefined) continue;
-    traitRefByType.set(`${typeRef.startIndex}:${typeRef.endIndex}`, traitRef);
-  }
-  const impls: RustImpl[] = [];
-  for (const match of implMatches) {
-    const item = captureOf(match, "impl");
-    const typeRef = captureOf(match, "typeRef");
-    if (!item || !typeRef || item.startLine === undefined || item.endLine === undefined) continue;
-    const traitRef = typeRef.startIndex !== undefined && typeRef.endIndex !== undefined
-      ? traitRefByType.get(`${typeRef.startIndex}:${typeRef.endIndex}`)
-      : undefined;
-    impls.push(traitRef
-      ? { file, startLine: item.startLine, endLine: item.endLine, typeRef, traitRef }
-      : { file, startLine: item.startLine, endLine: item.endLine, typeRef });
-  }
-  return impls;
-};
-
-const pushRustDeclarationTargets = (
-  candidates: RelationCandidate[],
-  file: string,
-  sourceText: string,
-  matches: readonly QueryMatch[],
-  kind: SemanticRelationFact["kind"],
-  sourceOf: (match: QueryMatch) => RustDeclaration | undefined,
-): void => {
-  for (const match of matches) {
-    const typeRef = captureOf(match, "typeRef");
-    if (!typeRef || typeRef.startLine === undefined) continue;
-    const anchor = typeAnchorFor(sourceText, typeRef);
-    if (!anchor) continue;
-    const source = sourceOf(match);
-    if (!source) continue;
-    candidates.push({ kind, file, line: typeRef.startLine, target: anchor, source });
-  }
-};
-
-const pushRustImplTargets = (
-  candidates: RelationCandidate[],
-  file: string,
-  sourceText: string,
-  matches: readonly QueryMatch[],
-  kind: SemanticRelationFact["kind"],
-  sourceOf: (match: QueryMatch) => RustImpl | undefined,
-): void => {
-  for (const match of matches) {
-    const typeRef = captureOf(match, "typeRef");
-    if (!typeRef || typeRef.startLine === undefined) continue;
-    const anchor = typeAnchorFor(sourceText, typeRef);
-    if (!anchor) continue;
-    const impl = sourceOf(match);
-    if (!impl || !typeAnchorFor(sourceText, impl.typeRef)) continue;
-    candidates.push({ kind, file, line: typeRef.startLine, target: anchor, sourceImpl: impl });
-  }
-};
-
-const pushRustImplementsTargets = (
-  candidates: RelationCandidate[],
-  file: string,
-  sourceText: string,
-  impls: readonly RustImpl[],
-  matches: readonly QueryMatch[],
-): void => {
-  for (const match of matches) {
-    const traitRef = captureOf(match, "traitRef");
-    const typeRef = captureOf(match, "typeRef");
-    if (!traitRef || !typeRef || traitRef.startLine === undefined || typeRef.startIndex === undefined || typeRef.endIndex === undefined) continue;
-    const target = typeAnchorFor(sourceText, traitRef);
-    if (!target) continue;
-    const impl = impls.find((entry) =>
-      entry.typeRef.startIndex === typeRef.startIndex && entry.typeRef.endIndex === typeRef.endIndex);
-    if (!impl || !typeAnchorFor(sourceText, impl.typeRef)) continue;
-    candidates.push({ kind: "implements", file, line: traitRef.startLine, target, sourceImpl: impl });
-  }
-};
-
-const collectRustCandidates = async (
-  parser: ParserService,
-  files: readonly string[],
-  declarations: readonly RustDeclaration[],
-  sources: ReadonlyMap<string, string>,
-): Promise<readonly RelationCandidate[]> => {
-  const candidates: RelationCandidate[] = [];
-  for (const file of files) {
-    const [implMatches, traitImplMatches, fieldMatches, parameterMatches, returnMatches, structExpressionMatches] = await Promise.all([
-      queryRust(parser, file, IMPL_QUERY),
-      queryRust(parser, file, TRAIT_IMPL_QUERY),
-      queryRust(parser, file, FIELD_QUERY),
-      queryRust(parser, file, PARAMETER_QUERY),
-      queryRust(parser, file, RETURN_QUERY),
-      queryRust(parser, file, STRUCT_EXPRESSION_QUERY),
-    ]);
-
-    const fileDeclarations = declarations.filter((declaration) => declaration.file === file);
-    const fileImpls = collectRustImpls(file, implMatches, traitImplMatches);
-    const sourceText = sources.get(file)!;
-    const structDeclarations = fileDeclarations.filter((declaration) => declaration.kind === "struct");
-    const enclosingStruct = (line: number): RustDeclaration | undefined => declarationFor(structDeclarations, file, line);
-    const enclosingImpl = (line: number): RustImpl | undefined => implFor(fileImpls, file, line);
-
-    pushRustDeclarationTargets(candidates, file, sourceText, fieldMatches, "field_type", (match) => enclosingStruct(captureOf(match, "typeRef")?.startLine ?? -1));
-    pushRustImplTargets(candidates, file, sourceText, parameterMatches, "parameter_type", (match) => enclosingImpl(captureOf(match, "typeRef")?.startLine ?? -1));
-    pushRustImplTargets(candidates, file, sourceText, returnMatches, "return_type", (match) => enclosingImpl(captureOf(match, "typeRef")?.startLine ?? -1));
-    pushRustImplTargets(candidates, file, sourceText, structExpressionMatches, "instantiates", (match) => enclosingImpl(captureOf(match, "typeRef")?.startLine ?? -1));
-    pushRustImplementsTargets(candidates, file, sourceText, fileImpls, traitImplMatches);
-  }
-  return candidates;
-};
-
-const canonicalWorkspaceUri = (uri: string): string => {
-  try {
-    const canonical = pathToFileURL(realpathSync.native(fileURLToPath(uri))).href;
-    return process.platform === "win32" ? canonical.toLowerCase() : canonical;
-  } catch {
-    return process.platform === "win32" ? uri.toLowerCase() : uri;
-  }
-};
 
 const waitForRustDefinitionIndex = async (
   session: LspSession,
@@ -554,9 +199,9 @@ const rustKernel: LspResolutionKernel<RustDeclaration, RelationCandidate, RustTa
     evidence: { file, line },
   }),
   readinessProbe: (session, ctx) => waitForRustDefinitionIndex(session, ctx.declarations, ctx.candidates, ctx.warmupIncomplete),
-  workspaceRisks: (cwd, files, sources) => collectRustWorkspaceRisks(cwd, files, sources),
-  collectWorkspaceRisks: (parser, cwd, files, _declarations, _candidates, sources) =>
-    collectRustSyntaxWorkspaceRisks(parser, cwd, files, sources),
+  workspaceRisks: (cwd, files) => collectRustWorkspaceRisks(cwd, files),
+  collectWorkspaceRisks: (parser, cwd, files, _declarations, _candidates) =>
+    collectRustSyntaxWorkspaceRisks(parser, cwd, files),
   isComplete: (stats, diagnosticsReady, risks, warmupIncomplete, candidates, readinessReady) => {
     const requestComplete = candidates.length === 0
       ? diagnosticsReady

@@ -26,7 +26,8 @@ export const testCommand: CommandHandler = async (args, context) => {
     return exitCodeFromError(result.left);
   }
 
-  if (json) console.log(JSON.stringify(testGovernanceJsonValue(result.right), null, 2));
+  const spans = args.includes("--spans");
+  if (json) console.log(JSON.stringify(testGovernanceJsonValue(result.right, { spans }), null, 2));
   else for (const line of renderTestGovernanceReport(result.right, args)) console.log(line);
   return result.right.decision.verdict === "BLOCK" ? 2 : result.right.decision.verdict === "WARN" ? 1 : 0;
 };

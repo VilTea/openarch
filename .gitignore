@@ -24,3 +24,9 @@ coordination-projection.ndjson
 .claude/
 packages/core/.tmp-bloat-test-*/
 .dsh-sessions-web-dev/
+
+# 发版脚本产物（scripts/release-notes.mjs 的默认输出，位于仓库根）
+.release-notes.md
+
+# release 策展构建器（scripts/release-branch.mjs）的 worktree
+.release-build/

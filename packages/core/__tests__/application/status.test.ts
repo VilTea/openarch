@@ -116,7 +116,7 @@ describe("status", () => {
         nFiles: 10,
         languages: ["typescript"],
         snapshotSha256: "snapshot-abc",
-        metricContractVersion: "metric-contract-v4",
+        metricContractVersion: "metric-contract-v5",
         policyCalibrations: {
           "alpha-ts": { current: {}, previous: {}, gate: { id: "sealed-1" } },
           "beta-ts": { current: {} },
@@ -129,7 +129,7 @@ describe("status", () => {
     expect(report.languages).toEqual(["typescript"]);
     expect(report.baseline).toMatchObject({
       snapshotSha256: "snapshot-abc",
-      metricContractVersion: "metric-contract-v4",
+      metricContractVersion: "metric-contract-v5",
       languages: ["typescript"],
       policyPopulations: [
         { id: "alpha-ts", productionFiles: 51, calibration: "sealed" },

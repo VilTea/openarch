@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { Effect, Layer } from "effect";
+import { Cause, Effect, Exit, Layer } from "effect";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { scan } from "../../src/application/scan";
 import { ParserService } from "../../src/port/ParserService";
 import { StorageService } from "../../src/port/StorageService";
@@ -9,6 +11,7 @@ import { createAnalysisScope } from "../../src/domain/analysisScope";
 import { METRIC_CONTRACT_VERSION } from "../../src/domain/metricCatalog";
 import { ScanProgressService } from "../../src/port/ScanProgressService";
 import { DEFAULT_CRL_STATE_WEIGHTS } from "../../src/domain/crlState";
+import { withTemporaryDirectory } from "../support/temporaryDirectory";
 
 const mockAst = (path: string, imports: string[] = []): FileAst => ({
   path,
@@ -310,6 +313,66 @@ describe("scan application", () => {
     });
     await Effect.runPromise(scan(["a.ts"], undefined, { configSnapshotSha256: "b".repeat(64) }).pipe(Effect.provide(Layer.mergeAll(ParserTest, StorageTest, LockTest, ScanProgressTest))));
     expect(indexes[0].meta.configSnapshotSha256).toBe("b".repeat(64));
+  });
+
+  /**
+   * §6/Q2（2026-09-27）：形状身份写进 baseline meta，且**只**声明了 shapes 的项目才写。
+   * 前者是身份存在性证据，后者是"未声明项目零迁移"的构造性证据（旧 meta 逐字相同）。
+   * 声明不可用时 scan **不得**建库（fail-closed）——半合法的声明不产生任何 baseline。
+   */
+  it("writes shapesFingerprint only for a declared project, and refuses to scan an unusable declaration", async () => {
+    const indexes: Array<{ meta: { shapesFingerprint?: string } }> = [];
+    const ParserTest = Layer.succeed(ParserService, { parse: (path) => Effect.succeed(mockAst(path)), query: () => Effect.succeed([]), supportedLanguages: Effect.succeed(["typescript"]) });
+    const StorageTest = Layer.succeed(StorageService, {
+      writeBaseline: (snapshot) => Effect.sync(() => { indexes.push(snapshot.index); }), readIndex: () => Effect.succeed(null), writeIndex: () => Effect.void,
+      writeFileMetrics: () => Effect.void, deleteFileMetrics: () => Effect.void, readFileMetrics: () => Effect.succeed(null), listAllFileMetrics: () => Effect.succeed([]), clearFileMetrics: () => Effect.void, writeHistory: () => Effect.void, readHistoryEntry: () => Effect.succeed(null), readAllHistory: () => Effect.succeed([]),
+    });
+    const layer = Layer.mergeAll(ParserTest, StorageTest, LockTest, ScanProgressTest);
+    await withTemporaryDirectory("scan-shapes", async (dir) => {
+      const base = join(dir, ".openarch");
+      mkdirSync(base, { recursive: true });
+      const previous = process.env.OPENARCH_BASE_DIR;
+      process.env.OPENARCH_BASE_DIR = base;
+      try {
+        // 未声明 ⇒ 不写字段（旧 meta 逐字不变 ⇒ 零迁移）。
+        await Effect.runPromise(scan(["a.ts"]).pipe(Effect.provide(layer)));
+        expect(indexes[0]!.meta.shapesFingerprint).toBeUndefined();
+
+        // 声明 ⇒ 指纹写入，且与 `shapesFingerprintOf` 同一口径（排序、去重）。
+        writeFileSync(join(base, "config.yml"), "shapes:\n  typescript:\n    weak_assertion_methods: [toBeFalsy, toBeTruthy]\n");
+        await Effect.runPromise(scan(["a.ts"]).pipe(Effect.provide(layer)));
+        expect(indexes[1]!.meta.shapesFingerprint).toBe("typescript:weak_assertion_methods:toBeFalsy,toBeTruthy");
+
+        // 未接线类别 ⇒ 显式失败，不写第三份 baseline。
+        writeFileSync(join(base, "config.yml"), "shapes:\n  typescript:\n    assertion_methods: [expect]\n");
+        await expect(Effect.runPromise(scan(["a.ts"]).pipe(Effect.provide(layer))))
+          .rejects.toThrow(/invalid shapes declaration: shapes\.typescript\.assertion_methods/);
+        expect(indexes).toHaveLength(2);
+
+        // F-E（2026-09-27 独立复验）：失败必须是**配置类**错误（同一个标记类、同一句措辞）。
+        // 曾经用 `new Error(...)`，CLI 把它渲染成 `分析失败 [UnknownError]` 且**原因整句丢失**。
+        // 用 `runPromiseExit` + `Cause` 取原始错误对象（`runPromise` 会把它包成 FiberFailure，
+        // 拿不到 `_tag`）；fail 与 die 两条路径都覆盖。
+        const exit = await Effect.runPromiseExit(scan(["a.ts"]).pipe(Effect.provide(layer)));
+        expect(Exit.isFailure(exit)).toBe(true);
+        const raised = Exit.isFailure(exit)
+          ? [...Cause.failures(exit.cause), ...Cause.defects(exit.cause)][0] as { _tag?: string; reason?: string } | undefined
+          : undefined;
+        expect(raised?._tag).toBe("GateConfigurationError");
+        expect(raised?.reason).toContain("invalid shapes declaration");
+
+        // F-A（同日复验）：未接线的**语言键**同样拒绝。曾有真实 CLI e2e 证明它 exit 0、
+        // 写入非空 `shapesFingerprint`（身份变了、baseline 作废），而判断不变、报告还打印
+        // "内置默认（未声明 shapes）"——一句与事实不符的陈述。
+        writeFileSync(join(base, "config.yml"), "shapes:\n  python:\n    weak_assertion_methods: [assert_true]\n");
+        await expect(Effect.runPromise(scan(["a.ts"]).pipe(Effect.provide(layer))))
+          .rejects.toThrow(/shapes\.python is not yet wired/);
+        expect(indexes).toHaveLength(2);
+      } finally {
+        if (previous === undefined) delete process.env.OPENARCH_BASE_DIR;
+        else process.env.OPENARCH_BASE_DIR = previous;
+      }
+    });
   });
 
   it("--rebuild recovers from an unreadable baseline generation", async () => {

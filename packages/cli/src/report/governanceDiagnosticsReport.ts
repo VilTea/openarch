@@ -6,6 +6,18 @@ import {
 import { type Locale, message } from "../i18n";
 import { definitionFootprintLines } from "./definitionFootprint";
 
+/**
+ * `Rules: 0 / Findings: 0` 会被读成 clean（校准 2026-09-25）。
+ * 只有当**没有任何规则被执行、也没有规则失败**时才标注 NOT_CONFIGURED；
+ * 规则加载失败或 provider 不可用时已经有各自的 [RULE ERROR]/[UNAVAILABLE] 行，不能重复声称"未配置"。
+ */
+const rulesRunLine = (
+  locale: Locale,
+  value: { readonly rulesRun: number; readonly errors: readonly string[]; readonly unavailable: readonly string[] },
+): string => value.rulesRun === 0 && value.errors.length === 0 && value.unavailable.length === 0
+  ? message(locale, "governance.rulesRunNone")
+  : message(locale, "governance.rulesRun", { count: value.rulesRun });
+
 const groupedHits = (locale: Locale, report: GovernanceEvaluation["diagnostics"]): readonly string[] => {
   if (report.antiPatterns.state === "unavailable") return [message(locale, "governance.antiPatternsUnavailable", { reason: report.antiPatterns.reason })];
   const { value } = report.antiPatterns;
@@ -13,7 +25,7 @@ const groupedHits = (locale: Locale, report: GovernanceEvaluation["diagnostics"]
   for (const hit of value.hits) groups.set(hit.ruleId, (groups.get(hit.ruleId) ?? 0) + 1);
   const details = [...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([id, count]) => `${id}=${count}`);
   return [
-    message(locale, "governance.rulesRun", { count: value.rulesRun }),
+    rulesRunLine(locale, value),
     message(locale, "governance.findings", { count: value.hits.length, details: details.length > 0 ? ` (${details.join(", ")})` : "" }),
     ...value.hits.map((hit) => {
       const location = hit.line === undefined ? hit.file : `${hit.file}:${hit.line}${hit.endLine && hit.endLine !== hit.line ? `-${hit.endLine}` : ""}`;
@@ -110,7 +122,8 @@ export const renderGovernanceDiagnostics = (evaluation: GovernanceEvaluation, lo
   if (triggered.length > 0) {
     lines.push(...triggered.map((entry) =>
       message(locale, "governance.architectureTriggered", {
-        level: entry.level.toUpperCase(), name: entry.name, condition: entry.condition, file: entry.file ?? "—",
+        level: entry.level.toUpperCase(), mode: message(locale, `gate.policy.${entry.mode ?? "enforce"}`),
+        name: entry.name, condition: entry.condition, file: entry.file ?? "—",
       }),
     ));
   }

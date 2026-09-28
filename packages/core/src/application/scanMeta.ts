@@ -16,6 +16,8 @@ interface ScanCalibrationOptions {
   readonly completeScope?: boolean;
   readonly sourceSnapshotSha256?: string;
   readonly configSnapshotSha256?: string;
+  /** 语言形状声明的身份指纹（§6/Q2）；缺省/空 ⇒ 不写 meta 字段（未声明 ⇒ 零迁移）。 */
+  readonly shapesFingerprint?: string;
   readonly calibrationWeights?: CRLStateWeights;
 }
 
@@ -153,4 +155,7 @@ export const buildBaselineIndexMeta = (input: {
   ...(Object.keys(input.policyPopulations).length > 0 ? { policyPopulations: input.policyPopulations } : {}),
   ...((input.options.completeScope ?? true) && input.options.sourceSnapshotSha256 ? { sourceSnapshotSha256: input.options.sourceSnapshotSha256 } : {}),
   ...(input.options.configSnapshotSha256 ? { configSnapshotSha256: input.options.configSnapshotSha256 } : {}),
+  // §6/Q2：只**声明了** shapes 的项目才写身份字段（空 ⇒ 不写）。这样未声明项目的
+  // baseline meta 与改动前逐字相同 —— "零迁移"不是承诺而是构造上的事实。
+  ...(input.options.shapesFingerprint ? { shapesFingerprint: input.options.shapesFingerprint } : {}),
 });

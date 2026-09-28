@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { collectTypeScriptSemanticRelations } from "../../src/semantic-relations/typescript";
 
 describe("OpenArch TypeScript workspace semantic-relation calibration", () => {
   it("collects direct repository relations across the core and CLI compiler projects", () => {
-    const root = resolve(process.cwd(), "..", "..");
+    // 仓库根按**测试文件自身位置**定位，不按 `process.cwd()`：此前写作
+    // `resolve(process.cwd(), "..", "..")`，只在"仓库根"这一种 cwd 下成立，
+    // 换个 cwd 就是 ENOENT 假失败（会被读成回归）。
+    const root = fileURLToPath(new URL("../../../../", import.meta.url));
     const report = collectTypeScriptSemanticRelations(root);
 
     expect(report).toMatchObject({

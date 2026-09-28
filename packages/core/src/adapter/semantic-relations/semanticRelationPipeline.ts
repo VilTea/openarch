@@ -72,7 +72,7 @@ export interface LspResolutionKernel<D, C, T> {
   readonly shouldWarmup?: (runtime: PipelineRuntime) => boolean;
   readonly concurrency?: number;
   readonly launch: (executable: string, runtime: PipelineRuntime) => LspLaunchSpec;
-  readonly collectDeclarations: (parser: ParserService, files: readonly string[]) => Promise<readonly D[]>;
+  readonly collectDeclarations: (parser: ParserService, files: readonly string[], sources: ReadonlyMap<string, string>) => Promise<readonly D[]>;
   readonly collectCandidates: (
     parser: ParserService,
     files: readonly string[],
@@ -125,8 +125,10 @@ export const runLspResolutionPipeline = async <D, C, T>(input: LspResolutionInpu
   const files = listProjectSourceFiles({ cwd, languages: [kernel.language], population: "production-governance" });
   if (files.length === 0) return unavailableFor({ language: kernel.language, providerId: kernel.providerId, evidenceSource: "lsp" }, `no governed ${kernel.language} source files`);
 
-  const declarations = await kernel.collectDeclarations(parser, files);
+  // sources 在声明收集之前读入并把同一份 map 交给 kernel：provider 不再各自按路径再读一遍
+  // 同一批源码（审计 §4.2）。同一次运行内文件不会被写入，因此"先读后收集"与"各自读"逐字相同。
   const sources = readSources(files);
+  const declarations = await kernel.collectDeclarations(parser, files, sources);
   const candidates = await kernel.collectCandidates(parser, files, declarations, sources);
 
   let session: LspSession;

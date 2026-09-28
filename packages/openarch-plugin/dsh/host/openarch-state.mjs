@@ -51,7 +51,7 @@ const parseJsonText = (text) => {
 };
 
 /**
- * 读取上游机器契约目录（contract --json，contract-catalog-json-v1）。
+ * 读取上游机器契约目录（contract --json；schema 见 openarch-contracts.mjs 的 KNOWN_CONTRACTS.catalog）。
  * 旧二进制无 contract 命令 / 解析失败 / schema 不识别 → null（fail-closed，
  * 不冒泡、不伪装）。契约版本认识见 openarch-contracts.mjs。
  */
@@ -105,9 +105,6 @@ export async function loadCliContext(options) {
   }
 }
 
-/** 已知的基线指标契约版本；不认识就 fail-closed（标 unsupported，不按旧版结构猜字段）。 */
-const KNOWN_METRIC_CONTRACT = "metric-contract-v4";
-
 /** 六项 P95（v5.3 起含 oneMinusConnectedness / externalPassthrough，α 与局部负担口径的直接输入）。 */
 const pickP95 = (entry) => (entry && typeof entry.p95 === "object"
   ? {
@@ -126,6 +123,7 @@ const pickP95 = (entry) => (entry && typeof entry.p95 === "object"
  * policyCalibrations（per-policy 的 current/previous/gate，与
  * calibrationForSubject 口径一致）；全局 meta.calibration 只做概览。
  * 契约版本缺失或不认识 → 只返回 { metricContractVersion, snapshotSha256, unsupported: true }。
+ * 指标契约版本的识别入口是 openarch-contracts.mjs 的 KNOWN_CONTRACTS.metricContract（包内唯一）。
  */
 async function readBaselineIndex(cwd) {
   const index = await readJsonIfExists(join(cwd, ".openarch", "baseline", "_index.json"));
@@ -133,7 +131,7 @@ async function readBaselineIndex(cwd) {
   const meta = index.meta ?? {};
   const metricContractVersion = typeof meta.metricContractVersion === "string" ? meta.metricContractVersion : null;
   const snapshotSha256 = typeof meta.snapshotSha256 === "string" ? meta.snapshotSha256 : null;
-  if (metricContractVersion !== KNOWN_METRIC_CONTRACT) {
+  if (metricContractVersion !== KNOWN_CONTRACTS.metricContract) {
     return { metricContractVersion, snapshotSha256, unsupported: true };
   }
   const calibration = meta.calibration ?? {};

@@ -1,6 +1,7 @@
 /**
  * OpenArch DSH 插件 — openarch_check / openarch_review 工具构造器（Host）。
  */
+import { parameterPropertyMap } from "./openarch-contract.mjs";
 import { runCli, sessionCwdOf, tailChars, verdictOf } from "./openarch-tools-run.mjs";
 import { renderGateText } from "./openarch-tools-render.mjs";
 
@@ -43,13 +44,12 @@ export function buildGateTool(deps, kind, description, argFlags, callTitle) {
   return {
     name: `openarch_${kind}`,
     description,
-    parameters: {
+    parameters: parameterPropertyMap({
       type: "object",
-      properties: argFlags.reduce((acc, flag) => {
-        acc[flag.key] = { type: "boolean", description: flag.description };
-        return acc;
-      }, {}),
-    },
+      properties: Object.fromEntries(
+        argFlags.map((flag) => [flag.key, { type: "boolean", description: flag.description }]),
+      ),
+    }),
     isConcurrencySafe: () => false,
     timeoutMs: 300_000,
     output: {
@@ -83,11 +83,22 @@ export function buildGateTool(deps, kind, description, argFlags, callTitle) {
       kind: "execute",
       rawInput: args && Object.keys(args).some((key) => args[key]) ? args : undefined,
     }),
+    // DSH 契约：presentResult(args, result)；result = { content, isError, meta? }——
+    // verdict/exitCode 走 output.presentationMeta 投影，落在 result.meta 上。
     presentResult: (_args, result) => ({
       card: "generic",
-      title: result.meta?.verdict
-        ? `OpenArch ${kind}：${result.meta.verdict}（exit ${result.meta.exitCode}）`
-        : `OpenArch ${kind} 结果`,
+      title: presentGateTitle(kind, result),
     }),
   };
+}
+
+/** 结算标题：有 verdict 用 verdict，失败用 isError（不把 ERROR 伪造成正常结果）。 */
+function presentGateTitle(kind, result) {
+  const meta = result && typeof result === "object" ? result.meta : null;
+  if (meta && typeof meta.verdict === "string") {
+    const exit = typeof meta.exitCode === "number" ? `（exit ${meta.exitCode}）` : "";
+    return `OpenArch ${kind}：${meta.verdict}${exit}`;
+  }
+  if (result && result.isError) return `OpenArch ${kind}：ERROR`;
+  return `OpenArch ${kind} 结果`;
 }

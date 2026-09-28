@@ -10,6 +10,7 @@ import { createProjectFacts, type FactResult, type ProjectFacts, type ScriptAuth
 import type { InvocationBindingFact } from "../domain/invocationBindings";
 import type { TestCaseSpanFact } from "../domain/testGovernance";
 import { loadGateConfig } from "./governance/gateConfig";
+import { baselineCompatibilityOf } from "./baselineCompatibility";
 import { currentFileMetrics } from "./currentMetrics";
 import { DEFAULT_ANALYSIS_CONCURRENCY } from "../infra/boundedConcurrency";
 
@@ -41,6 +42,12 @@ const buildFacts = async (
   const fileKindRules = readProjectFileKindRules(root);
   const gateConfig = await loadGateConfig();
   const scope = createAnalysisScope(languages, fileKindRules);
+  // D-G8③ 后续（2026-09-25）：`scopeMatches` 曾经是**第二份**范围比较实现（本地写
+  // `fingerprint === current && complete === true`）。现在消费共享权威的 `scopeState`
+  // ——值与原来逐字相同（`compatible` 就定义为"指纹相同且记录完整"），但不可能再漂移。
+  // 注意这里是 `createProjectFacts` 的**内部输入**（只用于 `structureMetrics` 的可用性门控），
+  // 不是脚本可见事实，因此本次收敛对脚本没有语义影响。
+  const compatibility = baseline?.index ? baselineCompatibilityOf(baseline.index, scope.fingerprint) : undefined;
   return createProjectFacts({
     files: options.files,
     projectRoot: root,
@@ -54,8 +61,7 @@ const buildFacts = async (
     ...(baseline ? {
       baseline: {
         entries: baseline.entries,
-        scopeMatches: baseline.index?.meta.analysisScope?.fingerprint === scope.fingerprint
-          && baseline.index.meta.analysisScope.complete === true,
+        scopeMatches: compatibility?.scopeState === "compatible",
         metricContractMatches: baseline.index?.meta.metricContractVersion === METRIC_CONTRACT_VERSION,
       },
     } : {}),

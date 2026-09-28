@@ -49,21 +49,44 @@ const project = (entry: Case) => {
   return { cwd, file };
 };
 
-const parserFor = (file: string, entry: Case): ParserService => ({
-  parse: () => Effect.die("not used"),
-  parseText: () => Effect.die("not used"),
-  supportedLanguages: Effect.succeed([entry.language]),
-  query: (path, pattern) => Effect.succeed(canonical(path) !== canonical(file) ? []
-    : pattern.includes("scoped_identifier") && entry.source.includes("framework::entry") ? [{ captures: [{
-      name: "name", text: "framework::entry", startLine: 1, startIndex: entry.source.indexOf("framework::entry"),
-    }] }]
-    : (entry.language === "java" ? pattern.includes("method_declaration")
+const parserFor = (file: string, entry: Case): ParserService => {
+  // 声明捕获现在带语法修饰符（`(modifiers)? @modifiers`）：可见性判定不再读"名字同行之前"的文本切片。
+  const declarations = (name: string, startLine: number, modifiers: string) => {
+    const startIndex = entry.source.indexOf(name);
+    return [{ captures: [
+      { name: "name", text: name, startLine, startIndex },
+      { name: "modifiers", text: modifiers, startLine, startIndex },
+    ] }];
+  };
+  const matchesFor = (path: string, pattern: string) => {
+    if (canonical(path) !== canonical(file)) return [];
+    if (pattern.includes("scoped_identifier") && entry.source.includes("framework::entry")) {
+      return [{ captures: [{
+        name: "name", text: "framework::entry", startLine: 1, startIndex: entry.source.indexOf("framework::entry"),
+      }] }];
+    }
+    const declarationQuery = entry.language === "java" ? pattern.includes("method_declaration")
       : entry.language === "go" ? pattern.includes("function_declaration")
-        : pattern.includes("function_item")) ? [
-      { captures: [{ name: "name", text: entry.internal, startLine: 2, startIndex: entry.source.indexOf(entry.internal) }] },
-      { captures: [{ name: "name", text: entry.publicName, startLine: 3, startIndex: entry.source.indexOf(entry.publicName) }] },
-    ] : []),
-});
+        : pattern.includes("function_item");
+    if (!declarationQuery) return [];
+    // 夹具的修饰符形态是扁平的（`pub fn` / `public void`）：取"声明名之前出现过
+    // `pub` / `public`"即可。多行修饰符（`pub\nfn`）由 syntaxFacts.test.ts 用真实语法覆盖。
+    const modifierOf = (name: string) => {
+      const before = entry.source.slice(0, entry.source.indexOf(name));
+      return entry.language === "rust" ? (/\bpub\b/.test(before) ? "pub" : "") : (/\bpublic\b/.test(before) ? "public" : "");
+    };
+    return [
+      ...declarations(entry.internal, 2, modifierOf(entry.internal)),
+      ...declarations(entry.publicName, 3, modifierOf(entry.publicName)),
+    ];
+  };
+  return {
+    parse: () => Effect.die("not used"),
+    parseText: () => Effect.die("not used"),
+    supportedLanguages: Effect.succeed([entry.language]),
+    query: (path, pattern) => Effect.succeed(matchesFor(path, pattern)),
+  };
+};
 
 const session = (): LspSession => ({
   notify: () => undefined,

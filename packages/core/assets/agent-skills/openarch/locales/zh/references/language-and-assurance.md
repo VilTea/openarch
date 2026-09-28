@@ -38,15 +38,47 @@ Python、Go、Rust、Java 的语义结果同样以本轮报告的 provider、范
 
 | provider id | 框架/语言 | 断言识别 |
 |---|---|---|
-| `typescript-vitest` | Vitest（TS/JS） | `expect(...)` 及 expect/assert/verify/should 前缀 helper |
-| `node-test` | node:test | `assert.*` 及 assert 前缀 helper |
-| `java-junit` | JUnit 4/5（Java） | `assert*` 方法族（含自定义 assert 前缀 helper） |
+| `typescript-vitest` | Vitest（TS/JS） | `expect(...)`/`assert(...)` 调用点，以及体内含断言的同文件包装函数 |
+| `node-test` | node:test | `assert.*`，判据同上 |
+| `java-junit` | JUnit 4/5（Java） | `assert*` 方法族、`@Test(expected=…)` 注解，以及体内含断言的同文件包装方法（含两跳以上链） |
 | `go-testing` | Go testing | `t.Error/Fatal` 等（Go 无通用断言库，不设 missing-assertion 策略） |
 | `rust-testing` | Rust `#[test]` | `assert*!` 宏；委托调用视为验证意图 |
-| `python-pytest` | pytest | `assert` 语句；`assert_*` helper 调用 |
+| `python-pytest` | pytest | `assert` 语句；体内含 assert 的同文件包装函数 |
+
+包装判据是**语法级**的（体内是否出现已识别断言调用点），不看函数命名前缀；同名多声明（重载、覆写、匿名类实现）按**并集**处理——只要有一个声明体内含断言，该名字即算包装。这个选择刻意偏向**漏报**：漏报只少扣分，误报会把没有断言的用例说成有断言。
 
 `python-pytest` 只覆盖标准测试函数或方法、AST 确认的断言和少量直接标记或调用。Java JUnit 只覆盖标准注解与断言。Go、Rust 也只有明确的静态范围。动态标记、别名、插件、运行时条件、参数化或框架扩展保持 `PARTIAL`；runner 将实际命令与 provider 事实分开报告。
 
+**配置 `test_governance.providers`/`runners` 时只写上表或 `openarch test --list` 列出的 id。** 报告里的"适配器建议"只是**候选**，写入前必须核对：建议与注册 id 曾经不一致（`junit` 对 `java-junit`、`rust-cargo-test` 对 `rust-testing`），照抄的后果不是"没生效"而是"未知 provider"——全部测试文件变成未识别，裁决直接变 `BLOCK`。判断建议是否可信的办法：把建议 id 回填后，`openarch test` 的覆盖状态应为 `AVAILABLE` 且 `Provider` 行不为"无"。
+
+**断言识别的补充口径（2026-09-25 实地核实）：**
+
+- JUnit 4 的 `@Rule`/`@ClassRule` **委托式断言**（`thrown.expect(...)`、`collector.checkThat(...)`、`addError(...)`）在**该文件声明了规则成员**时算断言；没有 `@Rule` 的同名调用不算。门控是**文件级**事实，不推断字段类型。
+- **assumptions 不算断言**：`Assume.assumeTrue(false)` 是前置条件（"跳过该用例"），不是验证；体里只有 assumption 的用例仍报 `missing_assertion`。这是有意保留的边界。
+- 用例体**没有任何语句**时，finding 的 kind 是 `empty_test_body`，**不再**是 `missing_assertion`：空体在夹具类语料里多是被测对象而非"忘记断言"，混在一个 kind 下信噪比约 1:1。**迁移口径**：按 `missing_assertion` 配置的策略不再命中空体，要治理空体须显式声明 `empty_test_body`。能力边界：只有能证明"体里零语句"的 provider 才发本 kind（Java 已支持；Python 无法表达空体——`pass` 本身就是语句；Go 不设该策略）。
+
+**Java 布局与文件分类**：同时存在 `src/main/java` 与 `src/test/java` 时，`src/main/java/**` 一律算**生产**文件（Maven/Gradle/Android 通用布局），不再因为文件名以 `Test` 结尾而进入测试总体；项目显式声明的 `file_kinds` 规则优先于这条推导规则。这条推导规则参与分析范围指纹，因此分类语义变化会如实体现在兼容性报告里。
+
+**provider 摘要的 `assertion` 口径（跨语言核实 2026-09-25）**：摘要里的 `assertion` 只统计**直接识别到的断言调用/宏**。某些 provider 对 finding 采取**更宽**的"验证意图"判据——Rust 把委托调用也算验证意图（2018-08-08 起的 Rust idiom 校准），因此 `openarch-serde` 那种 `P95 assertion=0` 与"只有 3 条 `missing_assertion`"**并存不是矛盾**：前者说"没识别到 `assert*!` 宏"，后者说"不算缺少验证意图"。读这两个数字时必须按各自定义解释，不要用一个去否定另一个。
+
+**用例体范围明细（`--spans`）**：`openarch test --spans` 列出 provider 确认的用例体范围（`文件:起始行-结束行`）；`--json --spans` 把它投影到机器契约的用例体事实域。它是复核 DRY/DAMP 分界所用范围的取证入口，默认不输出（避免契约体积膨胀）。候选集为空时（实时发现的测试文件没有一个被已启用适配器声明支持，或没有启用适配器）该事实域如实报 `UNAVAILABLE`，不会报成"可用但为空"；候选存在但没有建立任何用例体时如实报空值，不伪造范围。
+
+**测试覆盖的两个边界（2026-09-25）**：
+
+- `baseline_scope_incompatible`：baseline 记录的分析范围与当前配置不一致（改过 `languages`/`file_kinds`，或升级后分类语义变化）。此时 provider 候选集来自**旧范围**，覆盖降级为 `PARTIAL`；处理方式只有一种——**完整 scan** 后重新采集。看到 `覆盖限制` 里有它，就不要在旧 baseline 上继续解读 provider 数字。
+- `可发现测试文件`（实时分类）与 `provider 成功处理` 现在**是同一总体**（D-G18 起采集范围也是实时发现集合）；不一致只意味着该文件未被任何已启用适配器声明支持，或采集本身失败——原因码见 `覆盖限制`。未入 baseline 的测试文件**已有**采集事实，且逐条带 `unbaselined` 来源标记（对账缺口仍在，故覆盖降级为 `PARTIAL`）；`scan` 之后缺口才消除。
+
+**子目录构建标记提示**：`context` 会列出**子目录**里发现、但当前 `languages` 未覆盖的构建标记（如 `complete/pom.xml → java`）。它只是提示——OpenArch **不会**据此改写 `languages`（自动探测只看项目根）。多模块项目按提示把子项目语言写入 `config.yml` 的 `languages` 即可参与分析。
+
+### 语言形状事实（校准 2026-09-27）
+
+这些是**已发布判据**的事实，不是可协商的惯例；写测试与判读报告时按此口径：
+
+- **TS/JS 弱断言**：只收**有官方出处**的 `toBeTruthy` / `toBeFalsy`（Jest/Vitest 文档的 truthiness 一族）；`toBeDefined` **不在其中**（"非空"检查，无权威依据）。判据是"该用例**全部**断言皆弱"才计入。
+- **Java 弱断言**：`assertNotNull` / `assertTrue` / `assertFalse`，名单由 `WEAK_JUNIT_ASSERTION_METHODS` 派生，不手抄。
+- **Go**：测试名判据是官方措辞"**不以小写字母开头**"（`func TestXxx`，因此 `Test_foo` / `Test1` 合法）；Go **没有内建断言**（官方 FAQ），失败信号来自 `*testing.T` 的方法，且**该接收者必须出现在该函数的参数表里**（挡住同名 `Error()` 方法）；比较逻辑在 `if` 的**条件**形态里——`if cond { … }`（体内没有失败调用）本身是一个比较决策点；断言归属按 **offset** 判定，嵌套 `t.Run` 闭包里的断言**不归**父用例。
+- **Rust**：断言宏族 = `assert` / `assert_eq` / `assert_ne` / `debug_assert*` / **`assert_matches!` / `debug_assert_matches!`**；**`matches!` 不算断言**（返回 `bool` 的表达式宏，本身不产生失败信号）。测试文件识别按 **Cargo 目标语义**：`tests/*.rs` 默认是集成测试目标；`[package] autotests = false` 时**只有 `[[test]]` 声明的目标**才被构建（`path` 可指向任意位置，省略时回退 `tests/<name>.rs`）；`[[test]] harness = false` 是自定义 harness ⇒ **不是 libtest，其 `#[test]` 不被收集**；清单不可读时**回退路径判据**（不据此排除文件）。
+- **解析扩展**：语言扩展与判据实现遵守 `docs/language-parser-extension.md` §4.1 —— **正则只用于输入长度与结构都可证明有界的短文本**（例：查询里对单个捕获的 `#match?`），长文本走结构路径；读不到就报"未解析 / 不可判定"，**不猜**。
 ## 语义关系事实
 
 `semantic-relations.v1` 是项目脚本可按需声明的仅报告事实，当前只表达直接可证明的 `extends`、`implements`、显式类型和 `new` 构造关系，并随结果提供来源、覆盖和证据。它不等于调用图、传递依赖、依赖注入、反射或动态派发，也不参与 `I_push`、CRL、D_MR、baseline 或门禁。脚本声明 `requires` 后只能消费本轮完整事实；不完整时必须保留 `PARTIAL/UNAVAILABLE`。

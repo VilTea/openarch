@@ -48,6 +48,24 @@ describe("context command", () => {
     expect(rendered).not.toMatch(/[\p{Script=Han}]/u);
   });
 
+  /**
+   * D-G12（2026-09-25 跨语言核实，`openarch-java-guide`）：`configured` 曾只看文件是否存在，
+   * 于是无法解析的 config.yml 仍报"配置可用"，而同屏的架构策略行报"无法读取 config.yml"
+   * ——同一份报告自相矛盾。
+   */
+  it("distinguishes an unparseable config.yml from a usable one", async () => {
+    const cwd = tempProject();
+    mkdirSync(join(cwd, ".openarch"), { recursive: true });
+    writeFileSync(join(cwd, ".openarch", "config.yml"), "languages: [typescript]\nlanguages: [go]\n");
+    const output = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await expect(contextCommand([], { cwd, rawArgv: [], locale: "zh" })).resolves.toBe(0);
+
+    expect(output).toHaveBeenCalledWith(expect.stringContaining("配置: 无法解析"));
+    // 语言不再静默回退成"探测结果"当事实：解析失败时如实报 unknown
+    expect(output).toHaveBeenCalledWith(expect.stringContaining("项目语言: unknown"));
+  });
+
   it("reports fresh pending worktree evidence without asking for another measurement", async () => {
     const cwd = tempProject();
     const source = "export const sample = 1;\n";
@@ -102,7 +120,7 @@ describe("context command", () => {
         nFiles: 9,
         languages: ["typescript"],
         snapshotSha256: "snapshot-abc",
-        metricContractVersion: "metric-contract-v4",
+        metricContractVersion: "metric-contract-v5",
         policyCalibrations: { "alpha-ts": { gate: { id: "sealed-1" } } },
         policyPopulations: { "alpha-ts": 38 },
       },
@@ -120,7 +138,7 @@ describe("context command", () => {
     expect(json.baseline).toMatchObject({
       languages: ["typescript"],
       snapshotSha256: "snapshot-abc",
-      metricContractVersion: "metric-contract-v4",
+      metricContractVersion: "metric-contract-v5",
       policyPopulations: [{ id: "alpha-ts", productionFiles: 38, calibration: "sealed" }],
     });
     expect(json.architecturePolicy.policies).toEqual([

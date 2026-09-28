@@ -34,12 +34,25 @@ describe("project agent Skill installation", () => {
     expect(readFileSync(join(dir, ".claude", "skills", "openarch", "SKILL.md"), "utf8")).toContain("OpenArch 治理宪法");
   }));
 
-  it("uses English deterministically when presentation locale is missing or malformed", () => withTemporaryDirectory("agent-skill", async (dir) => {
+  it("uses English deterministically when presentation locale is declared but unsupported", () => withTemporaryDirectory("agent-skill", async (dir) => {
+    // 这是**策略**不是兜底：只有 zh/en 两棵资产树，`fr` 明确按英文处理（标题此前写成
+    // "missing or malformed"，但用例体只覆盖了这个取值，两者对不上，已改正）。
     mkdirSync(join(dir, ".openarch"));
     writeFileSync(join(dir, ".openarch", "config.yml"), "presentation:\n  locale: fr\n");
     const result = installAgentSkill({ cwd: dir, target: "codex" });
     expect(result).toMatchObject({ action: "installed", locale: "en" });
     expect(readFileSync(join(dir, ".codex", "skills", "openarch", "SKILL.md"), "utf8")).toContain("OpenArch Governance Constitution");
+  }));
+
+  it("reports an unreadable config.yml instead of silently installing English", () => withTemporaryDirectory("agent-skill", async (dir) => {
+    // 「文件存在但读不出来」必须与「项目没配置」说成两句话（D-G12 同类缺陷）：
+    // 一个声明了 zh 但 YAML 写坏的仓库，此前会被静默装上英文 Skill，报告只显示 `en`。
+    mkdirSync(join(dir, ".openarch"));
+    writeFileSync(join(dir, ".openarch", "config.yml"), "presentation:\n  locale: zh\n  locale: en\n");
+    const result = installAgentSkill({ cwd: dir, target: "claude" });
+
+    expect("error" in result && result.error).toContain("duplicated mapping key");
+    expect(existsSync(join(dir, ".claude"))).toBe(false);
   }));
 
   it("installs the DeepSeek Harness project skill into .dsh/skills", () => withTemporaryDirectory("agent-skill-dsh", async (dir) => {

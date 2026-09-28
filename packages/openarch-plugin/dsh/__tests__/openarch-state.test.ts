@@ -67,7 +67,7 @@ describe.skipIf(process.env.OPENARCH_TEST_SCOPE !== "integration")("openarch-sta
     expect(state.baseline).not.toBeNull();
     expect(state.baseline.nFiles).toBe(cannedContext.baseline.files);
     // v5.3 口径：metric 契约版本识别 + snapshot 身份 + per-policy 六项 P95。
-    expect(state.baseline.metricContractVersion).toBe("metric-contract-v4");
+    expect(state.baseline.metricContractVersion).toBe("metric-contract-v5");
     expect(state.baseline.unsupported).toBe(false);
     expect(typeof state.baseline.snapshotSha256).toBe("string");
     expect(state.baseline.policyCalibrations).not.toBeNull();

@@ -3,16 +3,18 @@ import type { FileAst, Language } from "../../domain/ast";
 import type { InvocationBindingFact } from "../../domain/invocationBindings";
 import type { QueryMatch } from "../../port/ParserService";
 import { ParseError } from "../../errors/errors";
-import { invocationBindingsGo, parseGo, parseGoText, queryGo } from "./GoStrategy";
-import { invocationBindingsJava, parseJava, parseJavaText, queryJava } from "./JavaStrategy";
-import { invocationBindingsPython, parsePython, parsePythonText, queryPython } from "./PythonStrategy";
-import { invocationBindingsRust, parseRust, parseRustText, queryRust } from "./RustStrategy";
-import { invocationBindingsTs, parseTs, parseTsText, queryTs, parseVue, parseVueText, queryVue, invocationBindingsVue } from "./TsStrategy";
+import { invocationBindingsGo, parseGo, parseGoText, queryGo, queryTextGo } from "./GoStrategy";
+import { invocationBindingsJava, parseJava, parseJavaText, queryJava, queryTextJava } from "./JavaStrategy";
+import { invocationBindingsPython, parsePython, parsePythonText, queryPython, queryTextPython } from "./PythonStrategy";
+import { invocationBindingsRust, parseRust, parseRustText, queryRust, queryTextRust } from "./RustStrategy";
+import { invocationBindingsTs, parseTs, parseTsText, queryTs, queryTextTs, parseVue, parseVueText, queryVue, queryTextVue, invocationBindingsVue } from "./TsStrategy";
 
 export interface ParserStrategy {
   readonly parse: (path: string) => Effect.Effect<FileAst, ParseError>;
   readonly parseText: (path: string, text: string) => Effect.Effect<FileAst, ParseError>;
   readonly query: (path: string, pattern: string) => Effect.Effect<QueryMatch[], ParseError>;
+  /** 调用方已持有文本时免读盘查询；见 `port/ParserService` 的缺省语义。 */
+  readonly queryText?: (path: string, text: string, pattern: string) => Effect.Effect<QueryMatch[], ParseError>;
   readonly invocationBindings?: (path: string) => Effect.Effect<readonly InvocationBindingFact[], ParseError>;
 }
 
@@ -30,6 +32,7 @@ const tsFamilyStrategy = (language: "typescript" | "javascript"): ParserStrategy
   parse: (path) => parseTs(path, language),
   parseText: (path, text) => parseTsText(path, text, language),
   query: queryTs,
+  queryText: queryTextTs,
   invocationBindings: invocationBindingsTs,
 });
 
@@ -38,13 +41,14 @@ const vueStrategy: ParserStrategy = {
   parse: parseVue,
   parseText: parseVueText,
   query: queryVue,
+  queryText: queryTextVue,
   invocationBindings: invocationBindingsVue,
 };
 
-const goStrategy: ParserStrategy = { parse: parseGo, parseText: parseGoText, query: queryGo, invocationBindings: invocationBindingsGo };
-const rustStrategy: ParserStrategy = { parse: parseRust, parseText: parseRustText, query: queryRust, invocationBindings: invocationBindingsRust };
-const pythonStrategy: ParserStrategy = { parse: parsePython, parseText: parsePythonText, query: queryPython, invocationBindings: invocationBindingsPython };
-const javaStrategy: ParserStrategy = { parse: parseJava, parseText: parseJavaText, query: queryJava, invocationBindings: invocationBindingsJava };
+const goStrategy: ParserStrategy = { parse: parseGo, parseText: parseGoText, query: queryGo, queryText: queryTextGo, invocationBindings: invocationBindingsGo };
+const rustStrategy: ParserStrategy = { parse: parseRust, parseText: parseRustText, query: queryRust, queryText: queryTextRust, invocationBindings: invocationBindingsRust };
+const pythonStrategy: ParserStrategy = { parse: parsePython, parseText: parsePythonText, query: queryPython, queryText: queryTextPython, invocationBindings: invocationBindingsPython };
+const javaStrategy: ParserStrategy = { parse: parseJava, parseText: parseJavaText, query: queryJava, queryText: queryTextJava, invocationBindings: invocationBindingsJava };
 
 const LANGUAGE_REGISTRATIONS: readonly LanguageRegistration[] = Object.freeze([
   { id: "typescript", extensions: [".ts", ".tsx", ".mts", ".cts"], strategy: tsFamilyStrategy("typescript") },

@@ -8,15 +8,25 @@ import { collectLspSymbolUse, type LspSymbolUseDefinition, type LspSymbolUseRunt
 import { jdtlsDaemonStatus } from "./jdtlsDaemon";
 import { toPosixPath } from "../../infra/paths";
 
-const javaDefinition = {
+// Java 反射的权威判据是**方法调用语法节点**（`method_invocation` 的 `name`），不是整份源码文本：
+// 注释与字符串字面量不产生 `method_invocation`，因此 `// Class.forName was removed`、
+// `log("Class.forName not used")` 不再伪造"超出校准范围"的证据（D5）。
+const JAVA_REFLECTION_QUERY = `(method_invocation name: (identifier) @name (#match? @name "^(?:forName|getMethod|getDeclaredMethod|getConstructor|getDeclaredConstructor|getField|getDeclaredField|getFields|getDeclaredFields|invoke|newInstance)$"))`;
+
+// 声明查询额外可选捕获修饰符节点：可见性判定必须来自语法（`public\nvoid foo()` 的
+// `public` 在同一节点的 `(modifiers)` 里，而不在"名字同一行的前缀文本"里，D11）。
+const JAVA_DECLARATION_QUERIES = [
+  { kind: "function" as const, pattern: "(method_declaration (modifiers)? @modifiers name: (identifier) @name)" },
+  { kind: "class" as const, pattern: "(class_declaration (modifiers)? @modifiers name: (identifier) @name)" },
+];
+
+export const javaDefinition = {
   language: "java",
   providerId: "java-jdtls-symbol-use",
   languageId: "java",
-  declarationQueries: [
-    { kind: "function", pattern: "(method_declaration name: (identifier) @name)" },
-    { kind: "class", pattern: "(class_declaration name: (identifier) @name)" },
-  ],
-  isInternal: (_name, source, startIndex) => !/\b(?:public|protected)\b/.test(source.slice(Math.max(0, source.lastIndexOf("\n", startIndex) + 1), startIndex)),
+  declarationQueries: JAVA_DECLARATION_QUERIES,
+  // `protected` 在 Java 里可被其他包的子类引用，所以与 `public` 一样属对外可见面。
+  isInternal: ({ modifiers }) => !/\b(?:public|protected)\b/.test(modifiers),
   // JDT 的 LSP 请求单线程串行——并发 references 排队超时（校准 2026-08-06）
   candidateConcurrency: 1,
   // 转发 daemon 优先（校准 2026-08-06：Java 单项目符号级刚需）：jdtls 无服务端
@@ -38,7 +48,8 @@ const javaDefinition = {
   },
   sourceRisks: [{
     reason: "Java reflection is outside the calibrated symbol-use scope",
-    detected: (source) => /\b(?:Class\s*\.\s*forName|get(?:Declared)?(?:Method|Constructor)\s*\(|(?:Method|Constructor)\s*\.\s*invoke\s*\()/.test(source),
+    pattern: JAVA_REFLECTION_QUERY,
+    syntax: (matches) => matches.length > 0,
   }],
   workspaceScope: {
     repositoryReferenceRisks: ({ cwd, files }) => {

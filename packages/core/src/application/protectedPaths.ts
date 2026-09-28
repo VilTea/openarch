@@ -2,10 +2,9 @@
 // Minimal protected-path policy inside authority_hygiene. It is a change-level
 // gate only: it never builds an override/ASK state machine. Paths are
 // project-relative patterns evaluated with minimatch.
-import { readFileSync } from "node:fs";
-import { load } from "js-yaml";
 import { minimatch } from "minimatch";
 import { configPath, toPosixPath } from "../infra/paths";
+import { readProjectConfig } from "../projectFiles";
 
 export type ProtectedPathLevel = "warn" | "block";
 
@@ -78,16 +77,24 @@ export const parseProtectedPathPolicy = (value: unknown): ProtectedPathPolicy =>
   return { configured: config.authority_hygiene?.protected_paths !== undefined, rules, errors };
 };
 
+/**
+ * 读取 opt-in 保护路径策略。读取走 `readProjectConfig`（config.yml 唯一读取权威，D-G13），
+ * 不再自己 `load(readFileSync(...))` + `catch`。
+ *
+ * `configured: true` 在"读不出来"时**保留**（与旧行为一致）：该字段的语义是"策略上下文存在、
+ * 不得按空策略猜测"，而不是"解析成功"——真正的失败原因在 `errors` 里，且现在缺文件与解析失败
+ * 分别给出可读原因（旧实现把两者压成同一句话）。
+ */
 export const loadProtectedPathPolicy = (): ProtectedPathPolicy => {
-  try {
-    return parseProtectedPathPolicy(load(readFileSync(configPath(), "utf8")));
-  } catch (error) {
-    return {
-      configured: true,
-      rules: [],
-      errors: [`cannot read authority_hygiene protected_paths: ${error instanceof Error ? error.message : String(error)}`],
-    };
+  const path = configPath();
+  const read = readProjectConfig(path);
+  if (read.status === "missing") {
+    return { configured: true, rules: [], errors: [`cannot read authority_hygiene protected_paths: ${path} does not exist`] };
   }
+  if (read.status === "invalid") {
+    return { configured: true, rules: [], errors: [`cannot read authority_hygiene protected_paths: ${read.error}`] };
+  }
+  return parseProtectedPathPolicy(read.value);
 };
 
 const matchesRule = (path: string, rule: ProtectedPathRule): boolean => {

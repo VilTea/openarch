@@ -48,4 +48,21 @@ describe("CRL_state breakdown", () => {
     expect(b.components.loc).toBeCloseTo(0.15 * 1, 5);
     expect(b.components.externalPassthrough).toBeCloseTo(0.15 * 0.7, 5);
   });
+
+  it("单调用点助手占比是伴读值：传递但不参与任何求和（不新增权重）", () => {
+    const base = { maxFuncBranch: 5, nestingDepth: 4, loc: 10, alphaStruct: 0.5, connectedness: 0.6, externalPassthroughCalls: 5 };
+    const without = computeCRLStateBreakdown(base, p95);
+    const withRatio = computeCRLStateBreakdown({ ...base, singleCallSiteRatio: 0.81 }, p95);
+
+    expect(withRatio.singleCallSiteRatio).toBeCloseTo(0.81, 5);
+    // 红线：不是新的加权分量，也不改 P95 归一化。
+    expect(withRatio.localBurden).toBe(without.localBurden);
+    expect(withRatio.composite).toBe(without.composite);
+    expect(withRatio.components).toEqual(without.components);
+  });
+
+  it("缺失该事实时是 null（不可判定），不是 0", () => {
+    const b = computeCRLStateBreakdown({ nestingDepth: 0, alphaStruct: 0, connectedness: 1 }, p95);
+    expect(b.singleCallSiteRatio).toBeNull();
+  });
 });

@@ -22,7 +22,9 @@ import { ScanProgressService, type ScanPhase, type ScanRunStatus } from "../port
 import { DEFAULT_ANALYSIS_CONCURRENCY } from "../infra/boundedConcurrency";
 import { projectBaselineEntry } from "./baselineEntry";
 import { withGovernanceWriteLock } from "./governance/writeLock";
-import { contentHashesOf } from "../projectFiles";
+import { GateConfigurationError } from "./governance/gateConfig";
+import { contentHashesOf, projectConfigPath } from "../projectFiles";
+import { languageShapeErrorsText, readProjectShapes } from "./projectShapes";
 import { prepareIncrementalScan } from "./scanIncremental";
 import { computeEntries, projectLanguages } from "./scanEntries";
 import { buildScanMeta } from "./scanMeta";
@@ -46,6 +48,14 @@ export interface ScanOptions {
   readonly sourceSnapshotSha256?: string;
   /** Content identity of .openarch/config.yml (P2-1: config change forces full rebuild). */
   readonly configSnapshotSha256?: string;
+  /**
+   * 项目 config.yml 的**绝对路径**（§6/Q2）。形状身份必须来自**本次扫描那个项目**的配置：
+   * `projectConfigPath()` 默认按 `process.cwd()` 解析，而扫描对象由调用方给出
+   * （CLI 的 `effectiveProjectRoot(cwd)` 在 `--cwd` 一类显式根下与 `process.cwd()` 不同）
+   * —— 只用 `process.cwd()` 会读到**另一个项目**的声明，写出错误的形状身份。
+   * 缺省 ⇒ `projectConfigPath()`（保持既有调用方语义）。
+   */
+  readonly configPath?: string;
   /** 增量扫描（校准 2026-08-08）：有 baseline 且 git 可用时只重算变更文件及其一级
    *  消费者，未变更文件复用既有 per-file metrics；图从 baseline imports 重建，
    *  不 parse 全量。`--rebuild`/无 baseline/无 git 时退化为全量重建。 */
@@ -63,6 +73,17 @@ export interface ScanResult {
 export const scan = (paths: readonly string[], implicitDeps?: readonly ImplicitEdge[], options: ScanOptions = {}) =>
   Effect.gen(function* () {
     if (paths.length === 0) return { nFiles: 0 };  // 空路径不写 index，防止 nFiles=0 污染
+    // §6/Q2：形状身份在建库**之前**解析（唯一读取权威 `projectShapes`，内部只经
+    // `readProjectConfig`）；声明**不可用**时直接失败——baseline 是一份带身份的事实快照，
+    // 用"半合法的声明"写出的身份会让后续 `baselineCompatibility` 判出假的不兼容/假的一致。
+    // 失败用**配置类错误**（与 gate 同一处 `GateConfigurationError`、同一句措辞）：这是
+    // "配置不可用"这件事实，不是未知故障。此前用 `new Error(...)`，CLI 渲染成
+    // `分析失败 [UnknownError]` 且**原因整句丢失**（2026-09-27 独立复验发现）。
+    const shapesPath = options.configPath ?? projectConfigPath();
+    const shapes = readProjectShapes(shapesPath);
+    if (shapes.errors.length > 0) {
+      return yield* Effect.fail(new GateConfigurationError(shapesPath, `invalid shapes declaration: ${languageShapeErrorsText(shapes.errors)}`));
+    }
     const parser = yield* ParserService;
     const storage = yield* StorageService;
     const progress = yield* ScanProgressService;
@@ -72,6 +93,22 @@ export const scan = (paths: readonly string[], implicitDeps?: readonly ImplicitE
         const startedAt = new Date().toISOString();
         const publishProgress = (status: ScanRunStatus, phase: ScanPhase, completed: number, extra: { nFiles?: number; reason?: string } = {}) =>
           progress.write({ version: "1", status, phase, completed, total: paths.length, startedAt, updatedAt: new Date().toISOString(), ...extra });
+        // D1 取证（2026-09-27）：逐文件写进度 = 每个文件一次 atomic write；在本仓所在卷上单次约 64ms，
+        // 663 个文件因此花掉约 42s —— 而解析整个仓库只要约 4s。进度是**运行态**产物（git-ignored，
+        // 不进 baseline、不进契约、不参与裁决），所以把阶段内的写降为节流：阶段边界一律照写（计数准确），
+        // 阶段内最多每 1s 或每 64 个文件写一次。节流槽位在**同步**更新（先占位再返回 Effect），
+        // 因此并发解析下也不会出现两次同窗口写。
+        const PROGRESS_WRITE_INTERVAL_MS = 1000;
+        const PROGRESS_WRITE_EVERY_FILES = 64;
+        let lastProgressWriteAt = 0;
+        let lastProgressWriteCount = 0;
+        const publishProgressThrottled = (phase: ScanPhase, completed: number) => {
+          const now = Date.now();
+          if (completed - lastProgressWriteCount < PROGRESS_WRITE_EVERY_FILES && now - lastProgressWriteAt < PROGRESS_WRITE_INTERVAL_MS) return Effect.void;
+          lastProgressWriteAt = now;
+          lastProgressWriteCount = completed;
+          return publishProgress("running", phase, completed);
+        };
         const failProgress = (error: unknown) => publishProgress("failed", phase, parsed, { reason: error instanceof Error ? error.message : String(error) })
           .pipe(Effect.zipRight(Effect.fail(error)));
         let parsed = 0;
@@ -119,10 +156,10 @@ export const scan = (paths: readonly string[], implicitDeps?: readonly ImplicitE
         // Legacy baseline（无 per-file contentSha256）无法增量：必须整体重建并整体发布，
         // 否则旧分片（已删除文件）不会被清理，分片数与 _index.json 计数漂移。
         incremental = false;
-        asts = yield* Effect.forEach(paths, (path) => parser.parse(path).pipe(Effect.tap(() => Effect.sync(() => { parsed += 1; })), Effect.tap(() => publishProgress("running", "parsing", parsed))), { concurrency: DEFAULT_ANALYSIS_CONCURRENCY }).pipe(Effect.catchAll(failProgress));
+        asts = yield* Effect.forEach(paths, (path) => parser.parse(path).pipe(Effect.tap(() => Effect.sync(() => { parsed += 1; })), Effect.tap(() => publishProgressThrottled("parsing", parsed))), { concurrency: DEFAULT_ANALYSIS_CONCURRENCY }).pipe(Effect.catchAll(failProgress));
       }
     } else {
-      asts = yield* Effect.forEach(paths, (path) => parser.parse(path).pipe(Effect.tap(() => Effect.sync(() => { parsed += 1; })), Effect.tap(() => publishProgress("running", "parsing", parsed))), { concurrency: DEFAULT_ANALYSIS_CONCURRENCY }).pipe(Effect.catchAll(failProgress));
+      asts = yield* Effect.forEach(paths, (path) => parser.parse(path).pipe(Effect.tap(() => Effect.sync(() => { parsed += 1; })), Effect.tap(() => publishProgressThrottled("parsing", parsed))), { concurrency: DEFAULT_ANALYSIS_CONCURRENCY }).pipe(Effect.catchAll(failProgress));
     }
     phase = "assembling";
     yield* publishProgress("running", phase, parsed);
@@ -159,7 +196,9 @@ export const scan = (paths: readonly string[], implicitDeps?: readonly ImplicitE
       alpha: p95(computedP95.alpha), oneMinusConnectedness: p95(computedP95.oneMinusConn), externalPassthrough: p95(computedP95.externalPassthrough),
     };
     const { meta, calibrationUpdate, ambiguousPolicyEntry } = buildScanMeta({
-      entries, options, previousIndex, scope, p95Values,
+      // 形状指纹取自本次 scan 读到的项目声明（上面的 `shapes`），而不是让调用方各传一份
+      // ——同一件事实（当前声明是什么）只有一处解析。空 ⇒ `buildBaselineIndexMeta` 不写该字段。
+      entries, options: { ...options, shapesFingerprint: shapes.fingerprint }, previousIndex, scope, p95Values,
       nFiles, nProductionFiles, nTestFiles, languages, useMaxDepth, performanceMode,
     });
     if (ambiguousPolicyEntry) {

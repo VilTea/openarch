@@ -7,24 +7,54 @@ const GIT_PATTERN = "(call_expression function: (identifier) @fn (#eq? @fn \"git
 
 const lineCount = (text: string): number => (text.match(/\r?\n/g)?.length ?? 0) + 1;
 
-/** 提取 fixture 调用文本（tree-sitter 定位；文本参与 minhash 相似度比较——语义主体的
- *  内容不同 → 指纹不同 → 不重复；只有跨测试近似重复的调用才算样板，校准 2026-08-08）。 */
-export const fixtureCallTexts = async (parser: ParserService, file: string): Promise<readonly string[]> => {
-  try {
-    const patterns = [FIXTURE_PATTERN, GIT_PATTERN];
-    const texts: string[] = [];
-    for (const pattern of patterns) {
+/** 模式可测性（缺陷修复 2026-09-25）：FIXTURE_PATTERN/GIT_PATTERN 是 TypeScript/JavaScript
+ *  形状（`call_expression`），在 Java/Python/Rust/Go 语法上 `compileQuery` 抛 QueryError。
+ *  该错误过去被吞成 `[]` → ratio 0（把"不可测"序列化成 0，违反 language-parser-extension.md §3）。
+ *  现在显式区分「查询失败（UNAVAILABLE）」与「查询成功但无命中（AVAILABLE 的 0）」。 */
+export type PatternAvailability = "AVAILABLE" | "UNAVAILABLE";
+export type PatternUnavailableReason = "language_not_supported_by_pattern";
+
+/** fixture 调用事实：文本（参与 minhash）+ 块级定位（证据用，镜像 definitionSurfaceFacts）。 */
+export interface FixtureCallFact {
+  readonly text: string;
+  readonly startLine: number;
+  readonly endLine: number;
+}
+
+export interface FixtureCallProbe {
+  readonly texts: readonly string[];
+  readonly facts: readonly FixtureCallFact[];
+  readonly availability: PatternAvailability;
+  readonly reason?: PatternUnavailableReason;
+}
+
+/** 提取 fixture 调用事实（tree-sitter 定位；文本参与 minhash 相似度比较——语义主体的
+ *  内容不同 → 指纹不同 → 不重复；只有跨测试近似重复的调用才算样板，校准 2026-08-08）。
+ *  availability 按文件给出：两个模式都编译失败 ⇒ UNAVAILABLE（语言不受模式支持）。 */
+export const fixtureCallProbe = async (parser: ParserService, file: string): Promise<FixtureCallProbe> => {
+  const facts: FixtureCallFact[] = [];
+  let compiled = false;
+  for (const pattern of [FIXTURE_PATTERN, GIT_PATTERN]) {
+    try {
       const matches = await Effect.runPromise(parser.query(file, pattern).pipe(Effect.either));
       if (matches._tag === "Left") continue;
+      compiled = true;
       for (const match of matches.right) {
         const call = match.captures.find((capture) => capture.name === "call");
-        if (call) texts.push(call.text);
+        if (!call) continue;
+        const startLine = call.startLine ?? 1;
+        facts.push({ text: call.text, startLine, endLine: call.endLine ?? startLine });
       }
+    } catch {
+      continue;
     }
-    return texts;
-  } catch {
-    return [];
   }
+  return {
+    texts: facts.map((fact) => fact.text),
+    facts,
+    availability: compiled ? "AVAILABLE" : "UNAVAILABLE",
+    ...(compiled ? {} : { reason: "language_not_supported_by_pattern" as const }),
+  };
 };
 
 /** 调用文本规范化：变量名 → _id（字符串字面量用内容哈希占位保留区分度）——
@@ -112,22 +142,44 @@ export const fixtureBoilerplateLines = (
   return total;
 };
 
-/** 每文件的重复样板行数（证据用）：该文件的调用中，跨文件重复部分的贡献。 */
-export const fixtureBoilerplateByFile = (
-  calls: ReadonlyMap<string, readonly string[]>,
-): ReadonlyMap<string, number> => {
-  const byFile = new Map<string, number>();
-  for (const [file, texts] of calls) {
-    let fileBoilerplate = 0;
-    for (const raw of texts) {
-      const normalized = normalizeCallText(raw);
-      let occurrences = 0;
-      for (const otherTexts of calls.values()) {
-        if (otherTexts.some((other) => normalizeCallText(other) === normalized)) occurrences += 1;
-      }
-      if (occurrences >= 2) fileBoilerplate += lineCount(raw);
+/** 每文件的重复样板行数 + 块级定位（证据用）：该文件的调用中，跨文件重复部分的贡献。
+ *  与行数口径完全一致（同规范化文本出现在 ≥2 个文件才算重复），额外带一个代表性
+ *  调用的行范围与样本文本（镜像 definitionSurfaceFacts 的 startLine/text）。 */
+export interface FixtureBoilerplateFileEvidence {
+  readonly file: string;
+  readonly repeatedLines: number;
+  readonly startLine: number;
+  readonly endLine: number;
+  readonly sample: string;
+}
+
+export const fixtureBoilerplateEvidence = (
+  calls: ReadonlyMap<string, readonly FixtureCallFact[]>,
+): readonly FixtureBoilerplateFileEvidence[] => {
+  // 跨文件重复判定：同规范化文本出现在 ≥2 个「文件」（同一文件内重复不算跨文件样板）
+  const filesPerNormalized = new Map<string, number>();
+  for (const facts of calls.values()) {
+    for (const normalized of new Set(facts.map((fact) => normalizeCallText(fact.text)))) {
+      filesPerNormalized.set(normalized, (filesPerNormalized.get(normalized) ?? 0) + 1);
     }
-    if (fileBoilerplate > 0) byFile.set(file, fileBoilerplate);
   }
-  return byFile;
+  const evidence: FixtureBoilerplateFileEvidence[] = [];
+  for (const [file, facts] of calls) {
+    let repeatedLines = 0;
+    let sample: FixtureCallFact | undefined;
+    for (const fact of facts) {
+      if ((filesPerNormalized.get(normalizeCallText(fact.text)) ?? 0) < 2) continue;
+      repeatedLines += lineCount(fact.text);
+      if (!sample || lineCount(fact.text) > lineCount(sample.text)) sample = fact;
+    }
+    if (repeatedLines === 0 || !sample) continue;
+    evidence.push({
+      file,
+      repeatedLines,
+      startLine: sample.startLine,
+      endLine: sample.endLine,
+      sample: sample.text.split("\n").slice(0, 2).join("\n"),
+    });
+  }
+  return evidence.sort((left, right) => right.repeatedLines - left.repeatedLines);
 };

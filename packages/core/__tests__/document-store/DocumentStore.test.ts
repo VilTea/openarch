@@ -90,17 +90,102 @@ describe("project-local DocumentStore", () => {
     expect(readFileSync(join(scopeRoot, ".openarch", ".gitignore"), "utf8")).toBe("document-index.v1.json\ngovernance-observations.v1.json\n");
   }));
 
-  it("reports generated record templates whose required sections are still placeholders", () => withTemporaryDirectory("document-store", (cwd) => {
+  it("reports a record template whose required section is still empty and accepts it once filled", () => withTemporaryDirectory("document-store", (cwd) => {
     const store = initializeProjectDocumentStore(cwd);
     const template = join(store.root, "wisdom", "patterns", "open.md");
-    writeFileSync(template, "# Open question\n来源: openarch docs record\n\n## 背景\n<!-- 必填：什么改动触发了这条记录？ -->\n");
+    writeFileSync(template, "# Open question\n来源: openarch docs record\n\n## 背景\n<!-- 必填：什么改动触发了这条记录？ -->\n\n");
 
     const opened = checkDocuments({ store, changedPaths: [template] });
 
     expect(opened.unfilled).toEqual(["wisdom/patterns/open.md"]);
-    writeFileSync(template, "# Open question\n来源: openarch docs record\n\n## 背景\n模型替换了权威解析器。\n");
+    writeFileSync(template, "# Open question\n来源: openarch docs record\n\n## 背景\n<!-- 必填：什么改动触发了这条记录？ -->\n模型替换了权威解析器。\n");
     const filled = checkDocuments({ store, changedPaths: [template] });
     expect(filled.unfilled).toEqual([]);
+  }));
+
+  it("does not flag a fully filled record that still carries the guidance comments", () => withTemporaryDirectory("document-store", (cwd) => {
+    const store = initializeProjectDocumentStore(cwd);
+    const record = join(store.root, "wisdom", "patterns", "closed.md");
+    writeFileSync(record, [
+      "# 解析器边界",
+      "来源: openarch docs record",
+      "",
+      "## 背景",
+      "<!-- 必填：什么改动触发了这条记录？涉及哪些文件？ -->",
+      "修改 CelAdapter.ts，新增 comparison() 方法。",
+      "",
+      "## 分析",
+      "<!-- 必填：为什么触发规则？CRL 趋势如何？ -->",
+      "手写递归下降 parser，分支天然集中，非单次改动问题。",
+      "",
+      "## 应对",
+      "<!-- 必填：做了什么决定？ -->",
+      "接受 WARN，Phase 2 换完整 CEL 实现。",
+      "",
+      "## 教训",
+      "<!-- 必填：下次遇到类似情况怎么处理？ -->",
+      "先确认分支集中位置，再按项目路径分类校准阈值。",
+      "",
+    ].join("\n"));
+
+    expect(checkDocuments({ store, changedPaths: [record] }).unfilled).toEqual([]);
+    // `docs status` reads the same predicate through the document index.
+    expect(documentStoreObservability(store).unfilled).toEqual([]);
+  }));
+
+  it("flags a record whose remaining sections are filled but one required section is empty", () => withTemporaryDirectory("document-store", (cwd) => {
+    const store = initializeProjectDocumentStore(cwd);
+    const record = join(store.root, "wisdom", "patterns", "partial.md");
+    writeFileSync(record, [
+      "# 解析器边界",
+      "来源: openarch docs record",
+      "",
+      "## 背景",
+      "<!-- 必填：什么改动触发了这条记录？ -->",
+      "修改 CelAdapter.ts。",
+      "",
+      "## 分析",
+      "<!-- 必填：为什么触发规则？ -->",
+      "手写 parser 分支天然集中。",
+      "",
+      "## 应对",
+      "<!-- 必填：做了什么决定？ -->",
+      "接受 WARN。",
+      "",
+      "## 教训",
+      "<!-- 必填：下次遇到类似情况怎么处理？ -->",
+      "",
+    ].join("\n"));
+
+    expect(checkDocuments({ store, changedPaths: [record] }).unfilled).toEqual(["wisdom/patterns/partial.md"]);
+  }));
+
+  it("treats a required section holding only placeholder filler as unfilled", () => withTemporaryDirectory("document-store", (cwd) => {
+    const store = initializeProjectDocumentStore(cwd);
+    const record = join(store.root, "wisdom", "patterns", "filler.md");
+    writeFileSync(record, [
+      "# 解析器边界",
+      "来源: openarch docs record",
+      "",
+      "## 背景",
+      "<!-- 必填：什么改动触发了这条记录？ -->",
+      "修改 CelAdapter.ts。",
+      "",
+      "## 分析",
+      "<!-- 必填：为什么触发规则？ -->",
+      "-",
+      "",
+      "## 应对",
+      "<!-- 必填：做了什么决定？ -->",
+      "接受 WARN。",
+      "",
+      "## 教训",
+      "<!-- 必填：下次遇到类似情况怎么处理？ -->",
+      "先确认分支集中位置。",
+      "",
+    ].join("\n"));
+
+    expect(checkDocuments({ store, changedPaths: [record] }).unfilled).toEqual(["wisdom/patterns/filler.md"]);
   }));
 
   it("detects unfilled English record templates by their localized markers", () => withTemporaryDirectory("document-store", (cwd) => {
@@ -109,7 +194,7 @@ describe("project-local DocumentStore", () => {
     writeFileSync(template, "# Open question\nSource: openarch docs record\n\n## Background\n<!-- REQUIRED: what change triggered this record? -->\n");
 
     expect(checkDocuments({ store, changedPaths: [template] }).unfilled).toEqual(["wisdom/patterns/localized.md"]);
-    writeFileSync(template, "# Open question\nSource: openarch docs record\n\n## Background\nThe parser authority moved to one module.\n");
+    writeFileSync(template, "# Open question\nSource: openarch docs record\n\n## Background\n<!-- REQUIRED: what change triggered this record? -->\nThe parser authority moved to one module.\n");
     expect(checkDocuments({ store, changedPaths: [template] }).unfilled).toEqual([]);
   }));
 

@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { Effect, Layer } from "effect";
 import { record } from "../../src/application/record";
+import { isUnfilledRecordDocument } from "../../src/document-store/DocumentFill";
 import { StorageService } from "../../src/port/StorageService";
 
 describe("record", () => {
@@ -41,6 +42,29 @@ describe("record", () => {
     expect(content).toContain("Source: openarch docs record");
     expect(content).toContain("<!-- REQUIRED:");
     expect(content).toContain("Highest historical CRL:");
+    // A freshly generated template is genuinely unfilled, not merely commented.
+    expect(isUnfilledRecordDocument(content)).toBe(true);
+  });
+
+  it("omits the guidance comments on request while keeping the required sections", async () => {
+    const root = join(tmpdir(), `openarch-record-no-comments-${Date.now()}`);
+    const docs = join(root, "docs");
+    mkdirSync(docs, { recursive: true });
+    const StorageTest = Layer.succeed(StorageService, {
+      readIndex: () => Effect.succeed(null), listAllFileMetrics: () => Effect.succeed([]), readAllHistory: () => Effect.succeed([]),
+    });
+    const result = await Effect.runPromise(record({
+      title: "comment-free fact", docsDir: docs, noComments: true, now: new Date("2026-07-18T00:00:00.000Z"),
+    }).pipe(Effect.provide(StorageTest)));
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    const content = readFileSync(result.filePath, "utf8");
+    expect(content).not.toContain("<!--");
+    expect(content).toContain("来源: openarch docs record");
+    expect(content).toContain("## 背景");
+    // Dropping the comments must not open a hole in the completeness gate.
+    expect(isUnfilledRecordDocument(content)).toBe(true);
+    expect(isUnfilledRecordDocument(content.replace(/^(## .+)$/gm, "$1\n已填写结论。"))).toBe(false);
   });
 
   it("confines titles to the category directory and never overwrites a record", async () => {

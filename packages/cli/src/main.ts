@@ -1,4 +1,5 @@
 import { findCommand } from "./commands/index";
+import { resetChangeSetCache } from "@openarch/core";
 import { hasHelpFlag, helpCommand, isHelpCommand } from "./commands/help";
 import { message, resolveLocale } from "./i18n";
 import { pathToFileURL } from "node:url";
@@ -32,6 +33,10 @@ export const runCli = (
     return Promise.resolve(3);
   }
   return Promise.resolve()
+    // D-G17b：进程内变更集备忘录在每次命令派发前清一次。CLI 进程通常只跑一条命令，
+    // 但嵌入式宿主（DSH 插件、以及在同一进程里连续调用命令的测试）会复用模块状态——
+    // 不在这里清除就会让上一条命令的 git 快照串到下一条。
+    .then(() => { resetChangeSetCache(); })
     .then(() => handler(args, context))
     .catch((error: unknown) => {
       const detail = error instanceof Error ? error.message : String(error);

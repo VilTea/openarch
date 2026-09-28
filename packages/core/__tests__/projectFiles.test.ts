@@ -1,8 +1,71 @@
 import { describe, expect, it } from "vitest";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { isAnalyzableProjectFile, listProjectSourceFiles, readProjectLanguageState, readProjectLanguages, sourceSnapshotSha256, configSnapshotSha256 } from "../src/projectFiles";
+import { isAnalyzableProjectFile, listProjectSourceFiles, readProjectFileKindRules, readProjectLanguageState, readProjectLanguages, sourceSnapshotSha256, configSnapshotSha256 } from "../src/projectFiles";
+import { classifyFileKindWithPolicy } from "../src/domain/testGovernance";
+import { createAnalysisScope } from "../src/domain/analysisScope";
 import { withTemporaryDirectory } from "./support/temporaryDirectory";
+
+/**
+ * D-G5（2026-09-25 实地核实，`.research/openarch-java-junit`）：Java 布局优先。
+ * 缺陷：`classifyFileKind` 只看文件名后缀，把 `src/main/java` 下的**生产**文件
+ * （JUnit 自己的 `org/junit/Test.java` 注解定义等 4 个）算进了测试总体。
+ * 修法不是给默认分类器加分支，而是注入**布局推导规则**——这样分类语义的变化会进入
+ * `createAnalysisScope` 的指纹，受影响的 baseline 会如实变成 `baseline_scope_incompatible`。
+ */
+describe("Java 布局推导的文件分类规则", () => {
+  const seedJavaProject = (cwd: string, options: { readonly testTree: boolean }): void => {
+    mkdirSync(join(cwd, "src", "main", "java", "org", "junit"), { recursive: true });
+    writeFileSync(join(cwd, "src", "main", "java", "org", "junit", "Test.java"), "package org.junit;\npublic @interface Test {}\n");
+    writeFileSync(join(cwd, "src", "main", "java", "org", "junit", "RepeatedTest.java"), "package org.junit;\npublic class RepeatedTest {}\n");
+    writeFileSync(join(cwd, "src", "main", "java", "Widget.java"), "public class Widget {}\n");
+    writeFileSync(join(cwd, "pom.xml"), "<project/>\n");
+    if (!options.testTree) return;
+    mkdirSync(join(cwd, "src", "test", "java", "org", "junit"), { recursive: true });
+    writeFileSync(join(cwd, "src", "test", "java", "org", "junit", "RealTest.java"), "package org.junit;\nclass RealTest {}\n");
+  };
+
+  it("存在 src/test/java 时，src/main/java 下的生产文件一律算 production", () => withTemporaryDirectory("file-kind-java", (cwd) => {
+    seedJavaProject(cwd, { testTree: true });
+    const rules = readProjectFileKindRules(cwd);
+    const kindOf = (path: string) => classifyFileKindWithPolicy(path, rules, { projectRoot: cwd });
+    // 缺陷现场：`org/junit/Test.java`（注解定义）曾被后缀规则吞成 test
+    expect(kindOf("src/main/java/org/junit/Test.java")).toBe("production");
+    expect(kindOf("src/main/java/org/junit/RepeatedTest.java")).toBe("production");
+    expect(kindOf("src/main/java/Widget.java")).toBe("production");
+    // 测试树与真实测试文件不受影响
+    expect(kindOf("src/test/java/org/junit/RealTest.java")).toBe("test");
+    expect(kindOf("src/test/java/org/junit/WidgetTest.java")).toBe("test");
+  }));
+
+  it("只有 src/main/java（把测试放在 main 树）时不夺走测试身份", () => withTemporaryDirectory("file-kind-java-main-only", (cwd) => {
+    seedJavaProject(cwd, { testTree: false });
+    const rules = readProjectFileKindRules(cwd);
+    expect(classifyFileKindWithPolicy("src/main/java/org/junit/Test.java", rules, { projectRoot: cwd })).toBe("test");
+  }));
+
+  it("项目显式 file_kinds 规则优先于布局推导规则", () => withTemporaryDirectory("file-kind-java-policy", (cwd) => {
+    mkdirSync(join(cwd, ".openarch"), { recursive: true });
+    mkdirSync(join(cwd, "src", "main", "java"), { recursive: true });
+    mkdirSync(join(cwd, "src", "test", "java"), { recursive: true });
+    writeFileSync(join(cwd, ".openarch", "config.yml"), [
+      "languages: [java]", "file_kinds:", "  - pattern: \"src/main/java/generated/**\"", "    kind: generated", "",
+    ].join("\n"));
+    const rules = readProjectFileKindRules(cwd);
+    expect(rules[0]).toEqual({ pattern: "src/main/java/generated/**", kind: "generated" });
+    expect(classifyFileKindWithPolicy("src/main/java/generated/ApiTest.java", rules, { projectRoot: cwd })).toBe("generated");
+    expect(classifyFileKindWithPolicy("src/main/java/other/ApiTest.java", rules, { projectRoot: cwd })).toBe("production");
+  }));
+
+  it("布局规则进入分析范围指纹：语义变化不会被静默继承", () => withTemporaryDirectory("file-kind-java-scope", (cwd) => {
+    seedJavaProject(cwd, { testTree: true });
+    const withLayout = createAnalysisScope(["java"], readProjectFileKindRules(cwd));
+    const withoutLayout = createAnalysisScope(["java"], []);
+    expect(withLayout.fingerprint).not.toBe(withoutLayout.fingerprint);
+    // 推导规则只影响该布局，其他语言/无该布局的项目指纹不变
+    expect(createAnalysisScope(["go"], [])).toEqual(createAnalysisScope(["go"], []));
+  }));
+});
 
 describe("projectFiles", () => {
   it("未初始化但存在 go.mod 时，按项目探测返回 go", () => withTemporaryDirectory("project-files", (cwd) => {

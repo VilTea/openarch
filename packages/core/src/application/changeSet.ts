@@ -5,6 +5,7 @@ import { isAnalyzableProjectFile, readProjectFileKindRules, readProjectLanguages
 import type { GovernancePopulation } from "../domain/fileParticipation";
 import type { ChangeSetContext, ChangeSetFile } from "../anti-patterns/engine";
 import { MAX_GIT_BLOB_BYTES, readGitBlobs, type SourceText } from "./gitBlobBatch";
+import { gitRepositoryPrefix, repositoryPathOf } from "../infra/gitRepositoryPath";
 import { toPosixPath } from "../infra/paths";
 export { collectGitCommitHistory, type GitCommitHistory } from "./gitCommitHistory";
 
@@ -13,10 +14,10 @@ type GitStatus = { readonly path: string; readonly beforePath?: string; readonly
 const git = (cwd: string, args: readonly string[]): string =>
   execFileHidden("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5000 });
 
-const gitPrefix = (cwd: string): string => git(cwd, ["rev-parse", "--show-prefix"]).trim().replace(/\\/g, "/");
+// D-G17：前缀的唯一权威在 infra（CLI 的 semanticEvidence 曾另写一份）。
+const gitPrefix = gitRepositoryPrefix;
 
-const repositoryPath = (prefix: string, projectPath: string): string =>
-  `${prefix}${toPosixPath(projectPath)}`;
+const repositoryPath = repositoryPathOf;
 
 const relativePath = (cwd: string, path: string): string =>
   relative(cwd, resolve(cwd, path)).replace(/\\/g, "/");
@@ -56,8 +57,43 @@ export interface ChangeSetOptions {
   readonly source?: "worktree" | "staged";
 }
 
+/**
+ * 一次运行内的变更集备忘录（D-G17b，2026-09-25 项目所有者选择"备忘录 + 导出清除入口"）。
+ *
+ * 为什么需要：同一次 `check --staged` 里 `antiPatterns` 与 `semanticProfiles` 各自解析
+ * 同一份 staged 变更集 ⇒ 同一组 git 读取（`diff --cached --name-status … HEAD -- <paths>`、
+ * `rev-parse --show-prefix`、每个 blob 的 `git show`）被执行两遍。`GIT_TRACE2_EVENT` 实测
+ * `--name-status` 2 次。
+ *
+ * **语义边界（必须遵守）**：缓存的是"(cwd, source, 请求路径序列) → git 变更事实"。
+ * 在一次 CLI 运行内索引不变，因此安全。若有流程在**本进程内**改动索引/工作树后重新读取，
+ * 必须先调用 {@link resetChangeSetCache}；CLI 每次派发命令前也会清除一次，
+ * 以免嵌入式宿主（含测试）在同一进程里连续跑多条命令时串味。
+ *
+ * 键用**精确路径序列**（不排序）：不同顺序视为不同请求，宁可不命中也不改变返回顺序。
+ * 失败结果同样缓存：一次 5 秒超时不应被重复等待。
+ */
+const changeSetCache = new Map<string, ChangeSetContext>();
+
+/** 清除进程内变更集备忘录；索引被改动后、或连续执行多条命令前调用。 */
+export const resetChangeSetCache = (): void => {
+  changeSetCache.clear();
+};
+
+const changeSetCacheKey = (cwd: string, requestedPaths: readonly string[], options: ChangeSetOptions): string =>
+  `${cwd}\u0000${options.source ?? "worktree"}\u0000${options.population ?? "production-governance"}\u0000${requestedPaths.join("\u0000")}`;
+
 /** Builds bounded source-only change facts. No Git fact is represented as a clean change set. */
 export const collectGitChangeSet = (cwd: string, requestedPaths: readonly string[] = [], options: ChangeSetOptions = {}): ChangeSetContext => {
+  const cacheKey = changeSetCacheKey(cwd, requestedPaths, options);
+  const cached = changeSetCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  const computed = computeGitChangeSet(cwd, requestedPaths, options);
+  changeSetCache.set(cacheKey, computed);
+  return computed;
+};
+
+const computeGitChangeSet = (cwd: string, requestedPaths: readonly string[] = [], options: ChangeSetOptions = {}): ChangeSetContext => {
   try {
     const staged = options.source === "staged";
     const prefix = gitPrefix(cwd);

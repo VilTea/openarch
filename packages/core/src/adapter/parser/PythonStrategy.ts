@@ -5,19 +5,20 @@ import { collectImportSources, type ImportSyntax } from "./ImportExtraction";
 import { resolveImportRefs } from "./ModuleResolver";
 import { pythonModuleResolver } from "./PythonModuleResolver";
 import { collectSemanticSurface, type DeclarationSyntax } from "./SemanticDeclarations";
-import { collectStructuralFacts, type BranchClass, type LanguageStructuralSemantics } from "./StructuralFacts";
+import { collectStructuralFacts, createGuardClauseDetector, type BranchClass, type LanguageStructuralSemantics } from "./StructuralFacts";
 import { createTreeSitterRuntime } from "./TreeSitterRuntime";
 import { collectInvocationBindings, directTypeName, type InvocationBindingSemantics } from "./InvocationBindingFacts";
 
 const runtime = createTreeSitterRuntime("tree-sitter-python.wasm");
-const jumpTypes = new Set(["return_statement", "raise_statement", "break_statement", "continue_statement"]);
 
-const firstStatement = (block: Node | null | undefined): Node | undefined => block?.namedChildren[0];
-
-const isGuardClause = (node: Node): boolean => jumpTypes.has(firstStatement(node.childForFieldName?.("consequence"))?.type ?? "");
+// 卫语句判据来自共享实现：Python 的 if 体恒为 block，判据只需下钻一层。
+const guardClause = createGuardClauseDetector({
+  jumpTypes: new Set(["return_statement", "raise_statement", "break_statement", "continue_statement"]),
+  containerTypes: new Set(["block"]),
+});
 
 const classifyBranch = (node: Node): BranchClass | undefined => {
-  if (node.type === "if_statement") return isGuardClause(node) ? "guard" : "ordinary";
+  if (node.type === "if_statement") return guardClause(node) ? "guard" : "ordinary";
   if (node.type === "match_statement") return "ordinary";
   if (node.type === "case_clause") return "case";
   return undefined;
@@ -116,6 +117,7 @@ export const parsePythonText = (filePath: string, text: string) =>
   });
 
 export const queryPython = runtime.query;
+export const queryTextPython = runtime.queryText;
 
 const pythonBindingSemantics: InvocationBindingSemantics = {
   scopeTypes: new Set(["function_definition"]),

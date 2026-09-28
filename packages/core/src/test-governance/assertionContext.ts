@@ -11,10 +11,17 @@
  *
  * 边界（第一版不做，保持漏报方向安全）：重导出（helper re-export 第三方）、
  * 别名 import（`import { x as y }`）、动态 import。这些场景的测试维持原判定。
+ *
+ * 认知点收敛（缺陷 2 修复）：断言名字集合的唯一权威是 ./assertionRecognition，
+ * 本模块不再自带一份 Java 名单；Java helper 与 providers/junit.ts 用同一门控
+ * （helper 文件自身 import org.mockito 时 `verify` 家族才算断言）。
+ * 注解级期望异常（`@Test(expected = X.class)`）是"测试方法自身的框架契约"，
+ * 不在跨文件 helper 识别范围内——helper 识别只认调用级断言，保持边界显式。
  */
 
 import { Effect } from "effect";
 import type { QueryCapture, QueryMatch, ParserService } from "../port/ParserService";
+import { assertionSyntaxLanguageFor, isJunitAssertionMethod, isMockitoImport, isMockitoVerificationMethod, type AssertionSyntaxLanguage } from "./assertionRecognition";
 import { absolutePathKey } from "../infra/paths";
 
 /** 提取文件内"导出函数 → 体内含精确断言"的包装集合。 */
@@ -32,21 +39,16 @@ const exportedFunctionPattern = `[
 
 const directAssertionPattern = `(call_expression function: (identifier) @callee) @call`;
 
-/** Java：文件内任意方法（helper 类方法），体内含标准 JUnit 断言调用。 */
+/** Java：文件内任意方法（helper 类方法），体内含标准 JUnit 断言调用（含受门控的 Mockito 验证）。 */
 const javaMethodPattern = `(method_declaration name: (identifier) @name body: (block) @body) @method`;
 const javaCallPattern = `(method_invocation name: (identifier) @name) @call`;
+const javaImportPattern = `(import_declaration) @import`;
 
 /** Python：文件级函数定义，体内含 assert 语句。 */
 const pythonFunctionPattern = `(function_definition name: (identifier) @name body: (block) @body) @fn`;
 const pythonAssertPattern = `(assert_statement) @assertion`;
 
-const JAVA_ASSERTION_METHODS = new Set([
-  "assertEquals", "assertNotEquals", "assertTrue", "assertFalse", "assertNull", "assertNotNull",
-  "assertSame", "assertNotSame", "assertThrows", "assertThat", "assertArrayEquals",
-  "assertDoesNotThrow", "assertIterableEquals", "fail",
-]);
-
-export type CrossFileLanguage = "ts" | "java" | "python";
+export type CrossFileLanguage = AssertionSyntaxLanguage;
 
 /** 从目标文件提取断言包装导出函数名（语法级：体内含精确断言）。
  *  用 startIndex/endIndex（0-based 字节偏移）判定归属——各 adapter 的行号
@@ -70,13 +72,20 @@ export const collectWrapperExports = async (
 };
 
 const collectJavaWrapperExports = async (parser: ParserService, targetPath: string): Promise<ReadonlySet<string>> => {
-  const methods = await Effect.runPromise(parser.query(targetPath, javaMethodPattern));
-  const calls = await Effect.runPromise(parser.query(targetPath, javaCallPattern));
+  const [methods, calls, imports] = await Promise.all([
+    Effect.runPromise(parser.query(targetPath, javaMethodPattern)),
+    Effect.runPromise(parser.query(targetPath, javaCallPattern)),
+    Effect.runPromise(parser.query(targetPath, javaImportPattern)),
+  ]);
+  // 与 providers/junit.ts 同一门控：仅当 helper 文件自身 import org.mockito 时，
+  // verify 家族才算断言——否则业务代码里的同名 verify 会被误判为断言包装。
+  const mockitoImported = imports.some((entry) => isMockitoImport(capture(entry, "import")?.text ?? ""));
   const directCalls = calls.flatMap((match) => {
     const name = capture(match, "name")?.text;
     const call = capture(match, "call");
     return name !== undefined && call?.startIndex !== undefined && call.endIndex !== undefined
-      && JAVA_ASSERTION_METHODS.has(name) ? [{ start: call.startIndex, end: call.endIndex }] : [];
+      && (isJunitAssertionMethod(name) || (mockitoImported && isMockitoVerificationMethod(name)))
+      ? [{ start: call.startIndex, end: call.endIndex }] : [];
   });
   return wrapperNamesFrom(methods, directCalls);
 };
@@ -115,12 +124,9 @@ const wrapperNamesFrom = (
 const capture = (match: QueryMatch, name: string): QueryCapture | undefined =>
   match.captures.find((item) => item.name === name);
 
-/** 按目标文件扩展名推断跨文件提取语言；不支持的语法保持无跨文件包装结论。 */
-const languageForPath = (path: string): CrossFileLanguage | undefined =>
-  path.endsWith(".java") ? "java"
-    : path.endsWith(".py") ? "python"
-      : /\.(?:ts|tsx|js|jsx|mjs|cjs|vue)$/i.test(path) ? "ts"
-        : undefined;
+/** 按目标文件扩展名推断跨文件提取语言；不支持的语法保持无跨文件包装结论。
+ *  映射本身是 `assertionRecognition` 的唯一权威，这里只保留原有类型别名。 */
+const languageForPath = assertionSyntaxLanguageFor;
 
 /** 构建跨文件作用域：对测试文件全部 import 目标惰性解析，聚合断言包装名。
  *  传入跨文件缓存（同一 helper 被多个测试 import 时只 parse 一次）。 */

@@ -13,6 +13,11 @@ export const TestFindingInputSchema = z.object({
   confidence: z.enum(["confirmed", "high", "medium", "low"]),
   testName: z.string().min(1).optional(),
   line: z.number().int().min(1).optional(),
+  // D-G18：来源标记（该测试文件未入 canonical baseline）。可选 ⇒ 老 finding 不带该键，
+  // 非破坏追加。provider 侧由唯一判据 `unbaselinedOf` 派生，不由 provider 自报；
+  // 项目脚本也能解析该键（类型上只允许 `true`），但它们**不获得**判据本身——
+  // 脚本若自行标记属于其自身声明，OpenArch 不据此推断 baseline 事实。
+  unbaselined: z.literal(true).optional(),
 });
 export const TestMetricsSchema = z.object({
   schemaVersion: z.enum(["1", "2", "3", "4"]),
@@ -58,8 +63,18 @@ export const IndexEntrySchema = z.object({
   loc: z.number().int().min(1).optional(),                // 文件行数（CRL_state 用）
   declarationLoc: z.number().int().min(0).optional(),     // 声明行（CRL loc 因子按实现行口径排除，校准 2026-08-08）
   maxFuncBranch: z.number().min(0).optional(),             // 单函数最大加权分支数（卫语句/case 可为小数）
+  /** 最大加权分支的归属与形态（report-only）：与 maxFuncBranch 同源，只投影一个函数。 */
+  maxFuncBranchOwner: z.object({
+    name: z.string().min(1),
+    line: z.number().int().min(1).optional(),
+    weighted: z.number().min(0),
+    ordinaryIf: z.number().int().min(0),
+    guardIf: z.number().int().min(0),
+    caseCount: z.number().int().min(0),
+  }).optional(),
   externalPassthroughCalls: z.number().int().min(0).optional(), // 已确认的直接非本地调用；成员/动态调用不计入
   connectedness: z.number().min(0).max(1).optional(),         // 函数连通度（提取helper不罚）
+  singleCallSiteRatio: z.number().min(0).max(1).optional(),   // 单调用点助手占比（report-only，与 connectedness 同源）
   /** 文件内容身份（sha256）：增量扫描变更检测基准（校准 2026-08-08）。 */
   contentSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
   localBurdenFingerprint: z.string().regex(/^[0-9a-f]{64}$/).optional(),
@@ -83,6 +98,16 @@ export const BaselineIndexSchema = z.object({
     maxDepthUsed: z.number().int().min(1).max(5).optional(),
     performanceMode: z.enum(["normal", "reduced"]).optional(),
     analysisScope: z.object({ fingerprint: z.string().min(1), complete: z.boolean() }).optional(),
+    /**
+     * 语言形状身份（§6/Q2，2026-09-27）：**可选、非破坏追加**。
+     *
+     * 为什么必须在这里登记（而不是只加 TS 类型）：本 schema 是 `_index.json` 的**解析权威**，
+     * `z.object` 默认**剥掉未声明键** —— 实测漏登记时 `scan` 读到的指纹非空、写出的
+     * `_index.json` 里却没有该字段，"身份写进了 meta"这句话就是假的。
+     * 未声明 shapes 的项目不写该字段（旧 baseline 也没有）⇒ 现有项目零迁移。
+     * 允许空串：形状声明可以是"合法但为空"，这时指纹为空、来源为内置。
+     */
+    shapesFingerprint: z.string().optional(),
     metricContractVersion: z.string().min(1).optional(),
     calibration: z.object({
       current: StructuralCalibrationProfileSchema,

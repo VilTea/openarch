@@ -70,6 +70,15 @@ When automatic semantic evidence is unavailable for production code, investigate
 - Repair `BLOCK`, or have the project owner explicitly change policy through audit. See [gate-response.md](./gate-response.md).
 - For first calibration, persistence mode, or shared-document scope, investigate first and request authorization through the host's native single- or multi-select UI. Do not disguise routine checks as a choice.
 
+## Quality Optimization Decision Gate
+
+Quality rules run as part of the Agent's default workflow, not from a repeated user reminder:
+
+- **Repairs forced by an explicit constraint** (`rules_block`, `hook`, or a `BLOCK` from an enforced policy): execute and report automatically. A `WARN` and a `rules` finding are not mandates: follow [gate-response.md](./gate-response.md), investigate the triggering facts first, and let the project owner decide whether to fix, accept with a recorded decision, or recalibrate through an audited config change. This Skill never treats a `WARN` as a required repair.
+- **Heuristic quality work** (splitting files, adding abstractions/conventions/fields, normalization, refactoring): never silent by default; present a decision card - optimization point, cognitive-point change, risk and verification cost, and options (do it / defer with a record / do not do it) - and let the user decide.
+- **Every task ends with a fixed quality-optimization list**: forced repairs (automatic), user-approved heuristic work, and deferred/rejected work (with reasons).
+- **A deferred optimization must record** its reason and revisit condition so the user need not raise it again; run `docs record` only for a reviewable conclusion.
+
 ## Report Consumption Discipline
 
 `check`/`review` output is the **full signal surface**, not one Verdict line. Consume every section before claiming completion; never stop at the Verdict:
@@ -96,4 +105,4 @@ When automatic semantic evidence is unavailable for production code, investigate
 
 ## Completion
 
-Run language checks, tests, and OpenArch verification proportional to the change. When `quality_rules` are configured, run `openarch rules scan --check`; use `openarch rules check --unused` to surface zero-consumer fact catalog health (WARN hint). For document or experience changes, run similarity checks in the actual DocumentStore. Do not delete pending evidence or baseline fragments to manufacture a clean commit: investigate identity, reachability, and reconciliation first.
+Run language checks, tests, and OpenArch verification proportional to the change. When `quality_rules` are configured, run `openarch rules scan --check`; use `openarch rules check --unused` to surface zero-consumer fact catalog health (WARN hint). For document or experience changes, run similarity checks in the actual DocumentStore. Do not delete pending evidence or baseline fragments to manufacture a clean commit: investigate identity, reachability, and reconciliation first. **Every reply ends with the fixed quality-optimization list** so the user sees forced repairs, approved optimizations, and deferred/rejected work in full.

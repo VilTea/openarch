@@ -139,14 +139,21 @@ const catalog = {
     "context.heading": "## OpenArch 项目上下文",
     "context.configuration": "- 配置: {state}",
     "context.languages": "- 项目语言: {languages}",
+    "context.nestedLanguageHints": "- 子目录构建标记（建议确认后写入 config.yml 的 languages）: {hints}",
     "context.baselineAvailable": "- 基线: 可用（{files} 文件；scope={scope}；snapshot={freshness}{scanAt}）",
     "context.baselineMissing": "- 基线: 缺失",
     "context.baselineScope.compatible": "兼容", "context.baselineScope.different": "不匹配", "context.baselineScope.partial": "局部", "context.baselineScope.unknown": "未知",
     "context.baselineFreshness.current": "当前", "context.baselineFreshness.stale": "过期", "context.baselineFreshness.unknown": "未知",
+    "context.freshnessReason": "，原因: {reason}",
+    "context.freshnessReason.no_readable_index": "没有可读取的 baseline index（先运行 openarch scan）",
+    "context.freshnessReason.scope_not_compatible": "baseline 的分析范围与当前配置不一致（需要完整 scan）",
+    "context.freshnessReason.baseline_missing_snapshot_identity": "写入时未记录 sourceSnapshotSha256（0.1.5 及更早的 scan --rebuild 会这样；重新 scan 可修复）",
+    "context.freshnessReason.source_snapshot_unavailable": "当前源码快照无法计算（读取失败或路径越界）",
     "context.baselineScanAt": "；scan={at}",
     "context.baselineGeneration": "- 基线代：active={active}，readable={readable}，临时代={transient}（仅报告）",
     "context.available": "可用",
     "context.missing": "缺失",
+    "context.invalid": "无法解析（config.yml 存在但内容读不出来）",
     "context.architecturePolicy": "- 架构策略: {state}{detail}",
     "context.declaredRules": "（{count} 条已声明规则）",
     "context.architecturePolicies": "- 策略明细: {policies}",
@@ -154,7 +161,7 @@ const catalog = {
     "context.policyPopulationEntry": "  [{id}] {productionFiles} 生产文件, 校准={calibration}",
     "context.worktree": "- 工作树: {paths} 路径，{sources} 源码{pending}",
     "context.staged": "- 暂存区: {paths} 路径，{sources} 源码",
-    "context.gitUnavailable": "- Git 变更集: UNAVAILABLE（当前目录不是可读取的 Git 工作树；本地配置与 baseline 事实仍可查看）",
+    "context.gitUnavailable": "- Git 变更集: UNAVAILABLE（{reason}；本地配置与 baseline 事实仍可查看）",
     "context.pending": "，待封存语义证据={state}",
     "context.scanStatus": "- 最近扫描: {status}（{completed}/{total}，phase={phase}）",
     "context.scanStatusNone": "- 最近扫描: unavailable",
@@ -176,7 +183,7 @@ const catalog = {
     "governance.heading": "## 治理复盘（仅报告）",
     "governance.metricPolicy": "### 指标策略",
     "governance.architectureGate": "- 架构门禁: {verdict}（项目规则={rules}，评估生产文件={files}）",
-    "governance.architectureTriggered": "  [{level}] {name}: {condition} → {file} → 建议: 修复该文件，或按项目证据调整/试行策略。",
+    "governance.architectureTriggered": "  [{level}][{mode}] {name}: {condition} → {file} → 先调查触发事实；修复、记录接受决定或经审计重新校准由项目所有者决定。",
     "governance.signalSummary": "  ⚠ 治理信号 {count} 个（{ids}）——见下；PARTIAL/UNAVAILABLE 是事实边界，不是 clean。",
     "governance.unconfiguredGate": "- [ATTENTION] 当前门禁未声明生产规则；PASS 只表示没有已配置策略被触发。",
     "governance.policyCalibrationHeading": "### 探索性策略校准（仅建议）",
@@ -196,6 +203,7 @@ const catalog = {
     "governance.antiPatterns": "#### 反模式（默认仅报告）",
     "governance.antiPatternsUnavailable": "- [UNAVAILABLE] 反模式: {reason}",
     "governance.rulesRun": "- 已执行规则: {count}",
+    "governance.rulesRunNone": "- 已执行规则: 0 [NOT_CONFIGURED: 未安装任何项目规则；0 不代表 clean]",
     "governance.findings": "- Finding: {count}{details}",
     "governance.findingDetail": "  [{ruleId}] {location}: {message}",
     "governance.testPolicy": "#### 测试 finding 策略",
@@ -214,14 +222,17 @@ const catalog = {
     "gate.heading": "## check 策略裁决",
     "gate.verdict": "- Verdict: {verdict}",
     "gate.verdictWarnSuffix": "（{count} 项 WARN，见上）",
+    "gate.warnAdvisory": "- WARN 不是必须执行的整改指令：先调查触发事实，再由项目所有者决定——修复、记录接受决定，或经配置审计重新校准。不得为通过检查而放宽规则或删除证据。",
     "gate.evaluated": "- 评估文件数: {files}",
-    "gate.trigger": "  [{level}] {name}: {condition}{observed}",
+    "gate.trigger": "  [{level}][{mode}] {name}: {condition}{observed}",
     "gate.triggerFile": "    → {path}",
-    "gate.recommendation": "    → 建议: {recommendation}",
-    "gate.recommendation.split_function": "拆分该函数的职责，或改用策略/查找表。",
-    "gate.recommendation.inspect_branch_shape": "先判断控制流位于单函数、顶层分派还是多个独立函数。",
-    "gate.recommendation.extract_dispatch": "将顶层分派改为命令注册表、查找表或独立命令处理器。",
-    "gate.recommendation.reduce_local_burden": "优先降低局部控制复杂度或外部透传；暴露度和模块形态见诊断。",
+    "gate.ownerLine": "    → 归属: {owner}；加权={weighted}（普通 if {ordinaryIf} / 卫语句 {guardIf} / case {caseCount}）",
+    "gate.observedInline": "（实际 {values}）",
+    "gate.recommendation": "    → 调查方向: {recommendation}",
+    "gate.recommendation.split_function": "先查该函数的分支为何集中：是职责过多，还是策略/查找表更合适。",
+    "gate.recommendation.inspect_branch_shape": "先查控制流形态：位于单函数、顶层分派，还是多个独立函数。",
+    "gate.recommendation.extract_dispatch": "先查顶层分派的可替代形态：命令注册表、查找表或独立处理器。",
+    "gate.recommendation.reduce_local_burden": "先查局部控制复杂度与外部透传的来源；暴露度和模块形态见诊断。",
     "gate.breakdownSummary": "    存量诊断: 局部={local} 暴露={exposure} 不连通形态(1-connectedness)={shape} 复合={composite}",
     "gate.breakdownP95": "    P95: br={branch} ne={nesting} loc={loc} α={alpha} 1conn={connectedness} extPa={external}",
     "gate.breakdownBranch": "    {bar} 分支(maxFunc): {value}",
@@ -229,11 +240,13 @@ const catalog = {
     "gate.breakdownLoc": "    {bar} 行数(-注释): {value}",
     "gate.breakdownExternal": "    {bar} 外部透传: {value}（直接非本地={external} / P95={p95}{capped}）",
     "gate.capped": "，已截断",
-    "gate.breakdownReview": "    review-only 枢纽位(α): {alpha}；不连通: {disconnected}",
+    "gate.breakdownReview": "    review-only 枢纽位(α): {alpha}；不连通: {disconnected}；单调用点助手占比: {singleCallSite}；声明行(概念数代理): {declarationLoc}",
+    "gate.breakdownCallSiteUnavailable": "不可判定（文件内无调用点或旧基线无此事实）",
     "gate.unavailable.languages_empty": "- 原因: config.yml 未声明可分析的 languages，无法界定 baseline 的裁决范围。",
     "gate.unavailable.missing_baseline_index": "- 原因: 缺少可读取的 baseline index。",
     "gate.unavailable.missing_snapshot_identity": "- 原因: baseline 缺少 content-addressed snapshotSha256 身份；运行完整 openarch scan 重建。",
     "gate.unavailable.baseline_scope_incompatible": "- 原因: baseline 的分析范围与当前配置不一致或不是完整 scan。",
+    "gate.unavailable.baseline_shapes_incompatible": "- 原因: baseline 记录的语言形状身份（shapesFingerprint）与当前 shapes 声明不一致；弱断言等判据已改变，需运行完整 openarch scan 重建。",
     "gate.unavailable.metric_contract_incompatible": "- 原因: baseline 未使用当前 metric contract。",
     "gate.unavailable.unsupported_gate_metric": "- 原因: 项目规则使用了非 gate 指标、退役指标或未登记的 CEL 变量。",
     "gate.unavailable.missing_max_function_branch": "- 原因: baseline 缺少 maxFuncBranch；不能将旧文件聚合替代函数复杂度。",
@@ -245,6 +258,13 @@ const catalog = {
     "gate.diagnostic": "- Diagnostic: {category}/{operation}{path}: {detail}",
     "gate.unavailableAction": "- 行动: 修正配置或运行 openarch scan 后重试。",
     "gate.calibrationHeading": "### 校准漂移（仅报告）",
+    "gate.thresholdHeading": "### 阈值与当前 P95（仅报告）",
+    "gate.thresholdEntry": "- {policy}/{rule}: {metric} {comparison} {threshold}；当前 P95={p95}；倍数={ratio}{observed}；超阈文件 {over}/{files}",
+    "gate.thresholdObserved": "（按当前观察 P95={observed}）",
+    "gate.thresholdNotApplicable": "不适用（该指标无 P95 口径）",
+    "gate.thresholdAction": "- 倍数或超阈文件数相对校准注释显著变化时，重新评估容忍度与回扫计划；不要自动修改阈值。",
+    "gate.thresholdConjunction": "- 规则条件可能是**合取**：某文件不再被点名**不代表它的每个分量都回到了阈值内**（实测例子：`crl_local` 已降到 0.45 以下、而 `exposure` 仍是 0.603 > 0.6）。要判断是否真的改善，请并读该文件的「局部/暴露」两项以及「声明行」与「单调用点助手占比」——每函数分支下降也可能只是把复杂度拆成了更多概念。",
+    "gate.thresholdSaturation": "- 某分量已**饱和**时（如外部透传已达 P95，行内标 `已截断`），继续降低该维度的投入不会改善这一线；这不是「还可以更好」的余量。",
     "gate.calibrationShift": "- CALIBRATION_SHIFT {path}: sealed {sealed} -> observed {observed}；规则 {previousRules} -> {observedRules}",
     "gate.policiesHeading": "### 结构策略总体",
     "gate.policy": "- {id}: {mode}；语言={languages}；文件={files}",
@@ -278,6 +298,8 @@ const catalog = {
     "check.scopeChange": "- 查看本次改动：在 scan 前运行 openarch check --staged --report。",
     "check.worktreeEmpty": "工作树没有变更（无新增/修改的已跟踪文件，也无未跟踪文件）。",
     "check.worktreeNoAnalyzable": "工作树有 {count} 个变更文件，但没有可分析文件（变更仅涉及不可分析文件，如文档/配置/资源；本次跳过变更度量）。",
+    "check.unbaselinedTestFiles": "- 测试文件未入 baseline: {count} 个（先运行 openarch scan 再依赖测试治理覆盖；本提示仅报告，不影响裁决）",
+    "check.unbaselinedTestFile": "  → {path}",
     "audit.heading": "## 配置审计",
     "audit.status": "- Status: {status}",
     "audit.event": "- Event: {path}",
@@ -292,21 +314,25 @@ const catalog = {
     "diff.metricDelta": "{metric} {delta}{normalized}", "diff.normalizedDelta": "（加权归一化 {delta}）", "diff.noLocalChange": "无局部负担变化",
     "diff.mrPrefix": "  D_MR {file}（{scope}{source}）: ", "diff.sealedBaseline": "（使用已封存 baseline）",
     "diff.introducedBefore": "无可比 before 结构，仅记录 after 原始事实；不计入 D_MR。", "diff.unavailableBefore": "before 结构不可用，未以零值替代；不计入 D_MR。",
-    "diff.mrComparable": "{changes}；局部恶化 +{deterioration}，改善 -{improvement}；暴露 Δα={exposure}", "diff.exposureUnavailable": "不可用（未重建 before 图）",
+    "diff.mrComparable": "{changes}；局部恶化 +{deterioration}，改善 -{improvement}；暴露 Δα={exposure}",
+    "diff.shapeLine": "；认知点形态: {changes}（并列呈现，不进入 D_MR 求和）",
+    "diff.shapeModule": "不连通形态(1-connectedness) Δ {delta}（正=更碎）",
+    "diff.shapeDeclarations": "函数/声明数 Δ {delta}（正=新增了抽象）",
+    "diff.shapeSingleCallSite": "单调用点助手占比 Δ {delta}（正=新增的抽象里只用一次的更多）", "diff.exposureUnavailable": "不可用（未重建 before 图）",
     "diff.summaryDeterioration": "+{value} 局部负担（不参与 gate）", "diff.summaryBeforeUnavailable": "缺少可比 before 结构（不参与 gate）", "diff.summaryClean": "无局部负担恶化（0.00，不参与 gate）",
     "diff.actionConsumers": "检查直接消费者: {consumers}", "diff.actionPublicContract": "确认公开合同没有仓库内直接消费者，并运行语言级契约检查", "diff.actionDependencyBoundary": "确认依赖增删符合层级与 authority 边界", "diff.actionQuality": "运行受影响模块的语言检查与已有测试",
     "diff.plan": "  验证计划 {file}: {contracts}", "diff.publicContracts": "公共合同 {contracts}", "diff.noPublicContracts": "无公开合同变更", "diff.planAction": "    → {action}",
     "diff.staticPath": "- 符号引用路径: STATIC parser fallback（当前 I_push 使用静态依赖图；未请求 LSP 语义事实）", "diff.semanticNoReports": "- 符号引用路径: STATIC parser fallback（已请求 LSP，但未取得 provider 报告）", "diff.semanticFallback": "- 符号引用路径 {language}: STATIC parser fallback（{provider} 不可用：{reason}）", "diff.semanticPath": "- 符号引用路径 {language}: {source} {provider} {availability}（声明={declarations}，引用={references}；{scope}）{risk}", "diff.semanticScope": "范围={mode}，声明文件={selected}/{governed}，族={families}", "diff.semanticScopeLegacy": "范围=未声明（旧 provider 合同）", "diff.semanticRisk": "；风险: {reason}", "diff.semanticReasonUnavailable": "未提供原因",
     "diff.symbolEvidence": "    LSP 符号证据 {symbol}: {source}/{provider}（声明={declarations}，引用={references}）→ {consumers}；{comparison}{risk}", "diff.symbolNoConsumers": "未观察到仓库引用", "diff.symbolComparison": "静态 import={static}，交集={shared}，静态独有={staticOnly}，符号独有={symbolOnly}", "diff.symbolRisk": "；风险: {reason}",
-    "diff.changeSurface": "  变更面冲击: C_push = Σ λ·log2(n+1)·ω = {total}（{provenance}）", "diff.changeSurfaceUnavailable": "  变更面分析不可用: {language}（{reason}）——不输出 C_push 数值（无兜底）", "diff.changeSurfaceFile": "    {file}（{language}）: {provenance} 总={total}（文件级上界 {bound}，符号级确认 {confirmed}）", "diff.changeSurfaceContribution": "      {anchor} ({kind}): λ={lambda} × log2({consumerCount}+1)={reach} × ω={weight} → {value}；消费者: {consumers}", "diff.changeSurfaceNoConsumers": "无仓库消费者", "diff.changeSurfaceUnconfirmed": "符号级未确认（静态上界 {bound} 个潜在消费者未获符号级确认）", "diff.changeSurfaceConfirmedBeyondBound": "符号级确认 {count} 个消费者（{list}）——超出静态上界 {bound}（上界可能含导入未用假阳性，或确认消费者为测试/范围外文件）", "diff.changeSurfaceSignalFileHeavy": "    信号[file-heavy] {file}: 文件冲击 I_push={iPush} 大于变更面 C_push={cPush}——热点文件改内部实现（文件级假阳性）", "diff.changeSurfaceSignalSymbolHeavy": "    信号[symbol-heavy] {file}: 变更面 C_push={cPush} 大于文件冲击 I_push={iPush}——API 面变化（文件级低估真实冲击）",
+    "diff.changeSurface": "  变更面冲击: C_push = Σ λ·log2(n+1)·ω = {total}（{provenance}）", "diff.changeSurfaceUnavailable": "  变更面分析不可用: {language}（{reason}）——不输出 C_push 数值（无兜底）", "diff.changeSurfaceUnavailableFiles": "    → 受影响文件: {files}", "diff.symbolEvidenceGapHeading": "- 符号/可见性证据缺口（空消费者列表表示未知，不等于已确证的 0）", "diff.symbolEvidenceGap": "  [{kind}] {file}: {reason}", "diff.symbolEvidenceGapKind.provider-unavailable": "证据不可用", "diff.symbolEvidenceGapKind.static-bound-empty": "静态上界为空（未查询符号证据）", "diff.planEvidenceGap": "    → 证据缺口: {reason}（symbolConsumers 为空表示未知，不是已确证的 0）", "diff.changeSurfaceFile": "    {file}（{language}）: {provenance} 总={total}（文件级上界 {bound}，符号级确认 {confirmed}）", "diff.changeSurfaceContribution": "      {anchor} ({kind}): λ={lambda} × log2({consumerCount}+1)={reach} × ω={weight} → {value}；消费者: {consumers}", "diff.changeSurfaceNoConsumers": "无仓库消费者", "diff.changeSurfaceUnconfirmed": "符号级未确认（静态上界 {bound} 个潜在消费者未获符号级确认）", "diff.changeSurfaceConfirmedBeyondBound": "符号级确认 {count} 个消费者（{list}）——超出静态上界 {bound}（上界可能含导入未用假阳性，或确认消费者为测试/范围外文件）", "diff.changeSurfaceSignalFileHeavy": "    信号[file-heavy] {file}: 文件冲击 I_push={iPush} 大于变更面 C_push={cPush}——热点文件改内部实现（文件级假阳性）", "diff.changeSurfaceSignalSymbolHeavy": "    信号[symbol-heavy] {file}: 变更面 C_push={cPush} 大于文件冲击 I_push={iPush}——API 面变化（文件级低估真实冲击）",
     "diff.symbolAdmissionHeading": "### 符号范围公式准入（仅报告）", "diff.symbolAdmission": "  {file}::{symbol} [{language}/{provider}] {availability}，未满足: {missing}", "diff.symbolAdmissionRequirement.before_declaration_identity": "Git before 声明身份", "diff.symbolAdmissionRequirement.after_declaration_identity": "before/after 稳定声明身份", "diff.symbolAdmissionRequirement.repository_references": "完整仓库引用范围", "diff.symbolAdmissionRequirement.public_surface": "公开面分类", "diff.symbolAdmissionRequirement.common_population": "共同版本化文件范围", "diff.symbolAdmissionRequirement.calibration_samples": "持久化正反校准样本",
     "diff.evidence": "- {state}: {id}", "diff.pendingEvidence": "pending evidence", "diff.history": "history", "history.compacted": "已压缩 {compacted} 条 sealed history，保留 {retained} 条近期证据。", "history.invalidPolicy": "history 保留策略无效：{detail}",
     "diff.delta": "  {file}: ΔI={impact}  α={alpha}",
     "diff.impactIntensity": "- I_push 强度: {intensity}/λ_ast（severity budget {budget}）——单位语义破坏度的结构冲击，仅作验证强度路由",
     "diff.impactRelative": "- 项目内规模参照: 本次冲击高于同规模（{bucket} 文件）sealed 变更的 {percentile}%（样本 {entries} 条，压缩按 sourceEntryCount 加权）",
     "diff.impactRelativeMissing": "- 项目内规模参照: 暂无同规模 sealed 变更样本（不是 0 分位）",
-    "docs.heading": "## 文档相似候选", "docs.scope": "- scope: {scope}", "docs.root": "- document root: {root}", "docs.unavailable": "- Status: UNAVAILABLE ({reason})", "docs.indexed": "- indexed: {indexed}, updated: {updated}", "docs.noCandidates": "- Candidates: 0", "docs.candidates": "- Candidates: {count}（仅报告）", "docs.candidate": "  [ADVISORY] {left} ~ {right} (minhash={minhash}, simhashDistance={distance})", "docs.unfilled": "- 未填写模板: {count}（填写完成前不要提交）", "docs.unfilledEntry": "  [UNFILLED] {path}", "docs.usage": "用法: openarch docs <check|record|status|decide> [...options]", "docs.storeMissing": "文档库未配置。运行 openarch init --docs-store project，或配置 shared document scope", "docs.statusHeading": "## 文档治理状态 [{scope}]", "docs.statusScope": "- scope root: {root}（{mode}）", "docs.statusIndexed": "- 已索引文档: {indexed}", "docs.statusUnfilled": "- 未填写模板: {count}", "docs.statusCandidates": "- 未处置相似候选: {count}", "docs.statusLastCheck": "- 最近相似检查: {at}", "docs.statusNever": "从未", "docs.decideUsage": "用法: openarch docs decide --left <文档> --right <文档> --decision merged|related|kept-separate [--note <决定>]", "docs.decideOutsideScope": "处置两端必须位于当前 DocumentStore scope 内", "docs.decideRecorded": "✓ 已记录处置: {path}", "docs.decideUpdated": "✓ 已更新处置: {path}",
-    "record.invalidCategory": "--category 必须是 anti_patterns、patterns 或 decisions。运行 openarch docs record --help 查看用法。", "record.created": "✓ 经验条目已生成: {path} ({category})", "record.check": "  填写完成后运行: openarch docs check --changed {path} --unfilled", "record.checkSimilar": "  提交前运行: openarch docs check --changed {path} --similar", "record.commit": "  闭环: 在文档库 Git 根提交；手工编辑由 docs hook 检查。",
+    "docs.heading": "## 文档相似候选", "docs.scope": "- scope: {scope}", "docs.root": "- document root: {root}", "docs.unavailable": "- Status: UNAVAILABLE ({reason})", "docs.indexed": "- indexed: {indexed}, updated: {updated}", "docs.populationThreshold": "- 未填写判定人口: 带 `来源/Source: openarch record` 或 `openarch docs record` 来源行、且出现必填标题（`背景/分析/应对/教训`、`Background/Analysis/Response/Lessons`，容忍标题末尾括号注解）的记录模板", "docs.populationUnknown": "- 判定篇数: 不可枚举（仅报告，不影响退出码）——判据只有来源行 + 必填小节结构，“带来源行但没写必填小节”的文档无从区分（记录写坏/被截断，还是手写来源），故不输出数字", "docs.noCandidates": "- Candidates: 0", "docs.candidates": "- Candidates: {count}（仅报告）", "docs.candidate": "  [ADVISORY] {left} ~ {right} (minhash={minhash}, simhashDistance={distance})", "docs.unfilled": "- 未填写模板: {count}（填写完成前不要提交）", "docs.unfilledEntry": "  [UNFILLED] {path}", "docs.usage": "用法: openarch docs <check|record|status|decide> [...options]", "docs.storeMissing": "文档库未配置。运行 openarch init --docs-store project，或配置 shared document scope", "docs.statusHeading": "## 文档治理状态 [{scope}]", "docs.statusScope": "- scope root: {root}（{mode}）", "docs.statusIndexed": "- 已索引文档: {indexed}", "docs.statusUnfilled": "- 未填写模板: {count}", "docs.statusCandidates": "- 未处置相似候选: {count}", "docs.statusLastCheck": "- 最近相似检查: {at}", "docs.statusNever": "从未", "docs.decideUsage": "用法: openarch docs decide --left <文档> --right <文档> --decision merged|related|kept-separate [--note <决定>]", "docs.decideOutsideScope": "处置两端必须位于当前 DocumentStore scope 内", "docs.decideRecorded": "✓ 已记录处置: {path}", "docs.decideUpdated": "✓ 已更新处置: {path}",
+    "record.invalidCategory": "--category 必须是 anti_patterns、patterns 或 decisions。运行 openarch docs record --help 查看用法。", "record.created": "✓ 经验条目已生成: {path} ({category})", "record.noComments": "  已省略引导注释；填写每个必填小节后再提交。", "record.check": "  填写完成后运行: openarch docs check --changed {path} --unfilled", "record.checkSimilar": "  提交前运行: openarch docs check --changed {path} --similar", "record.commit": "  闭环: 在文档库 Git 根提交；手工编辑由 docs hook 检查。",
     "status.heading": "## OpenArch 状态", "status.present": "已建立", "status.missing": "未建立", "status.baseline": "- baseline: {state}", "status.files": "  nFiles: {files}", "status.associated": "已关联 ({type})", "status.unassociated": "未关联", "status.docsRepo": "- docs-repo: {state}", "status.behind": "  ⚠ 落后 remote {commits} commits", "status.store": "- document-store: {state}", "status.unconfigured": "未配置", "status.scopeUnavailable": "  ⚠ shared document scope 未登记，相似度检查不可用", "status.readiness": "## 治理链路就绪度（仅报告）", "status.scan": "- scan: {status} {phase} {completed}/{total}{files}", "status.scanStale": "过期运行标记（可能已中断）", "status.reason": "  ⚠ {reason}",
     "rules.factsHeading": "## 脚本事实能力", "rules.fact": "- {id}: {summary} 不可用时：{unavailable}", "rules.astHeading": "## 引擎 AST 事实阶段", "rules.astFact": "- {id}: {summary}", "rules.skeletons": "- Skeletons: {starters}", "rules.templatesHeading": "## 可选反模式模板（未安装，默认仅报告）", "rules.noTemplates": "- 当前项目 languages 没有可推荐的 shipped 反模式模板。", "rules.template": "- {family}: {id}（openarch init --install-script {id}）", "rules.unknownSkeleton": "未知 skeleton: {skeleton}。可用项: {starters}", "rules.usage": "用法: openarch rules <check|facts|skeleton <staged-ast|classification|metrics|authority-import|authority-change-set>>", "rules.commandUsage": "用法: openarch rules <check|facts|skeleton|scan|discover> [...options]", "rules.factsUsage": "用法: openarch rules facts [--domain <domain>] [--query <text>] [--status <status>] [--unused] [--json]", "rules.factDomain": "### {domain}", "rules.factEntry": "- {id} [{kind} · {status} · {producer}] consumers={consumers}{unused}", "rules.factSummary": "  含义: {summary}", "rules.factUsage": "  用途: {usage}", "rules.factOutput": "  输出: {output}", "rules.factUnavailable": "  不可用时: {action}", "rules.factConsumers": "  消费: {files}", "rules.factConsumersNone": "  消费: 无（零消费者事实，仅报告；新增事实必须解释生命周期）", "rules.factNoScriptConsumers": "  消费: 无已安装脚本消费者（仅引擎内置）", "rules.factBuiltinConsumers": "  内置消费: {consumers}", "rules.factLifecycle": "  生命周期: {lifecycle}", "rules.factAliases": "  曾用: {aliases}", "rules.factUnused": "（UNUSED）", "rules.factNoMatches": "没有匹配的事实。用 openarch rules facts 查看全部，或调整 --domain/--query/--status。", "rules.unusedHeading": "## 零消费者事实（--unused，CI 提示）", "rules.unusedNone": "- 没有无生命周期理由的零消费者事实（WARN 为零）。", "fact.domain.classification": "分类", "fact.domain.structure": "结构", "fact.domain.authority": "权限", "fact.domain.test": "测试", "fact.domain.semantic": "语义", "fact.domain.change": "变更", "fact.domain.ast": "AST", "fact.status.current": "当前", "fact.status.experimental": "实验", "fact.status.deprecated": "退役", "fact.producer.runtime": "runtime", "fact.producer.parser": "parser", "fact.producer.provider": "provider", "fact.producer.change-set": "change-set", "fact.producer.engine": "engine", "rules.contractHeading": "## 扩展合同检查", "rules.scripts": "- Scripts: {count}", "rules.engines": "- anti-patterns={antiPatterns}, implicit-deps={implicitDeps}, test-governance={testGovernance}",
     "scriptFact.fileClassification.summary": "fileKind、pathClass 与仓库相对路径。", "scriptFact.fileClassification.unavailable": "检查 languages/file_kinds/paths 配置。", "scriptFact.fileClassification.usage": "需要规范化仓库相对路径、fileKind/pathClass 时声明；路径与角色由引擎归一，不要在脚本里重算。", "scriptFact.structureMetrics.summary": "compatible baseline 的原始结构指标与依赖图事实。", "scriptFact.structureMetrics.unavailable": "运行 openarch scan，使 baseline scope 与 metric contract 对齐。", "scriptFact.structureMetrics.usage": "需要兼容 baseline 的原始结构/依赖图事实时声明；不含 P95、CRL、I_push 或阈值，禁止在脚本里重算策略。", "scriptFact.authorities.summary": "项目可复用或脚本局部声明的边界，以及 runtime 派生的 protectedFiles/authorityIds。", "scriptFact.authorities.unavailable": "在项目 authority_hygiene 或当前脚本中声明 owner、保护范围与合法入口。", "scriptFact.authorities.usage": "需要显式 owner/保护范围/禁止导入时声明；只消费派生的 protectedFiles/authorityIds，不从路径反推 authority。", "scriptFact.testCaseSpans.summary": "当前 provider 确认的测试体范围、名称与状态。", "scriptFact.testCaseSpans.unavailable": "配置可处理当前测试文件的 provider，并修复未识别或采集失败范围。", "scriptFact.testCaseSpans.usage": "测试 finding 脚本需要 provider 确认的测试体范围时声明；provider 不可用保持 unavailable，不按零用例解释。", "scriptFact.invocationBindings.summary": "语言 provider 已确认的调用接收者、方法与局部绑定目标。", "scriptFact.invocationBindings.unavailable": "仅对当前语言已实现的保守绑定范围编写脚本；动态或跨函数流转保持 unavailable。", "scriptFact.invocationBindings.usage": "需要 parser/provider 确认的调用接收者或局部绑定时声明；当前为实验事实，动态与跨函数流转保持 unavailable。", "scriptFact.semanticRelations.summary": "provider 直接证明的类/接口关系；仅声明 requires 后按需收集。", "scriptFact.semanticRelations.unavailable": "在脚本 requires 声明 semantic-relations.v1，并配置已校准的语言语义 provider。", "scriptFact.semanticRelations.usage": "需要 provider 直接证明的 extends/implements/显式类型/构造边时声明；不是完整调用图或传递依赖。", "scriptFact.changeSurface.summary": "变更驱动的符号面：哪些声明被改、被哪些文件消费；仅在变更集上下文（check --semantic）可用。", "scriptFact.changeSurface.unavailable": "在脚本 requires 声明 change-surface.v1，并在 check --semantic 变更集上下文中运行。", "scriptFact.changeSurface.usage": "变更模式下定位变更声明与 hunk 时声明；消费者确认属于 C_push 链，不在脚本里预计算。", "scriptFact.staticImports.summary": "ParserStrategy 提供已注册语言的静态 import source records；动态、未解析或 parser 失败保持 unavailable。", "scriptFact.staticImports.usage": "authority/依赖边界需要 parser 已确认的 import source 时使用；不要重新匹配 import AST 或 regex。", "scriptFact.stringKeyCalls.summary": "引擎内置的声明式字符串键事实（成员调用/局部常量/三元/数组，JS/TS）：供 DI/RPC/事件总线类脚本做跨文件键相关，引号与局部变量由引擎解析。", "scriptFact.stringKeyCalls.unavailable": "仅 JS/TS 语法受支持；动态键保留为 dynamicCall 不猜测。用 targets.languages 限定脚本范围。", "scriptFact.stringKeyCalls.usage": "依赖注入/远程调用/事件总线/HTTP 路由等字符串键跨文件相关时使用；引擎负责查询与清洗，脚本只配对键语义。",
@@ -432,8 +458,10 @@ const catalog = {
   --human          等价于 --output-mode human
   --tests         追加测试治理评估（可与 --full 组合：check --full --tests）
   --verbose       取证详情（D_MR / 符号证据 / 公式准入）
-  --record-config 将本次校准记录写入项目配置
+  --record-config 为当前 config.yml 哈希记录一条配置审计事件（不写入校准值）
   --change-override <path=kind>  自动语义分类歧义时显式指定变更类型；path 可用 all 批量兜底（如 all=function_body）
+  --pre-commit    pre-commit hook 入口：为暂存内容封存匹配的语义证据（无暂存变更时不做事；与 --staged 互斥）
+  --reconcile-baseline  检查 baseline generation 是否有孤立条目（只报告，不原地删除；随后用 openarch scan 发布新基线）
 
 退出码：
   0  门禁 PASS 且证据完整
@@ -474,7 +502,7 @@ actions:
 
 首次配置可运行：openarch init --toolchains user
 当前 checkout 覆盖可运行：openarch init --toolchains project`,
-    "help.test": `openarch test [--list] [--bloat] [--json]
+    "help.test": `openarch test [--list] [--bloat] [--json] [--spans]
 
 测试治理评估（默认）：运行 provider 静态分析并输出 finding 与门禁决策。
 
@@ -482,8 +510,13 @@ actions:
   --list  列出全部已注册 provider（id + 说明），不执行评估
            —— provider id 用于 config.yml test_governance.providers 配置
   --bloat  追加测试膨胀指标（minhash 相似度，较慢）
+  --spans  列出 provider 确认的用例体界明细（file:startLine-endLine），
+           供复核 DRY/DAMP 分界所用的范围；--json 时投影进
+           collection.testCaseSpans.value/spanCount
   --json   输出稳定机器契约 test-governance-json-v1（provider 覆盖、
-           suggestedAdapters 等），供外部插件/工具消费`,
+           suggestedAdapters 等），供外部插件/工具消费
+           —— suggestedAdapters 仅在 test_governance 未配置时出现
+           （已配置时该键缺省，表示"不需要建议"而非"没有建议"）`,
     "help.docs": `openarch docs <check|record|status|decide> [options]
 
 动作：
@@ -534,14 +567,21 @@ actions:
     "context.heading": "## OpenArch Project Context",
     "context.configuration": "- Configuration: {state}",
     "context.languages": "- Project languages: {languages}",
+    "context.nestedLanguageHints": "- Build markers in subdirectories (confirm, then add to config.yml languages): {hints}",
     "context.baselineAvailable": "- Baseline: available ({files} files; scope={scope}; snapshot={freshness}{scanAt})",
     "context.baselineMissing": "- Baseline: missing",
     "context.baselineScope.compatible": "compatible", "context.baselineScope.different": "different", "context.baselineScope.partial": "partial", "context.baselineScope.unknown": "unknown",
     "context.baselineFreshness.current": "current", "context.baselineFreshness.stale": "stale", "context.baselineFreshness.unknown": "unknown",
+    "context.freshnessReason": ", reason: {reason}",
+    "context.freshnessReason.no_readable_index": "no readable baseline index (run openarch scan first)",
+    "context.freshnessReason.scope_not_compatible": "the baseline analysis scope does not match the current config (a complete scan is required)",
+    "context.freshnessReason.baseline_missing_snapshot_identity": "sourceSnapshotSha256 was not recorded when it was written (0.1.5 and earlier scan --rebuild did this; a fresh scan fixes it)",
+    "context.freshnessReason.source_snapshot_unavailable": "the current source snapshot cannot be computed (read failure or path outside the project root)",
     "context.baselineScanAt": "; scan={at}",
     "context.baselineGeneration": "- Baseline generation: active={active}, readable={readable}, temporary generations={transient} (report only)",
     "context.available": "available",
     "context.missing": "missing",
+    "context.invalid": "unparseable (config.yml exists but cannot be read)",
     "context.architecturePolicy": "- Architecture policy: {state}{detail}",
     "context.declaredRules": " ({count} declared rules)",
     "context.architecturePolicies": "- Policies: {policies}",
@@ -549,7 +589,7 @@ actions:
     "context.policyPopulationEntry": "  [{id}] {productionFiles} production files, calibration={calibration}",
     "context.worktree": "- Worktree: {paths} paths, {sources} source files{pending}",
     "context.staged": "- Staged: {paths} paths, {sources} source files",
-    "context.gitUnavailable": "- Git change set: UNAVAILABLE (the current directory is not a readable Git worktree; local configuration and baseline facts remain observable)",
+    "context.gitUnavailable": "- Git change set: UNAVAILABLE ({reason}; local configuration and baseline facts remain observable)",
     "context.pending": "; pending evidence={state}",
     "context.scanStatus": "- Last scan: {status} ({completed}/{total}, phase={phase})",
     "context.scanStatusNone": "- Last scan: unavailable",
@@ -571,7 +611,7 @@ actions:
     "governance.heading": "## Governance Review (Report Only)",
     "governance.metricPolicy": "### Metric Policy",
     "governance.architectureGate": "- Architecture gate: {verdict} (project rules={rules}, production files evaluated={files})",
-    "governance.architectureTriggered": "  [{level}] {name}: {condition} -> {file} -> Suggested: fix the file, or adjust/trial the rule with project evidence.",
+    "governance.architectureTriggered": "  [{level}][{mode}] {name}: {condition} -> {file} -> Investigate the triggering facts first; fixing, accepting with a recorded decision, or recalibrating through an audited config change is the project owner's call.",
     "governance.signalSummary": "  ⚠ {count} governance signal(s): {ids} - see below; PARTIAL/UNAVAILABLE is a fact boundary, not clean.",
     "governance.unconfiguredGate": "- [ATTENTION] The gate has no declared production rules; PASS only means no configured policy was triggered.",
     "governance.policyCalibrationHeading": "### Exploratory Policy Calibration (Suggestions Only)",
@@ -591,6 +631,7 @@ actions:
     "governance.antiPatterns": "#### Anti-patterns (Report Only by Default)",
     "governance.antiPatternsUnavailable": "- [UNAVAILABLE] Anti-patterns: {reason}",
     "governance.rulesRun": "- Rules run: {count}",
+    "governance.rulesRunNone": "- Rules run: 0 [NOT_CONFIGURED: no project rules installed; 0 does not mean clean]",
     "governance.findings": "- Findings: {count}{details}",
     "governance.findingDetail": "  [{ruleId}] {location}: {message}",
     "governance.testPolicy": "#### Test Finding Policy",
@@ -609,14 +650,17 @@ actions:
     "gate.heading": "## Check Policy Verdict",
     "gate.verdict": "- Verdict: {verdict}",
     "gate.verdictWarnSuffix": " ({count} WARNs, see above)",
+    "gate.warnAdvisory": "- A WARN is not a mandate: investigate the triggering facts first, then the project owner decides - fix, accept with a recorded decision, or recalibrate through an audited config change. Never loosen rules or delete evidence to pass a check.",
     "gate.evaluated": "- Production files evaluated: {files}",
-    "gate.trigger": "  [{level}] {name}: {condition}{observed}",
+    "gate.trigger": "  [{level}][{mode}] {name}: {condition}{observed}",
     "gate.triggerFile": "    -> {path}",
-    "gate.recommendation": "    -> Recommendation: {recommendation}",
-    "gate.recommendation.split_function": "Split this function's responsibility, or use a strategy or lookup table.",
-    "gate.recommendation.inspect_branch_shape": "First determine whether the control flow is in one function, top-level dispatch, or independent functions.",
-    "gate.recommendation.extract_dispatch": "Replace top-level dispatch with a command registry, lookup table, or independent command handler.",
-    "gate.recommendation.reduce_local_burden": "Reduce local control complexity or external passthrough first; inspect exposure and module shape in the diagnostics.",
+    "gate.ownerLine": "    -> Owner: {owner}; weighted={weighted} (ordinary if {ordinaryIf} / guard {guardIf} / case {caseCount})",
+    "gate.observedInline": " (observed {values})",
+    "gate.recommendation": "    -> Investigation direction: {recommendation}",
+    "gate.recommendation.split_function": "Investigate why branches concentrate in this function: too many responsibilities, or a strategy or lookup table fits better.",
+    "gate.recommendation.inspect_branch_shape": "Investigate the control-flow shape first: one function, top-level dispatch, or independent functions.",
+    "gate.recommendation.extract_dispatch": "Investigate alternatives to top-level dispatch: a command registry, lookup table, or independent command handlers.",
+    "gate.recommendation.reduce_local_burden": "Investigate where the local control complexity and external passthrough come from; exposure and module shape are in the diagnostics.",
     "gate.breakdownSummary": "    Existing diagnostic: local={local} exposure={exposure} disconnected-shape(1-connectedness)={shape} composite={composite}",
     "gate.breakdownP95": "    P95: br={branch} ne={nesting} loc={loc} alpha={alpha} 1conn={connectedness} extPa={external}",
     "gate.breakdownBranch": "    {bar} Branches (max function): {value}",
@@ -624,11 +668,13 @@ actions:
     "gate.breakdownLoc": "    {bar} Lines (-comments): {value}",
     "gate.breakdownExternal": "    {bar} External passthrough: {value} (direct non-local={external} / P95={p95}{capped})",
     "gate.capped": ", capped",
-    "gate.breakdownReview": "    Review-only hub position (alpha): {alpha}; disconnectedness: {disconnected}",
+    "gate.breakdownReview": "    Review-only hub position (alpha): {alpha}; disconnectedness: {disconnected}; single-call-site helpers: {singleCallSite}; declaration lines (concept-count proxy): {declarationLoc}",
+    "gate.breakdownCallSiteUnavailable": "not determinable (no in-file call site, or the baseline predates this fact)",
     "gate.unavailable.languages_empty": "- Reason: config.yml declares no analyzable languages, so the baseline adjudication scope is unknown.",
     "gate.unavailable.missing_baseline_index": "- Reason: no readable baseline index is available.",
     "gate.unavailable.missing_snapshot_identity": "- Reason: the baseline lacks its content-addressed snapshotSha256 identity; rebuild with a complete openarch scan.",
     "gate.unavailable.baseline_scope_incompatible": "- Reason: the baseline analysis scope differs from current configuration or is not a complete scan.",
+    "gate.unavailable.baseline_shapes_incompatible": "- Reason: the baseline recorded language-shape identity (shapesFingerprint) differs from the current shapes declaration; weak-assertion judgement changed, so rebuild with a complete openarch scan.",
     "gate.unavailable.metric_contract_incompatible": "- Reason: the baseline does not use the current metric contract.",
     "gate.unavailable.unsupported_gate_metric": "- Reason: project rules use a non-gate metric, a retired metric, or an unregistered CEL variable.",
     "gate.unavailable.missing_max_function_branch": "- Reason: the baseline lacks maxFuncBranch; a legacy file aggregate cannot replace function complexity.",
@@ -640,6 +686,13 @@ actions:
     "gate.diagnostic": "- Diagnostic: {category}/{operation}{path}: {detail}",
     "gate.unavailableAction": "- Action: fix configuration or run openarch scan, then retry.",
     "gate.calibrationHeading": "### Calibration Shift (Report Only)",
+    "gate.thresholdHeading": "### Declared Thresholds vs Current P95 (Report Only)",
+    "gate.thresholdEntry": "- {policy}/{rule}: {metric} {comparison} {threshold}; current P95={p95}; ratio={ratio}{observed}; over-threshold files {over}/{files}",
+    "gate.thresholdObserved": " (by current observed P95={observed})",
+    "gate.thresholdNotApplicable": "not applicable (this metric has no P95 semantics)",
+    "gate.thresholdAction": "- When the ratio or the over-threshold count has moved materially from the calibration note, re-evaluate the tolerance and rescan plan; never edit thresholds automatically.",
+    "gate.thresholdConjunction": "- A rule's condition may be a **conjunction**: a file that is no longer named is **not** evidence that every component is back inside its threshold (measured example: `crl_local` fell below 0.45 while `exposure` stayed at 0.603 > 0.6). Read the file's local-burden/exposure pair together with declaration lines and single-call-site helpers — a lower per-function branch count can simply be complexity repackaged into more concepts.",
+    "gate.thresholdSaturation": "- When a component is **saturated** (e.g. external passthrough already at its P95, marked `capped` on the line), further investment in that dimension cannot improve this line; it is not remaining headroom.",
     "gate.calibrationShift": "- CALIBRATION_SHIFT {path}: sealed {sealed} -> observed {observed}; rules {previousRules} -> {observedRules}",
     "gate.policiesHeading": "### Structural Policy Populations",
     "gate.policy": "- {id}: {mode}; languages={languages}; files={files}",
@@ -673,6 +726,8 @@ actions:
     "check.scopeChange": "- Inspect this change with openarch check --staged --report before scan.",
     "check.worktreeEmpty": "The worktree has no changes (no tracked additions/modifications and no untracked files).",
     "check.worktreeNoAnalyzable": "The worktree has {count} changed files but none analyzable (changes touch only non-analyzable files such as docs/config/assets; change measurement skipped).",
+    "check.unbaselinedTestFiles": "- Test files missing from the baseline: {count} (run openarch scan before relying on test-governance coverage; this hint is report-only and never changes the verdict)",
+    "check.unbaselinedTestFile": "  -> {path}",
     "audit.heading": "## Configuration Audit",
     "audit.status": "- Status: {status}",
     "audit.event": "- Event: {path}",
@@ -687,21 +742,25 @@ actions:
     "diff.metricDelta": "{metric} {delta}{normalized}", "diff.normalizedDelta": " (weighted normalized {delta})", "diff.noLocalChange": "no local-burden change",
     "diff.mrPrefix": "  D_MR {file} ({scope}{source}): ", "diff.sealedBaseline": " (sealed baseline)",
     "diff.introducedBefore": "no comparable before structure; records after facts only and does not enter D_MR.", "diff.unavailableBefore": "before structure is unavailable and was not replaced with zero; it does not enter D_MR.",
-    "diff.mrComparable": "{changes}; deterioration +{deterioration}, improvement -{improvement}; exposure delta alpha={exposure}", "diff.exposureUnavailable": "unavailable (before graph was not rebuilt)",
+    "diff.mrComparable": "{changes}; deterioration +{deterioration}, improvement -{improvement}; exposure delta alpha={exposure}",
+    "diff.shapeLine": "; cognitive-point shape: {changes} (shown alongside, never summed into D_MR)",
+    "diff.shapeModule": "disconnectedness (1-connectedness) delta {delta} (positive = more fragmented)",
+    "diff.shapeDeclarations": "function/declaration count delta {delta} (positive = new abstraction)",
+    "diff.shapeSingleCallSite": "single-call-site helper share delta {delta} (positive = more of the new abstractions are used once)", "diff.exposureUnavailable": "unavailable (before graph was not rebuilt)",
     "diff.summaryDeterioration": "+{value} local burden (does not enter the gate)", "diff.summaryBeforeUnavailable": "comparable before structure is unavailable (does not enter the gate)", "diff.summaryClean": "no local-burden deterioration (0.00; does not enter the gate)",
     "diff.actionConsumers": "Verify direct consumers: {consumers}", "diff.actionPublicContract": "Confirm the public contract has no repository direct consumers, then run language-level contract checks", "diff.actionDependencyBoundary": "Confirm dependency additions/removals respect layering and authority boundaries", "diff.actionQuality": "Run language checks and existing tests for affected modules",
     "diff.plan": "  Verification plan {file}: {contracts}", "diff.publicContracts": "public contract {contracts}", "diff.noPublicContracts": "no public contract change", "diff.planAction": "    -> {action}",
     "diff.staticPath": "- Symbol-reference path: STATIC parser fallback (I_push uses the static dependency graph; LSP facts were not requested)", "diff.semanticNoReports": "- Symbol-reference path: STATIC parser fallback (LSP was requested but returned no provider reports)", "diff.semanticFallback": "- Symbol-reference path {language}: STATIC parser fallback ({provider} unavailable: {reason})", "diff.semanticPath": "- Symbol-reference path {language}: {source} {provider} {availability} (declarations={declarations}, references={references}; {scope}){risk}", "diff.semanticScope": "scope={mode}, declaration-files={selected}/{governed}, families={families}", "diff.semanticScopeLegacy": "scope=undeclared (legacy provider contract)", "diff.semanticRisk": "; risk: {reason}", "diff.semanticReasonUnavailable": "no reason provided",
     "diff.symbolEvidence": "    LSP symbol evidence {symbol}: {source}/{provider} (declarations={declarations}, references={references}) -> {consumers}; {comparison}{risk}", "diff.symbolNoConsumers": "no repository references observed", "diff.symbolComparison": "static import={static}, shared={shared}, static-only={staticOnly}, symbol-only={symbolOnly}", "diff.symbolRisk": "; risk: {reason}",
-    "diff.changeSurface": "  Change-surface impact: C_push = Σ λ·log2(n+1)·ω = {total} ({provenance})", "diff.changeSurfaceUnavailable": "  Change-surface analysis unavailable: {language} ({reason}) - no C_push value emitted (no fallback)", "diff.changeSurfaceFile": "    {file} ({language}): {provenance} total={total} (file-level bound {bound}, symbol-confirmed {confirmed})", "diff.changeSurfaceContribution": "      {anchor} ({kind}): λ={lambda} × log2({consumerCount}+1)={reach} × ω={weight} -> {value}; consumers: {consumers}", "diff.changeSurfaceNoConsumers": "no repository consumers", "diff.changeSurfaceUnconfirmed": "symbol-level unconfirmed (static bound {bound} potential consumers not symbol-confirmed)", "diff.changeSurfaceConfirmedBeyondBound": "symbol-confirmed {count} consumers ({list}) - beyond static bound {bound} (bound may contain import-only false positives, or confirmed consumers are tests/out-of-scope files)", "diff.changeSurfaceSignalFileHeavy": "    signal[file-heavy] {file}: file impact I_push={iPush} exceeds change-surface C_push={cPush} - hot file, internal implementation change (file-level false positive)", "diff.changeSurfaceSignalSymbolHeavy": "    signal[symbol-heavy] {file}: change-surface C_push={cPush} exceeds file impact I_push={iPush} - API-surface change (file level understates real impact)",
+    "diff.changeSurface": "  Change-surface impact: C_push = Σ λ·log2(n+1)·ω = {total} ({provenance})", "diff.changeSurfaceUnavailable": "  Change-surface analysis unavailable: {language} ({reason}) - no C_push value emitted (no fallback)", "diff.changeSurfaceUnavailableFiles": "    -> affected files: {files}", "diff.symbolEvidenceGapHeading": "- Symbol/visibility evidence gaps (an empty consumer list means UNKNOWN, not a confirmed 0)", "diff.symbolEvidenceGap": "  [{kind}] {file}: {reason}", "diff.symbolEvidenceGapKind.provider-unavailable": "evidence unavailable", "diff.symbolEvidenceGapKind.static-bound-empty": "static bound empty (symbol evidence not queried)", "diff.planEvidenceGap": "    -> evidence gap: {reason} (an empty symbolConsumers means UNKNOWN, not a confirmed 0)", "diff.changeSurfaceFile": "    {file} ({language}): {provenance} total={total} (file-level bound {bound}, symbol-confirmed {confirmed})", "diff.changeSurfaceContribution": "      {anchor} ({kind}): λ={lambda} × log2({consumerCount}+1)={reach} × ω={weight} -> {value}; consumers: {consumers}", "diff.changeSurfaceNoConsumers": "no repository consumers", "diff.changeSurfaceUnconfirmed": "symbol-level unconfirmed (static bound {bound} potential consumers not symbol-confirmed)", "diff.changeSurfaceConfirmedBeyondBound": "symbol-confirmed {count} consumers ({list}) - beyond static bound {bound} (bound may contain import-only false positives, or confirmed consumers are tests/out-of-scope files)", "diff.changeSurfaceSignalFileHeavy": "    signal[file-heavy] {file}: file impact I_push={iPush} exceeds change-surface C_push={cPush} - hot file, internal implementation change (file-level false positive)", "diff.changeSurfaceSignalSymbolHeavy": "    signal[symbol-heavy] {file}: change-surface C_push={cPush} exceeds file impact I_push={iPush} - API-surface change (file level understates real impact)",
     "diff.symbolAdmissionHeading": "### Symbol-Scope Formula Admission (Report Only)", "diff.symbolAdmission": "  {file}::{symbol} [{language}/{provider}] {availability}; unmet: {missing}", "diff.symbolAdmissionRequirement.before_declaration_identity": "Git-before declaration identity", "diff.symbolAdmissionRequirement.after_declaration_identity": "stable before/after declaration identity", "diff.symbolAdmissionRequirement.repository_references": "complete repository reference scope", "diff.symbolAdmissionRequirement.public_surface": "public-surface classification", "diff.symbolAdmissionRequirement.common_population": "common versioned file population", "diff.symbolAdmissionRequirement.calibration_samples": "durable positive and negative calibration samples",
     "diff.evidence": "- {state}: {id}", "diff.pendingEvidence": "pending evidence", "diff.history": "history", "history.compacted": "Compacted {compacted} sealed history entries; retained {retained} recent evidence entries.", "history.invalidPolicy": "Invalid history retention policy: {detail}",
     "diff.delta": "  {file}: delta I={impact}  alpha={alpha}",
     "diff.impactIntensity": "- I_push intensity: {intensity} per lambda_ast (severity budget {budget}) - structural impact per semantic-severity unit; verification routing only",
     "diff.impactRelative": "- Project-relative scale: this change exceeds {percentile}% of same-size ({bucket} file) sealed changes (sample {entries}, compaction-weighted)",
     "diff.impactRelativeMissing": "- Project-relative scale: no same-size sealed change sample yet (not a zero percentile)",
-    "docs.heading": "## Document Similarity Candidates", "docs.scope": "- scope: {scope}", "docs.root": "- document root: {root}", "docs.unavailable": "- Status: UNAVAILABLE ({reason})", "docs.indexed": "- indexed: {indexed}, updated: {updated}", "docs.noCandidates": "- Candidates: 0", "docs.candidates": "- Candidates: {count} (report only)", "docs.candidate": "  [ADVISORY] {left} ~ {right} (minhash={minhash}, simhashDistance={distance})", "docs.unfilled": "- Unfilled templates: {count} (complete before committing)", "docs.unfilledEntry": "  [UNFILLED] {path}", "docs.usage": "Usage: openarch docs <check|record|status|decide> [...options]", "docs.storeMissing": "No document store is configured. Run openarch init --docs-store project, or configure a shared document scope.", "docs.statusHeading": "## Document Governance Status [{scope}]", "docs.statusScope": "- scope root: {root} ({mode})", "docs.statusIndexed": "- indexed documents: {indexed}", "docs.statusUnfilled": "- unfilled templates: {count}", "docs.statusCandidates": "- unresolved similarity candidates: {count}", "docs.statusLastCheck": "- last similarity check: {at}", "docs.statusNever": "never", "docs.decideUsage": "Usage: openarch docs decide --left <document> --right <document> --decision merged|related|kept-separate [--note <decision>]", "docs.decideOutsideScope": "Both disposition paths must be inside the current DocumentStore scope", "docs.decideRecorded": "✓ Disposition recorded: {path}", "docs.decideUpdated": "✓ Disposition updated: {path}",
-    "record.invalidCategory": "--category must be anti_patterns, patterns, or decisions. Run openarch docs record --help for usage.", "record.created": "✓ Experience record created: {path} ({category})", "record.check": "  After filling it in, run: openarch docs check --changed {path} --unfilled", "record.checkSimilar": "  Before committing, run: openarch docs check --changed {path} --similar", "record.commit": "  Close the loop by committing at the document-store Git root; manual edits are checked by the docs hook.",
+    "docs.heading": "## Document Similarity Candidates", "docs.scope": "- scope: {scope}", "docs.root": "- document root: {root}", "docs.unavailable": "- Status: UNAVAILABLE ({reason})", "docs.indexed": "- indexed: {indexed}, updated: {updated}", "docs.populationThreshold": "- Unfilled-detection population: generated record templates carrying a `来源/Source: openarch record` or `openarch docs record` provenance line and at least one required heading (`背景/分析/应对/教训`, `Background/Analysis/Response/Lessons`, tolerating a trailing parenthetical annotation)", "docs.populationUnknown": "- Judged count: not enumerable (report only; does not affect the exit code) - the predicate has only the provenance line plus the required-heading structure, so a document that carries a provenance line but no required heading cannot be told apart (a malformed or truncated record vs. a hand-written provenance), and no number is emitted", "docs.noCandidates": "- Candidates: 0", "docs.candidates": "- Candidates: {count} (report only)", "docs.candidate": "  [ADVISORY] {left} ~ {right} (minhash={minhash}, simhashDistance={distance})", "docs.unfilled": "- Unfilled templates: {count} (complete before committing)", "docs.unfilledEntry": "  [UNFILLED] {path}", "docs.usage": "Usage: openarch docs <check|record|status|decide> [...options]", "docs.storeMissing": "No document store is configured. Run openarch init --docs-store project, or configure a shared document scope.", "docs.statusHeading": "## Document Governance Status [{scope}]", "docs.statusScope": "- scope root: {root} ({mode})", "docs.statusIndexed": "- indexed documents: {indexed}", "docs.statusUnfilled": "- unfilled templates: {count}", "docs.statusCandidates": "- unresolved similarity candidates: {count}", "docs.statusLastCheck": "- last similarity check: {at}", "docs.statusNever": "never", "docs.decideUsage": "Usage: openarch docs decide --left <document> --right <document> --decision merged|related|kept-separate [--note <decision>]", "docs.decideOutsideScope": "Both disposition paths must be inside the current DocumentStore scope", "docs.decideRecorded": "✓ Disposition recorded: {path}", "docs.decideUpdated": "✓ Disposition updated: {path}",
+    "record.invalidCategory": "--category must be anti_patterns, patterns, or decisions. Run openarch docs record --help for usage.", "record.created": "✓ Experience record created: {path} ({category})", "record.noComments": "  Guidance comments omitted; fill every required section before committing.", "record.check": "  After filling it in, run: openarch docs check --changed {path} --unfilled", "record.checkSimilar": "  Before committing, run: openarch docs check --changed {path} --similar", "record.commit": "  Close the loop by committing at the document-store Git root; manual edits are checked by the docs hook.",
     "status.heading": "## OpenArch Status", "status.present": "present", "status.missing": "missing", "status.baseline": "- baseline: {state}", "status.files": "  nFiles: {files}", "status.associated": "associated ({type})", "status.unassociated": "not associated", "status.docsRepo": "- docs-repo: {state}", "status.behind": "  ⚠ {commits} commits behind remote", "status.store": "- document store: {state}", "status.unconfigured": "not configured", "status.scopeUnavailable": "  ⚠ shared document scope is unregistered; similarity checking is unavailable", "status.readiness": "## Governance Readiness (Report Only)", "status.scan": "- scan: {status} {phase} {completed}/{total}{files}", "status.scanStale": "stale running marker (the scan may have been interrupted)", "status.reason": "  ⚠ {reason}",
     "rules.factsHeading": "## Script Fact Capabilities", "rules.fact": "- {id}: {summary} When unavailable: {unavailable}", "rules.astHeading": "## Engine AST Fact Stages", "rules.astFact": "- {id}: {summary}", "rules.skeletons": "- Skeletons: {starters}", "rules.templatesHeading": "## Optional Anti-Pattern Templates (Not Installed; Report Only by Default)", "rules.noTemplates": "- No shipped anti-pattern templates are recommended for the current project languages.", "rules.template": "- {family}: {id} (openarch init --install-script {id})", "rules.unknownSkeleton": "Unknown skeleton: {skeleton}. Available: {starters}", "rules.usage": "Usage: openarch rules <check|facts|skeleton <staged-ast|classification|metrics|authority-import|authority-change-set>>", "rules.commandUsage": "Usage: openarch rules <check|facts|skeleton|scan|discover> [...options]", "rules.factsUsage": "Usage: openarch rules facts [--domain <domain>] [--query <text>] [--status <status>] [--unused] [--json]", "rules.factDomain": "### {domain}", "rules.factEntry": "- {id} [{kind} · {status} · {producer}] consumers={consumers}{unused}", "rules.factSummary": "  Meaning: {summary}", "rules.factUsage": "  Usage: {usage}", "rules.factOutput": "  Output: {output}", "rules.factUnavailable": "  When unavailable: {action}", "rules.factConsumers": "  Consumers: {files}", "rules.factConsumersNone": "  Consumers: none (zero-consumer fact, report only; new facts must explain their lifecycle)", "rules.factNoScriptConsumers": "  Consumers: no installed-script consumers (engine built-in only)", "rules.factBuiltinConsumers": "  Built-in consumers: {consumers}", "rules.factLifecycle": "  Lifecycle: {lifecycle}", "rules.factAliases": "  Formerly: {aliases}", "rules.factUnused": " (UNUSED)", "rules.factNoMatches": "No matching facts. Run openarch rules facts to list all, or adjust --domain/--query/--status.", "rules.unusedHeading": "## Zero-Consumer Facts (--unused, CI Hint)", "rules.unusedNone": "- No zero-consumer fact lacks a lifecycle justification (WARN count is zero).", "fact.domain.classification": "classification", "fact.domain.structure": "structure", "fact.domain.authority": "authority", "fact.domain.test": "test", "fact.domain.semantic": "semantic", "fact.domain.change": "change", "fact.domain.ast": "AST", "fact.status.current": "current", "fact.status.experimental": "experimental", "fact.status.deprecated": "deprecated", "fact.producer.runtime": "runtime", "fact.producer.parser": "parser", "fact.producer.provider": "provider", "fact.producer.change-set": "change-set", "fact.producer.engine": "engine", "rules.contractHeading": "## Extension Contract Check", "rules.scripts": "- Scripts: {count}", "rules.engines": "- anti-patterns={antiPatterns}, implicit-deps={implicitDeps}, test-governance={testGovernance}",
     "scriptFact.fileClassification.summary": "fileKind, pathClass, and repository-relative paths.", "scriptFact.fileClassification.unavailable": "Check languages/file_kinds/paths configuration.", "scriptFact.fileClassification.usage": "Declare when a script needs normalized repository-relative paths, fileKind, or pathClass; the engine normalizes paths and roles, so do not recompute them in a script.", "scriptFact.structureMetrics.summary": "Raw structural metrics and dependency-graph facts from a compatible baseline.", "scriptFact.structureMetrics.unavailable": "Run openarch scan so the baseline scope and metric contract align.", "scriptFact.structureMetrics.usage": "Declare for compatible-baseline raw structure and dependency-graph facts; it excludes P95, CRL, I_push, and thresholds - never recompute policy in a script.", "scriptFact.authorities.summary": "Reusable project or script-local boundaries, plus runtime-derived protectedFiles/authorityIds.", "scriptFact.authorities.unavailable": "Declare owner, protected scope, and valid entry points in project authority_hygiene or this script.", "scriptFact.authorities.usage": "Declare for explicit owner/protected scope/prohibited imports; consume only derived protectedFiles/authorityIds and never infer authority from paths.", "scriptFact.testCaseSpans.summary": "Provider-confirmed test-body spans, names, and states.", "scriptFact.testCaseSpans.unavailable": "Configure a provider that can process these tests, then repair unrecognized or failed collection scope.", "scriptFact.testCaseSpans.usage": "Declare in test-finding scripts that need provider-confirmed test-body scopes; stay unavailable without a provider instead of reading zero cases.", "scriptFact.invocationBindings.summary": "Language-provider-confirmed call receivers, methods, and local binding targets.", "scriptFact.invocationBindings.unavailable": "Write rules only for the conservative binding scope implemented for this language; dynamic or cross-function flow remains unavailable.", "scriptFact.invocationBindings.usage": "Declare for parser/provider-confirmed receivers or local bindings; currently experimental, and dynamic or cross-function flow stays unavailable.", "scriptFact.semanticRelations.summary": "Provider-proven direct class/interface relations; collected only when a script requires it.", "scriptFact.semanticRelations.unavailable": "Declare semantic-relations.v1 in script requires and configure a calibrated language semantic provider.", "scriptFact.semanticRelations.usage": "Declare for provider-proven extends/implements/explicit-type/construction edges; this is not a complete call graph or transitive dependency model.", "scriptFact.changeSurface.summary": "Change-driven symbol surface: which declarations changed and which files consume them; available only in a change-set context (check --semantic).", "scriptFact.changeSurface.unavailable": "Declare change-surface.v1 in script requires and run within a check --semantic change-set context.", "scriptFact.changeSurface.usage": "Declare in change mode to locate changed declarations and hunks; consumer confirmation belongs to the C_push chain, not precomputed script facts.", "scriptFact.staticImports.summary": "ParserStrategy provides static import-source records for registered languages; dynamic, unresolved, or failed parsing remains unavailable.", "scriptFact.staticImports.usage": "Use for authority/dependency boundaries that need parser-confirmed import sources; do not rematch import ASTs or use regex.", "scriptFact.stringKeyCalls.summary": "Engine-owned declarative string-key facts (member calls/local constants/ternaries/arrays; JS/TS) for DI/RPC/event-bus cross-file correlation; quotes and local variables are resolved by the engine.", "scriptFact.stringKeyCalls.unavailable": "Only JS/TS syntax is supported; dynamic keys stay dynamicCall without guessing. Scope the rule with targets.languages.", "scriptFact.stringKeyCalls.usage": "Use for DI/RPC/event-bus/HTTP-route string-key cross-file correlation; the engine owns the query and cleaning, and the script only pairs key semantics.",
@@ -827,8 +886,10 @@ Options:
   --human           alias for --output-mode human
   --tests          append test-governance evaluation (compose with --full: check --full --tests)
   --verbose        forensics (D_MR / symbol evidence / formula admission)
-  --record-config  write this calibration into project config
+  --record-config  record a config-audit event for the current config.yml hash (does not write calibration values)
   --change-override <path=kind>  explicit change kind when auto classification is ambiguous; path may be all for a batch fallback (e.g. all=function_body)
+  --pre-commit    pre-commit hook entry: seal semantic evidence matching the staged content (no-op when nothing is staged; mutually exclusive with --staged)
+  --reconcile-baseline  check the baseline generation for orphaned entries (report only, never deletes in place; follow with openarch scan)
 
 Exit codes:
   0  gate PASS with complete evidence
@@ -869,7 +930,7 @@ Show external compiler/LSP discovery for the current project languages and the u
 
 Create a user configuration with: openarch init --toolchains user
 Create a checkout-local override with: openarch init --toolchains project`,
-    "help.test": `openarch test [--list] [--bloat] [--json]
+    "help.test": `openarch test [--list] [--bloat] [--json] [--spans]
 
 Test-governance evaluation (default): runs provider static analysis and prints findings with gate decision.
 
@@ -877,8 +938,13 @@ Options:
   --list  List all registered providers (id + description) without evaluating
           — provider ids are used in config.yml test_governance.providers
   --bloat  Append test-bloat metrics (minhash similarity, slower)
+  --spans  List provider-confirmed case-body spans (file:startLine-endLine) for
+           auditing the ranges behind the DRY/DAMP boundary; with --json they are
+           projected into collection.testCaseSpans.value/spanCount
   --json   Print the stable machine contract test-governance-json-v1
-           (provider coverage, suggestedAdapters, ...) for external tools`,
+           (provider coverage, suggestedAdapters, ...) for external tools
+           — suggestedAdapters appears only while test_governance is
+           unconfigured (absent means "not needed", not "none found")`,
     "help.docs": `openarch docs <check|record|status|decide> [options]
 
 Actions:
@@ -907,6 +973,9 @@ After filling it in, run openarch docs check --changed <generated-path>, then co
 } as const;
 
 export type MessageKey = keyof typeof catalog.zh;
+
+/** Presentation keys per locale; zh/en parity is verified against this single listing. */
+export const messageKeys = (locale: Locale): readonly string[] => Object.keys(catalog[locale]).sort();
 
 export const message = (locale: Locale, key: MessageKey, params?: MessageParams): string =>
   interpolate(catalog[locale][key], params);

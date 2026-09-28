@@ -1,6 +1,5 @@
-import { readFileSync } from "node:fs";
-import { load } from "js-yaml";
 import { configPath } from "../infra/paths";
+import { readProjectConfig } from "../projectFiles";
 import type { AntiPatternHit, AuthorityContract } from "../anti-patterns/engine";
 
 interface RawAuthorityHygieneConfig {
@@ -104,13 +103,28 @@ export const parseAuthorityHygieneConfig = (value: unknown): AuthorityHygieneCon
   };
 };
 
-/** Reads opt-in project authority identities; invalid declarations are omitted rather than guessed. */
+/** 读不到项目 authority 身份时的形状：**不猜**，把原因如实带出（缺文件与解析失败必须分开）。 */
+const unreadableAuthorityHygieneConfig = (reason: string): AuthorityHygieneConfig => ({
+  authorities: [],
+  symbolUse: false,
+  qualityRules: {},
+  qualityConfigured: false,
+  qualityErrors: [`cannot read authority_hygiene configuration: ${reason}`],
+});
+
+/**
+ * Reads opt-in project authority identities; invalid declarations are omitted rather than guessed.
+ *
+ * 读取走 `readProjectConfig`（config.yml 唯一读取权威，D-G13）：本函数此前自己
+ * `load(readFileSync(...))` + `catch`，于是"文件不存在"与"文件存在但解析不了"被压成同一句话。
+ * 现在两者仍都不阻断（opt-in 配置的既有语义），但**原因**分开可见。
+ */
 export const loadAuthorityHygieneConfig = (): AuthorityHygieneConfig => {
-  try {
-    return parseAuthorityHygieneConfig(load(readFileSync(configPath(), "utf8")));
-  } catch {
-    return { authorities: [], symbolUse: false, qualityRules: {}, qualityConfigured: false, qualityErrors: ["cannot read authority_hygiene configuration"] };
-  }
+  const path = configPath();
+  const read = readProjectConfig(path);
+  if (read.status === "missing") return unreadableAuthorityHygieneConfig(`${path} does not exist`);
+  if (read.status === "invalid") return unreadableAuthorityHygieneConfig(read.error);
+  return parseAuthorityHygieneConfig(read.value);
 };
 
 export const loadAuthorityContracts = (): readonly AuthorityContract[] => loadAuthorityHygieneConfig().authorities;

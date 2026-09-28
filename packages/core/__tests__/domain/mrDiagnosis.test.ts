@@ -79,4 +79,32 @@ describe("computeMRDiagnosis", () => {
     expect(diagnosis.localBurden.metrics.branch.normalizedDelta).toBeNull();
     expect(diagnosis.localBurden.deterioration).toBe(0);
   });
+
+  it("把「单调用点助手占比」作为认知点形态的一部分给出差值，但不并入求和", () => {
+    const diagnosis = computeMRDiagnosis({
+      file: "src/svc.java",
+      before: { maxFuncBranch: 8, alphaStruct: 0.2, connectedness: 0.9, functionCount: 12, singleCallSiteRatio: 0.25 },
+      after: { maxFuncBranch: 3, alphaStruct: 0.2, connectedness: 0.88, functionCount: 57, singleCallSiteRatio: 0.81 },
+      p95,
+      weights: DEFAULT_CRL_STATE_WEIGHTS,
+    });
+
+    // 拆干净了分支（改善），但"只用一次的助手"从 25% 涨到 81%：这正是必须当场可见的代价。
+    expect(diagnosis.shape.singleCallSiteRatioDelta).toBeCloseTo(0.56, 5);
+    expect(diagnosis.shape.functionCountDelta).toBe(45);
+    // 局部负担只由四个因子决定，认知点形态不参与求和。
+    expect(diagnosis.localBurden.metrics.branch.normalizedDelta).not.toBeNull();
+  });
+
+  it("任一侧没有该事实时差值为 null（不用 0 冒充不可判定）", () => {
+    const diagnosis = computeMRDiagnosis({
+      file: "src/legacy.java",
+      before: { maxFuncBranch: 8, alphaStruct: 0.2, connectedness: 0.9 },
+      after: { maxFuncBranch: 3, alphaStruct: 0.2, connectedness: 0.88, singleCallSiteRatio: 0.81 },
+      p95,
+      weights: DEFAULT_CRL_STATE_WEIGHTS,
+    });
+
+    expect(diagnosis.shape.singleCallSiteRatioDelta).toBeNull();
+  });
 });

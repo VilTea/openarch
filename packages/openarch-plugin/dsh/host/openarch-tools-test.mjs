@@ -6,6 +6,7 @@
  * 治理只读观察：只报告覆盖/建议，绝不自动启用 provider 或据此新增 BLOCK。
  * 评估结果投影进状态快照（testGovernance 槽），dashboard 显示最近一次观察。
  */
+import { parameterPropertyMap } from "./openarch-contract.mjs";
 import { runCli, sessionCwdOf, tailChars, verdictOf } from "./openarch-tools-run.mjs";
 import { renderTestText } from "./openarch-tools-render.mjs";
 import { KNOWN_CONTRACTS, isKnownProviderListSchema, isKnownTestGovernanceSchema } from "./openarch-contracts.mjs";
@@ -33,16 +34,53 @@ export const TEST_OUTPUT_SCHEMA = {
  * 把 test --json 投影成有界治理观察：dashboard/状态槽只留决策与边界事实，
  * 文件清单/关联边等大节不进常驻快照（观察面由 schema 版本自己演化）。
  */
+/**
+ * 有界投影的预算：kind 直方图不截断（kind 种类天然少），逐条 finding 只留前 N 条。
+ * D-G15（2026-09-25 项目所有者批准）：此前只投影 `findingCount` + `triggered`，
+ * 而 `triggered` 只在项目**配置了策略**时非空——默认 `rules: {}` 的项目里 Agent 会看到
+ * `findingCount: 458, triggered: []`，**一条用例都看不到**，上一轮"逐条可定位"的修复
+ * 在 Agent 面上被抵消。这里补上有界的 `kinds` 直方图 + `findings` 明细，以及
+ * `testCaseSpans.availability`（Agent 据此判断 DAMP/DRY 体界判据是否生效）。
+ */
+const FINDING_LIMIT = 20;
+const findEvidenceText = (finding) => {
+  const evidence = Array.isArray(finding?.evidence) ? finding.evidence.find((item) => typeof item === "string") : undefined;
+  return typeof evidence === "string" ? evidence.slice(0, 160) : null;
+};
+
 export function projectTestGovernance(value) {
   if (!value || typeof value !== "object") return null;
   const collection = value.collection ?? {};
   const coverage = collection.coverage ?? {};
   const decision = value.decision ?? {};
+  const rawFindings = Array.isArray(decision.findings) ? decision.findings : [];
+  const kinds = {};
+  for (const finding of rawFindings) {
+    const kind = typeof finding?.kind === "string" ? finding.kind : "unknown";
+    kinds[kind] = (kinds[kind] ?? 0) + 1;
+  }
+  // D-G18：未入 canonical baseline 的测试文件现在也会产出 finding（provider 采集范围改为
+  // 实时发现集合）。这个计数让 Agent 在被截断的 findings 之外仍能看到"有多少条没有 baseline
+  // 对账对象"——它解释 coverage.reasons 里的 test_files_missing_from_baseline，不改变裁决。
+  const unbaselinedFindingCount = rawFindings.filter((finding) => finding?.unbaselined === true).length;
+  const spans = collection.testCaseSpans ?? {};
   return {
     schema: typeof value.schema === "string" ? value.schema : null,
     verdict: typeof value.verdict === "string" ? value.verdict : null,
     decision: {
       findingCount: typeof decision.findingCount === "number" ? decision.findingCount : null,
+      kinds,
+      findings: rawFindings.slice(0, FINDING_LIMIT).map((finding) => ({
+        file: typeof finding?.file === "string" ? finding.file : null,
+        case: typeof finding?.case === "string" ? finding.case : null,
+        kind: typeof finding?.kind === "string" ? finding.kind : null,
+        line: typeof finding?.line === "number" ? finding.line : null,
+        confidence: typeof finding?.confidence === "string" ? finding.confidence : null,
+        evidence: findEvidenceText(finding),
+        unbaselined: finding?.unbaselined === true,
+      })),
+      unbaselinedFindingCount,
+      findingsTruncated: Math.max(0, rawFindings.length - FINDING_LIMIT),
       triggered: Array.isArray(decision.triggered) ? decision.triggered.slice(0, 20) : [],
       errors: Array.isArray(decision.errors) ? decision.errors.slice(0, 10) : [],
     },
@@ -54,6 +92,11 @@ export function projectTestGovernance(value) {
       providerHandledTestFiles: typeof coverage.providerHandledTestFiles === "number" ? coverage.providerHandledTestFiles : null,
       unrecognizedTestFiles: typeof coverage.unrecognizedTestFiles === "number" ? coverage.unrecognizedTestFiles : null,
       failedTestFiles: typeof coverage.failedTestFiles === "number" ? coverage.failedTestFiles : null,
+    },
+    // 用例体事实域的可用性（D-G3/D-G9）：Agent 据此知道体界判据是否生效。
+    testCaseSpans: {
+      availability: typeof spans.availability === "string" ? spans.availability : null,
+      reason: typeof spans.reason === "string" ? spans.reason : null,
     },
     providers: Array.isArray(collection.providers) ? collection.providers.slice(0, 12).map((p) => ({
       providerId: typeof p?.providerId === "string" ? p.providerId : null,
@@ -96,13 +139,13 @@ export function buildTestTool(deps) {
   return {
     name: "openarch_test",
     description: "运行 OpenArch 测试治理评估（只读观察）：覆盖状态、provider 处理面、适配器建议与 TEST_BLOAT；list 只列已注册 provider。以已安装 openarch 二进制为准（需支持 test --json，旧版请先升级）。结果只作治理建议，绝不自动启用 provider 或据此新增 BLOCK。",
-    parameters: {
+    parameters: parameterPropertyMap({
       type: "object",
       properties: {
         list: { type: "boolean", description: "只列出已注册测试治理 provider（test --list --json）。" },
         bloat: { type: "boolean", description: "计算测试膨胀指标 TEST_BLOAT（更慢）。" },
       },
-    },
+    }),
     isConcurrencySafe: () => false,
     timeoutMs: 600_000,
     output: {

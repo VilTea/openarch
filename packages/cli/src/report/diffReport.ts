@@ -1,7 +1,7 @@
 import type { ChangeSurfaceContribution, DiffReport, ImpactPlanAction, MRChangeScope, MRLocalMetric, SymbolConsumerEvidence, SymbolScopeAdmissionRequirementId, SymbolUseReport } from "@openarch/core";
 
 type ChangeSurfaceEntry = NonNullable<DiffReport["evidence"]["changeSurfaces"]>["surfaces"][number];
-import { type Locale, message } from "../i18n";
+import { type Locale, type MessageKey, message } from "../i18n";
 import { renderAlignedTable } from "./table";
 
 const signed = (value: number, digits = 2): string => `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
@@ -16,11 +16,35 @@ const renderLocalChanges = (locale: Locale, diagnosis: DiffReport["evidence"]["m
   return changes.length > 0 ? changes.join(locale === "zh" ? "，" : ", ") : message(locale, "diff.noLocalChange");
 };
 
+/**
+ * 认知点形态（校准 2026-09-25）：**并列**呈现，不并入局部负担求和。
+ * 机械分解可以让 maxFuncBranch 下降、gate 变绿，同时让文件更碎、声明数上升——
+ * 认知点原则要求这笔代价在变更当场可见，而不是留给使用方事后发现。
+ * 历史证据（旧分片）可能没有该字段，缺失即不渲染，不用 0 冒充。
+ */
+const renderShape = (locale: Locale, diagnosis: DiffReport["evidence"]["mrDetail"][number]): string => {
+  const shape = diagnosis.shape;
+  if (!shape) return "";
+  const parts: string[] = [];
+  // 用 `!= null` 而不是 `!== null`：历史证据可能缺少后加的字段，缺字段必须静默跳过而不是渲染 NaN。
+  if (shape.moduleShapeDelta != null && shape.moduleShapeDelta !== 0) {
+    parts.push(message(locale, "diff.shapeModule", { delta: signed(shape.moduleShapeDelta, 3) }));
+  }
+  if (shape.functionCountDelta != null && shape.functionCountDelta !== 0) {
+    parts.push(message(locale, "diff.shapeDeclarations", { delta: signed(shape.functionCountDelta, 0) }));
+  }
+  // 单调用点助手占比与"更碎"并读：纯机械分解常常让连通性看着还行，却把"只用一次"的比例推高。
+  if (shape.singleCallSiteRatioDelta != null && shape.singleCallSiteRatioDelta !== 0) {
+    parts.push(message(locale, "diff.shapeSingleCallSite", { delta: signed(shape.singleCallSiteRatioDelta, 3) }));
+  }
+  return parts.length === 0 ? "" : message(locale, "diff.shapeLine", { changes: parts.join(locale === "zh" ? "，" : ", ") });
+};
+
 const renderMRDetail = (locale: Locale, diagnosis: DiffReport["evidence"]["mrDetail"][number]): string => {
   const prefix = message(locale, "diff.mrPrefix", { file: diagnosis.file, scope: scopeLabel(locale, diagnosis.scope), source: diagnosis.beforeSource === "baseline" ? message(locale, "diff.sealedBaseline") : "" });
   if (diagnosis.beforeSource === "introduced") return `${prefix}${message(locale, "diff.introducedBefore")}`;
   if (diagnosis.beforeSource === "unavailable") return `${prefix}${message(locale, "diff.unavailableBefore")}`;
-  return `${prefix}${message(locale, "diff.mrComparable", { changes: renderLocalChanges(locale, diagnosis), deterioration: diagnosis.localBurden.deterioration.toFixed(2), improvement: diagnosis.localBurden.improvement.toFixed(2), exposure: diagnosis.exposure.delta === null ? message(locale, "diff.exposureUnavailable") : signed(diagnosis.exposure.delta, 3) })}`;
+  return `${prefix}${message(locale, "diff.mrComparable", { changes: renderLocalChanges(locale, diagnosis), deterioration: diagnosis.localBurden.deterioration.toFixed(2), improvement: diagnosis.localBurden.improvement.toFixed(2), exposure: diagnosis.exposure.delta === null ? message(locale, "diff.exposureUnavailable") : signed(diagnosis.exposure.delta, 3) })}${renderShape(locale, diagnosis)}`;
 };
 
 const renderSummary = (locale: Locale, report: DiffReport): string => {
@@ -42,6 +66,8 @@ const renderPlan = (locale: Locale, report: DiffReport): readonly string[] =>
   (report.evidence.impactPlan ?? []).flatMap((item) => [
     message(locale, "diff.plan", { file: item.file, contracts: item.publicContracts.length > 0 ? message(locale, "diff.publicContracts", { contracts: item.publicContracts.join(locale === "zh" ? "，" : ", ") }) : message(locale, "diff.noPublicContracts") }),
     ...item.symbolConsumers.map((evidence) => renderSymbolEvidence(locale, evidence)),
+    // 证据缺口必须与"已确证 0 消费者"区分：前者是未知，后者是结论（校准 2026-09-25）。
+    ...(item.evidenceGap ? [message(locale, "diff.planEvidenceGap", { reason: item.evidenceGap.reason })] : []),
     ...item.actions.map((action) => message(locale, "diff.planAction", { action: renderAction(locale, action) })),
   ]);
 
@@ -96,8 +122,22 @@ const renderSurfaceSignals = (locale: Locale, surface: ChangeSurfaceEntry, delta
 const renderChangeSurfaces = (locale: Locale, report: DiffReport): readonly string[] => {
   const collection = report.evidence.changeSurfaces;
   if (!collection) return [];
-  const lines = [...collection.unavailableLanguages.map((entry) =>
-    message(locale, "diff.changeSurfaceUnavailable", { language: entry.language, reason: entry.reason }))];
+  // 语言级不可用：同时列出受影响文件，避免"只知道语言、不知道对象"。
+  const lines = [...collection.unavailableLanguages.flatMap((entry) => [
+    message(locale, "diff.changeSurfaceUnavailable", { language: entry.language, reason: entry.reason }),
+    ...(entry.files && entry.files.length > 0 ? [message(locale, "diff.changeSurfaceUnavailableFiles", { files: entry.files.join(", ") })] : []),
+  ])];
+  // per-file 证据缺口：即使没有可展示的变更面（例如静态上界为空）也必须出现，
+  // 否则这些文件看起来"已完全解析"（校准 2026-09-25）。
+  const gaps = collection.symbolEvidenceGaps ?? [];
+  if (gaps.length > 0) {
+    lines.push(message(locale, "diff.symbolEvidenceGapHeading"));
+    lines.push(...gaps.map((gap) => message(locale, "diff.symbolEvidenceGap", {
+      kind: message(locale, `diff.symbolEvidenceGapKind.${gap.kind}` as MessageKey),
+      file: gap.file,
+      reason: gap.reason,
+    })));
+  }
   if (collection.surfaces.length === 0) return lines;
   const total = collection.surfaces.reduce((sum, surface) => sum + surface.result.total, 0);
   const deltaByFile = new Map(report.summary.deltas.map((delta) => [delta.file, delta.deltaI]));

@@ -366,18 +366,18 @@
           <div class="tab-panel" data-panel="npm">
             <p class="txt">在受治理项目里把 CLI 作为开发依赖：</p>
 <pre class="code"><span class="p">$</span> npm install --save-dev @openarch/cli
-<span class="p">$</span> npx openarch init --agent codex</pre>
+<span class="p">$</span> npx openarch init --agent claude</pre>
             <p class="txt">可选：装一份<strong style="color:var(--ink-1)">用户级</strong> Skill（跨项目，不含项目作用域）：</p>
 <pre class="code"><span class="p">$</span> npm install --global @openarch/plugin
-<span class="p">$</span> openarch-agent-install --target codex --locale en</pre>
-            <p class="txt">用户级安装故意不带项目作用域；每个项目仍用 <code class="inline">openarch init --agent &lt;target&gt;</code>。</p>
+<span class="p">$</span> openarch-agent-install --target claude --locale en</pre>
+            <p class="txt">没有默认目标：<code class="inline">--agent</code> / <code class="inline">--target</code> 必填（claude / codex / cursor / opencode / reasonix / dsh），OpenArch 不猜你用的是哪个宿主。用户级安装故意不带项目作用域；每个项目仍用 <code class="inline">openarch init --agent &lt;target&gt;</code>。</p>
           </div>
 
           <div class="tab-panel" data-panel="offline">
             <p class="txt">无网络或内网：本地打 tarball，装进受治理项目，再跑同样的 CLI 初始化：</p>
 <pre class="code"><span class="p">$</span> pnpm release:local
 <span class="p">$</span> npm install --save-dev /absolute/path/to/openarch-cli-&lt;version&gt;.tgz
-<span class="p">$</span> npx openarch init --agent codex</pre>
+<span class="p">$</span> npx openarch init --agent claude</pre>
           </div>
         </div>
       </div>
@@ -388,7 +388,7 @@
         <div class="card">
           <h3>初始化受治理项目 + 安装 Skill</h3>
           <p class="desc">在受治理仓库根目录执行。一条命令同时完成项目初始化与 Agent Skill 装机。</p>
-<pre class="code"><span class="c"># 把 claude 换成你的 Agent：claude | codex | cursor | opencode | reasonix</span>
+<pre class="code"><span class="c"># 把 claude 换成你的 Agent：claude | codex | cursor | opencode | reasonix | dsh</span>
 <span class="p">$</span> openarch init --agent claude
 <span class="p">$</span> openarch context</pre>
           <p class="txt"><code class="inline">--agent</code> 决定 Skill 落在哪个 harness 的项目级目录；它读取 <code class="inline">.openarch/config.yml</code> 的 <code class="inline">presentation.locale</code> 安装 <code class="inline">zh</code> 或 <code class="inline">en</code> Skill 树，原子替换旧目录。注意：<code class="inline">--lang</code> 只改本次 CLI 输出，<strong style="color:var(--ink-1)">不会</strong>改变已安装的 Skill。</p>
@@ -400,6 +400,7 @@
               <tr><td>Cursor</td><td><code>openarch init --agent cursor</code></td><td><code>.cursor/skills/openarch/</code></td></tr>
               <tr><td>OpenCode</td><td><code>openarch init --agent opencode</code></td><td><code>.opencode/skills/openarch/</code></td></tr>
               <tr><td>Reasonix</td><td><code>openarch init --agent reasonix</code></td><td><code>.reasonix/skills/openarch/</code></td></tr>
+              <tr><td>DeepSeek Harness</td><td><code>openarch init --agent dsh</code></td><td><code>.dsh/skills/openarch/</code></td></tr>
               <tr><td>其它兼容 Agent</td><td><code>openarch init --skill-dir .my-agent/skills</code></td><td>自定项目相对目录</td></tr>
             </tbody>
           </table>
@@ -538,7 +539,7 @@
       <br/><br/>
       <b>源码仓库</b> · <a href="https://github.com/VilTea/openarch" target="_blank" rel="noopener" style="color:var(--series-1)">github.com/VilTea/openarch</a> —— 克隆后按本手册安装，或直接把 <code>INSTALL.md</code> 丢给你的 Agent。
       <br/><br/>
-      <b>下一步</b> · 在受治理仓库根目录执行 <code>openarch init --agent &lt;你的 harness&gt;</code>（claude / codex / cursor / opencode / reasonix），然后 <code>openarch context</code>。Agent 会自己读 Skill，按路由工作。
+      <b>下一步</b> · 在受治理仓库根目录执行 <code>openarch init --agent &lt;你的 harness&gt;</code>（claude / codex / cursor / opencode / reasonix / dsh），然后 <code>openarch context</code>。Agent 会自己读 Skill，按路由工作。
     </div>
     <p class="copy">OpenArch 使用手册 · 面向人类用户 · 基于 INSTALL 文档生成</p>
   </footer>

@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
@@ -71,7 +71,32 @@ const replaceInstallDirectory = () => {
   }
 };
 
+/**
+ * 清扫**历史**安装残留（2026-09-27 复验发现）：下面的备份清理只处理本次这一份，
+ * 早先因文件占用而没删掉的 `.openarch-backup-*`（实测本机积了两份、各 125MB）会永久留下。
+ * 只匹配点号开头的 backup/staging，**绝不触碰在用的 `bin` 目录**；删不掉就只告警，
+ * 不让一次成功的安装在收尾阶段失败（与本次备份清理同一容错口径）。
+ */
+const sweepStaleInstallDirectories = () => {
+  const parent = dirname(installDir);
+  let names;
+  try {
+    names = readdirSync(parent);
+  } catch {
+    return;
+  }
+  for (const name of names.filter((entry) => /^\.openarch-(?:backup|staging)-/.test(entry))) {
+    const stale = join(parent, name);
+    try {
+      rmSync(stale, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch (error) {
+      console.warn(`⚠ 未能清理历史安装残留: ${stale} (${error.code ?? "unknown"})`);
+    }
+  }
+};
+
 replaceInstallDirectory();
+sweepStaleInstallDirectories();
 const pathChanged = addInstallDirectoryToUserPath();
 const installedCommand = join(installDir, executable);
 const probe = run(installedCommand, ["--help"]);
@@ -85,8 +110,8 @@ try {
   const scanProbe = run(installedCommand, ["scan", "sample.py"], { cwd: probeWorkspace });
   if (!scanProbe.stdout.includes("scan 完成：1 文件")) throw new Error("本机命令未能从安装目录加载 Python grammar。");
   writeFileSync(join(probeWorkspace, ".openarch", "config.yml"), 'presentation:\n  locale: en\nlanguages: ["python"]\n');
-  const installedSkill = join(probeWorkspace, ".codex", "skills", "openarch", "SKILL.md");
-  const skillProbe = run(installedCommand, ["init", "--agent", "codex"], { cwd: probeWorkspace });
+  const installedSkill = join(probeWorkspace, ".claude", "skills", "openarch", "SKILL.md");
+  const skillProbe = run(installedCommand, ["init", "--agent", "claude"], { cwd: probeWorkspace });
   if (!skillProbe.stdout.includes("（en）") || !readFileSync(installedSkill, "utf8").includes("OpenArch Governance Constitution")) {
     throw new Error("本机命令未能从安装目录安装英文 Skill。");
   }

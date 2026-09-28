@@ -19,6 +19,11 @@ export function renderContextText(value) {
   const notReady = readiness.filter((r) => r && typeof r.state === "string" && r.state !== "ready").map((r) => r.id);
   const lines = [
     `OpenArch 项目事实（${value.root}）：`,
+    // D-G14（2026-09-25 项目所有者决定：维持现状）：这里渲染的是**原始枚举值**
+    // （`available`/`missing`/`invalid`），而 CLI 用 `context.{state}` 做本地化文案——
+    // 即两份平行的呈现实现（中文行里夹一个英文枚举）。之所以不在这里补一份映射：
+    // 插件是可单跑的 .mjs，跨包共享 locale 表需要构建步骤，成本与收益不成比例。
+    // 回访条件：插件获得跨包共享的 locale 来源时，改为消费同一套键。
     `- 配置: ${context.configuration ?? "unknown"}`,
     `- baseline: ${baseline.available === true ? `${baseline.files ?? "?"} files, ${baseline.scope ?? "unknown"} scope, ${baseline.freshness ?? "unknown"}` : "unavailable"}`,
     `- 策略: ${policy.state ?? "unknown"}, ${policy.declaredRules ?? "?"} declared rules`,
@@ -65,6 +70,44 @@ export function renderContractText(value) {
   return lines.join("\n");
 }
 
+/**
+ * 一条 finding 样本行；D-G18 来源标记在**行内**可见——未入 baseline 的 finding 与
+ * 已对账的混在同一个直方图里，不标来源 Agent 无法判断哪条结论还缺对账对象。
+ * 独立成函数是为了不让 `renderTestText` 的局部负担随来源标记增长。
+ */
+const findingLine = (finding) => {
+  const where = `${finding.file ?? "?"}${finding.line ? ` L${finding.line}` : ""}${finding.case ? ` (${finding.case})` : ""}`;
+  const source = finding.unbaselined === true ? "[未入 baseline]" : "";
+  return `  [${finding.kind ?? "?"}]${source} ${where}`;
+};
+
+/**
+ * 裁决面几行（finding 构成与样本、用例体事实、决策摘要）；D-G15/D-G18 的来源可见性都在这里。
+ * 独立成函数是为了不让 `renderTestText` 的局部负担随来源标记增长（原实现已在阈值边缘）。
+ */
+const decisionLines = (t) => {
+  const lines = [];
+  const triggeredKinds = [...new Set((t.decision?.triggered ?? []).map((item) => `${item.level}:${item.kind}`))];
+  // D-G15：Agent 面必须能看到 finding 的**构成与样本**，否则默认项目（规则未配置 ⇒
+  // triggered 为空）只拿到一个数字，无从下手。
+  const kindEntries = Object.entries(t.decision?.kinds ?? {});
+  if (kindEntries.length > 0) {
+    // D-G18：未入 baseline 的 finding 与已对账的 finding 混在同一个直方图里，
+    // 必须在**构成行**就标明来源，否则 Agent 无法判断哪些结论还缺 baseline 对账对象。
+    const unbaselinedCount = t.decision?.unbaselinedFindingCount ?? 0;
+    const sourceNote = unbaselinedCount > 0 ? `（其中未入 baseline 的测试文件占 ${unbaselinedCount} 条）` : "";
+    lines.push("", `- finding 构成: ${kindEntries.map(([kind, count]) => `${kind}=${count}`).join(", ")}${sourceNote}`);
+    const samples = Array.isArray(t.decision?.findings) ? t.decision.findings.slice(0, 8) : [];
+    for (const finding of samples) lines.push(findingLine(finding));
+    if ((t.decision?.findingsTruncated ?? 0) > 0) lines.push(`  …另有 ${t.decision.findingsTruncated} 条（完整清单见 openarch test --json --verbose）`);
+  }
+  if (t.testCaseSpans?.availability) {
+    lines.push(`- 用例体范围事实: ${String(t.testCaseSpans.availability).toUpperCase()}${t.testCaseSpans.reason ? `（${t.testCaseSpans.reason}）` : ""}——决定 DRY/DAMP 体界判据是否生效`);
+  }
+  lines.push("", `- 决策: finding=${t.decision?.findingCount ?? "?"}${triggeredKinds.length > 0 ? ` · 触发 ${triggeredKinds.join(", ")}` : ""}；只读观察，绝不自动启用 provider 或据此新增 BLOCK`);
+  return lines;
+};
+
 /** 渲染 openarch_test 的模型文本（只读观察面；表格式与 CLI 报告同观感）。 */
 export function renderTestText(value) {
   if (!value || value.ok === false) return `openarch test 失败：${value?.error ?? "unknown"}`;
@@ -110,7 +153,6 @@ export function renderTestText(value) {
   if (t.bloat) {
     lines.push("", `- TEST_BLOAT: ${Number(t.bloat.score).toFixed(3)}${t.bloat.triggered ? "（已触发，观察并治理）" : "（正常范围）"}`);
   }
-  const triggeredKinds = [...new Set((t.decision?.triggered ?? []).map((item) => `${item.level}:${item.kind}`))];
-  lines.push("", `- 决策: finding=${t.decision?.findingCount ?? "?"}${triggeredKinds.length > 0 ? ` · 触发 ${triggeredKinds.join(", ")}` : ""}；只读观察，绝不自动启用 provider 或据此新增 BLOCK`);
+  lines.push(...decisionLines(t));
   return lines.join("\n");
 }

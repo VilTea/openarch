@@ -9,8 +9,10 @@ import { DEFAULT_CRL_STATE_WEIGHTS, type P95Values, type CRLStateWeights } from 
 import { baselineIndex, configPath, toPosixPath } from "../../infra/paths";
 import { createAnalysisScope, type AnalysisScope } from "../../domain/analysisScope";
 import { unsupportedCelVariablesInCondition } from "../../domain/metricCatalog";
+import { readProjectConfig } from "../../projectFiles";
 import { isFileKindRule } from "../../domain/testGovernance";
 import type { StructuralPolicy, StructuralPolicyMode, StructuralPolicyRule, StructuralPolicyScope } from "../../domain/structuralPolicy";
+import { languageShapeErrorsText, projectShapesOfRead } from "../projectShapes";
 
 
 interface ParsedConfig {
@@ -21,6 +23,8 @@ interface ParsedConfig {
   paths?: Record<string, { pattern: string; weight?: number }>;
   crl_state_weights?: Partial<CRLStateWeights>;
   structural_policies?: unknown;
+  /** 语言形状契约（§6）；形状校验的唯一权威是 `application/projectShapes`。 */
+  shapes?: unknown;
 }
 
 export interface GateConfig {
@@ -30,6 +34,13 @@ export interface GateConfig {
   pathEntries: Array<{ pattern: string; name: string; weight?: number }>;
   crlStateWeights: CRLStateWeights;
   analysisScope: AnalysisScope;
+  /**
+   * 语言形状身份指纹（§6/Q2）：与 `analysisScope` 并列的**第二项身份**。
+   * 未声明 ⇒ `""`（`baselineCompatibility` 据此把它与"记录里没有该字段"视为同一语义，
+   * 因此现有项目零迁移）。`scan` 据此写入 baseline meta，`gate` 据此判定
+   * `baseline_shapes_incompatible` —— 两处消费**同一份**已校验的声明。
+   */
+  shapesFingerprint: string;
 }
 
 /** Configuration is governance evidence; callers must not convert a read failure into an empty policy. */
@@ -49,6 +60,7 @@ export const unsupportedMetricRules = (rules: readonly GateRule[]): GateRule[] =
 const defaultGateConfig = (): GateConfig => ({
   allRules: [], structuralPolicies: [], explicitStructuralPolicies: false,
   pathEntries: [{ pattern: "**", name: "default" }], crlStateWeights: DEFAULT_CRL_STATE_WEIGHTS, analysisScope: createAnalysisScope([]),
+  shapesFingerprint: "",
 });
 
 const asRules = (value: unknown, level: "block" | "warn", label: string): readonly StructuralPolicyRule[] => {
@@ -116,8 +128,13 @@ const parseStructuralPolicies = (value: unknown, languages: readonly string[], d
 
 const readGateConfig = async (): Promise<GateConfig> => {
   try {
-    const { load } = await import("js-yaml");
-    const cfg = load(readFileSync(configPath(), "utf8")) as ParsedConfig | undefined;
+    // D-G13：读取走 `readProjectConfig`（唯一权威）。这里只做 gate 自己的**形状校验**，
+    // 不再自己 `load(readFileSync(...))`——"能否读出来"是共享事实，"读出来是不是合法 gate 配置"
+    // 才是本模块的知识。
+    const read = readProjectConfig(configPath());
+    if (read.status === "missing") throw new Error("config root must be a mapping");
+    if (read.status === "invalid") throw new Error(read.error);
+    const cfg = read.value as ParsedConfig | undefined;
     if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) throw new Error("config root must be a mapping");
     const allRules = [...asRules(cfg.rules_block, "block", "rules_block"), ...asRules(cfg.rules_warn, "warn", "rules_warn")];
     const pathEntries = parsePathClasses(cfg);
@@ -126,11 +143,15 @@ const readGateConfig = async (): Promise<GateConfig> => {
       : [];
     const analysisScope = createAnalysisScope(Array.isArray(cfg.languages) ? cfg.languages : [], fileKindRules);
     const crlStateWeights = cfg.crl_state_weights ? { ...DEFAULT_CRL_STATE_WEIGHTS, ...cfg.crl_state_weights } : DEFAULT_CRL_STATE_WEIGHTS;
+    // §6：形状声明的**校验**只在这里做一次（唯一权威 `projectShapes`）；不可用时**拒绝**
+    // 这份配置（GateConfigurationError）——半合法的声明既不能当"已声明"也不能当"未声明"。
+    const shapes = projectShapesOfRead({ status: "ok", value: cfg });
+    if (shapes.errors.length > 0) throw new Error(`invalid shapes declaration: ${languageShapeErrorsText(shapes.errors)}`);
     const explicitStructuralPolicies = cfg.structural_policies !== undefined;
     const structuralPolicies = explicitStructuralPolicies
       ? parseStructuralPolicies(cfg.structural_policies, analysisScope.languages, crlStateWeights)
       : [{ id: "legacy-global", languages: analysisScope.languages, mode: "enforce" as const, rules: allRules, crlStateWeights }];
-    return { allRules, structuralPolicies, explicitStructuralPolicies, pathEntries, crlStateWeights, analysisScope };
+    return { allRules, structuralPolicies, explicitStructuralPolicies, pathEntries, crlStateWeights, analysisScope, shapesFingerprint: shapes.fingerprint };
   } catch (error) {
     const reason = error instanceof Error ? error.message : "configuration could not be read";
     throw new GateConfigurationError(configPath(), reason);

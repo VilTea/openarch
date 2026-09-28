@@ -1,4 +1,4 @@
-import { governanceReadiness, MACHINE_CONTRACT_VERSIONS, projectGovernanceStatus, type BaselineGenerationDiagnostics, type GovernanceReadinessKind, type GovernanceReadinessReason } from "@openarch/core";
+import { governanceReadiness, MACHINE_CONTRACT_VERSIONS, nestedLanguageIndicators, projectGovernanceStatus, type BaselineGenerationDiagnostics, type GovernanceReadinessKind, type GovernanceReadinessReason } from "@openarch/core";
 import { gitChangePathResult } from "../gitChangePaths";
 import { type Locale, type MessageKey, message } from "../i18n";
 import { isAnalyzableSourceFile, type CommandHandler } from "../runtime";
@@ -48,14 +48,20 @@ interface ProjectContext {
    * context-json-v2 起将移除本字段。
    */
   readonly contract: { readonly id: "context-json"; readonly version: string };
-  readonly configuration: "available" | "missing";
+  /** `invalid` = 文件存在但**无法解析**（D-G12）；消费方按"非 available"fail-closed 处理。 */
+  readonly configuration: "available" | "missing" | "invalid";
   /** 当前源码实时检测语言（去重排序；含 Vue/TS/JS 回退）。 */
   readonly languages: readonly string[];
+  /** D-G11a：子目录里发现、但当前 `languages` 未覆盖的构建标记（**提示**，非语言事实）。
+   *  机器消费方据此建议声明 `languages`；它不参与任何判据，也不影响 scope 指纹。 */
+  readonly nestedLanguageHints: readonly { readonly language: string; readonly indicator: string; readonly directory: string }[];
   readonly baseline: {
     readonly available: boolean;
     readonly files: number;
     readonly scope: "compatible" | "different" | "partial" | "unknown";
     readonly freshness: "current" | "stale" | "unknown";
+    /** `freshness === "unknown"` 时的原因码：区分"没有 baseline""作用域不兼容""写入时没记身份"。 */
+    readonly freshnessReason?: "no_readable_index" | "scope_not_compatible" | "baseline_missing_snapshot_identity" | "source_snapshot_unavailable";
     readonly scanAt?: string;
     readonly languages?: readonly string[];
     readonly snapshotSha256?: string;
@@ -95,11 +101,13 @@ const collectContext = (cwd: string): ProjectContext => {
   return {
     schema: MACHINE_CONTRACT_VERSIONS.contextJson,
     contract: { id: "context-json", version: MACHINE_CONTRACT_VERSIONS.contextJson },
-    configuration: project.configured ? "available" : "missing",
+    configuration: project.configError ? "invalid" : project.configured ? "available" : "missing",
     languages: project.languages,
+    nestedLanguageHints: nestedLanguageIndicators(cwd, project.languages),
     baseline: {
       available: project.baseline.exists, files: project.baseline.nFiles,
       scope: project.baseline.scope, freshness: project.baseline.freshness,
+      ...(project.baseline.freshnessReason ? { freshnessReason: project.baseline.freshnessReason } : {}),
       ...(project.baseline.scanAt ? { scanAt: project.baseline.scanAt } : {}),
       ...(project.baseline.languages ? { languages: project.baseline.languages } : {}),
       ...(project.baseline.snapshotSha256 ? { snapshotSha256: project.baseline.snapshotSha256 } : {}),
@@ -122,10 +130,21 @@ const printContext = (context: ProjectContext, locale: Locale): void => {
   console.log(message(locale, "context.heading"));
   console.log(message(locale, "context.configuration", { state: message(locale, `context.${context.configuration}` as MessageKey) }));
   console.log(message(locale, "context.languages", { languages: context.languages.length > 0 ? context.languages.join(", ") : "unknown" }));
+  // D-G11a：子目录构建标记**只提示**，不改变 languages（判据见 core.nestedLanguageIndicators）。
+  if (context.nestedLanguageHints.length > 0) {
+    console.log(message(locale, "context.nestedLanguageHints", {
+      hints: context.nestedLanguageHints.map((hint) => `${hint.directory}/${hint.indicator} → ${hint.language}`).join(", "),
+    }));
+  }
   console.log(message(locale, context.baseline.available ? "context.baselineAvailable" : "context.baselineMissing", {
     files: context.baseline.files,
     scope: message(locale, `context.baselineScope.${context.baseline.scope}` as MessageKey),
-    freshness: message(locale, `context.baselineFreshness.${context.baseline.freshness}` as MessageKey),
+    freshness: `${message(locale, `context.baselineFreshness.${context.baseline.freshness}` as MessageKey)}${
+      context.baseline.freshnessReason
+        ? message(locale, "context.freshnessReason", {
+          reason: message(locale, `context.freshnessReason.${context.baseline.freshnessReason}` as MessageKey),
+        })
+        : ""}`,
     scanAt: context.baseline.scanAt ? message(locale, "context.baselineScanAt", { at: context.baseline.scanAt }) : "",
   }));
   if (context.baseline.generation) {
@@ -167,7 +186,9 @@ const printContext = (context: ProjectContext, locale: Locale): void => {
   }));
   console.log(message(locale, "context.staged", { paths: context.changes.staged.paths, sources: context.changes.staged.sourcePaths }));
   if (context.changes.worktree.availability === "unavailable" || context.changes.staged.availability === "unavailable") {
-    console.log(message(locale, "context.gitUnavailable"));
+    // 只陈述实测到的失败原因：历史上这里把任何 git 失败都硬说成"不是可读取的 Git 工作树"（超时也被这样误诊）。
+    const reason = context.changes.worktree.reason ?? context.changes.staged.reason ?? "unknown";
+    console.log(message(locale, "context.gitUnavailable", { reason }));
   }
   if (context.scan.status) {
     console.log(message(locale, "context.scanStatus", {

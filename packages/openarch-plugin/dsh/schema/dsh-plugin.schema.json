@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://openarch.dev/schemas/dsh-plugin-v1.schema.json",
   "title": "OpenArch DSH 插件清单",
-  "$comment": "把 Cordis 模块导出契约（export const name / inject、export function apply(ctx, config)）与注册的工具面固化为可校验的 JSON 描述。execute/render 等函数无法用 JSON 表达，清单只描述数据面；实现仍以 .mjs 模块为准。",
+  "$comment": "把 Cordis 模块导出契约（export const name / inject、export function apply(ctx, config)）与注册的工具面固化为可校验的 JSON 描述。execute/render 等函数无法用 JSON 表达，清单只描述数据面；实现仍以 .mjs 模块为准。tools[].parameters 记录的是**注册形态**：DSH 现行 defineTool 契约用 ParameterSchemaSpec（隐式开放对象根的 per-property map），每个属性自带 type/注解/required:true；模型侧 wire schema 由 DSH 编译该映射得到（{type:'object',properties,...}），也就是 dsh-config 之外的第二张面。旧式 {type:'object',properties} 包壳在静态 ctx.tools.register 上仍被接受，但绕开参数校验，本插件不再使用。",
   "type": "object",
   "required": ["schemaVersion", "id", "modules"],
   "properties": {
@@ -113,22 +113,10 @@
         },
         "parameters": {
           "type": "object",
-          "required": ["type", "properties"],
-          "properties": {
-            "type": {
-              "const": "object"
-            },
-            "properties": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/$defs/parameter"
-              }
-            },
-            "additionalProperties": {
-              "type": "boolean"
-            }
-          },
-          "additionalProperties": false
+          "description": "DSH ParameterSchemaSpec：隐式开放对象根的 per-property map（不是 JSON Schema 包壳）。",
+          "additionalProperties": {
+            "$ref": "#/$defs/parameterSpec"
+          }
         },
         "timeoutMs": {
           "type": "integer",
@@ -141,27 +129,53 @@
         "outputSchema": {
           "type": "object",
           "additionalProperties": true
-        },
-        "cardKind": {
-          "enum": ["generic"]
         }
       },
       "additionalProperties": false
     },
-    "parameter": {
+    "parameterSpec": {
       "type": "object",
+      "description": "一个参数属性：DSH 值 schema 节点 + 可选 required:true。",
       "required": ["type"],
       "properties": {
         "type": {
-          "enum": ["string", "boolean", "integer", "number", "object", "array"]
+          "enum": ["string", "boolean", "integer", "number", "object", "array", "null", "json"]
         },
         "description": {
           "type": "string",
           "maxLength": 500
         },
+        "title": {
+          "type": "string"
+        },
+        "default": true,
+        "examples": true,
         "enum": {
           "type": "array",
           "minItems": 1
+        },
+        "const": true,
+        "items": {
+          "$ref": "#/$defs/parameterSpec"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/parameterSpec"
+          }
+        },
+        "additionalProperties": {
+          "type": "boolean"
+        },
+        "oneOf": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/parameterSpec"
+          }
+        },
+        "required": {
+          "const": true
         }
       },
       "additionalProperties": false

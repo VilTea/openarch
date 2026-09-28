@@ -57,6 +57,7 @@ export const parseTsText = (filePath: string, text: string, language?: FileAst["
   });
 
 export const queryTs = runtime.query;
+export const queryTextTs = runtime.queryText;
 
 export const invocationBindingsTs = (filePath: string) => Effect.gen(function* () {
   const { root } = yield* runtime.parse(filePath);
@@ -99,6 +100,12 @@ export const queryVue = (filePath: string, pattern: string) =>
     const block = yield* vueText(filePath);
     return yield* runtime.queryText(filePath, block.code, pattern);
   });
+
+/** Vue 的语法面在 `<script>` 块内：调用方已持有整份 SFC 文本时，仍需先提取块再查询。 */
+export const queryTextVue = (filePath: string, text: string, pattern: string) => {
+  const block = extractVueScriptBlock(text);
+  return runtime.queryText(filePath, block?.code ?? "", pattern);
+};
 
 export const invocationBindingsVue = (filePath: string) =>
   Effect.gen(function* () {

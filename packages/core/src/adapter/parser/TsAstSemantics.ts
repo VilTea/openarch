@@ -1,18 +1,17 @@
 import type { Node } from "web-tree-sitter";
-import type { BranchClass, LanguageStructuralSemantics } from "./StructuralFacts";
+import { createGuardClauseDetector, type BranchClass, type LanguageStructuralSemantics } from "./StructuralFacts";
 import type { ImportSyntax } from "./ImportExtraction";
 
-const jumpTypes = new Set(["return_statement", "throw_statement", "continue_statement", "break_statement"]);
-
-const isGuardClause = (ifNode: Node): boolean => {
-  const consequence = ifNode.childForFieldName?.("consequence");
-  if (!consequence) return false;
-  const firstStatement = consequence.type === "statement_block" ? consequence.children[0] : consequence;
-  return firstStatement ? jumpTypes.has(firstStatement.type) : false;
-};
+// 卫语句判据来自共享实现（认知点原则：一个概念一个权威入口）。
+// containerTypes 必须用具名子节点下钻——历史实现在这里用 children[0] 读到的是 `{`，
+// 导致带花括号（TS/JS 主流风格）的卫语句被记成普通分支，只有无花括号形态才算卫语句。
+const guardClause = createGuardClauseDetector({
+  jumpTypes: new Set(["return_statement", "throw_statement", "continue_statement", "break_statement"]),
+  containerTypes: new Set(["statement_block"]),
+});
 
 const classifyBranch = (node: Node): BranchClass | undefined => {
-  if (node.type === "if_statement") return isGuardClause(node) ? "guard" : "ordinary";
+  if (node.type === "if_statement") return guardClause(node) ? "guard" : "ordinary";
   if (node.type === "switch_statement") return "ordinary";
   if (node.type === "switch_case" || node.type === "switch_default") return "case";
   return undefined;

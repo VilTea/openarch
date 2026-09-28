@@ -5,26 +5,22 @@ import { extractRustExportedFunctions } from "./ExportedSymbolExtractor";
 import { collectImportSources, type ImportSyntax } from "./ImportExtraction";
 import { resolveImportRefs } from "./ModuleResolver";
 import { rustModuleResolver } from "./RustModuleResolver";
-import { collectStructuralFacts, type BranchClass, type LanguageStructuralSemantics } from "./StructuralFacts";
+import { collectStructuralFacts, createGuardClauseDetector, type BranchClass, type LanguageStructuralSemantics } from "./StructuralFacts";
 import { createTreeSitterRuntime } from "./TreeSitterRuntime";
 import { collectSemanticSurface, type DeclarationSyntax } from "./SemanticDeclarations";
 import { collectInvocationBindings, directTypeName, type InvocationBindingSemantics } from "./InvocationBindingFacts";
 
 const runtime = createTreeSitterRuntime("tree-sitter-rust.wasm");
-const jumpTypes = new Set(["return_expression", "break_expression", "continue_expression"]);
 
-const firstStatement = (block: Node): Node | undefined => block.namedChildren[0]?.type === "expression_statement"
-  ? block.namedChildren[0].namedChildren[0]
-  : block.namedChildren[0];
-
-const isGuardClause = (node: Node): boolean => {
-  const consequence = node.childForFieldName?.("consequence");
-  const first = consequence?.type === "block" ? firstStatement(consequence) : undefined;
-  return !!first && jumpTypes.has(first.type);
-};
+// 卫语句判据来自共享实现：Rust 的 if 体是 block，块内语句被 expression_statement 包裹，
+// 两层包裹由 containerTypes 声明，判据本身不再本地复制。
+const guardClause = createGuardClauseDetector({
+  jumpTypes: new Set(["return_expression", "break_expression", "continue_expression"]),
+  containerTypes: new Set(["block", "expression_statement"]),
+});
 
 const classifyBranch = (node: Node): BranchClass | undefined => {
-  if (node.type === "if_expression") return isGuardClause(node) ? "guard" : "ordinary";
+  if (node.type === "if_expression") return guardClause(node) ? "guard" : "ordinary";
   if (node.type === "match_expression") return "ordinary";
   if (node.type === "match_arm") return "case";
   return undefined;
@@ -113,7 +109,10 @@ const rustDeclarationSyntax: DeclarationSyntax = {
     return undefined;
   },
   nameOf: rustDeclarationName,
-  isPublic: (node, inherited) => inherited || /^pub\b/.test(node.text.trim()),
+  // Rust 结构体/枚举/联合字段默认私有（即使外层是 pub struct），只有 trait 成员隐式公开。
+  // 与 Java 同型：成员可见性不继承“class”容器，只继承“interface”容器。
+  isPublic: (node, context) =>
+    /^pub\b/.test(node.text.trim()) || (context.inheritedPublic && context.containerKind === "interface"),
   isReExport: isNamedPublicReexport,
   bodyOf: (node) => node.childForFieldName?.("body")
     ?? node.namedChildren.find((child) => ["block", "declaration_list", "field_declaration_list"].includes(child.type)),
@@ -157,6 +156,7 @@ export const parseRustText = (filePath: string, text: string) =>
   });
 
 export const queryRust = runtime.query;
+export const queryTextRust = runtime.queryText;
 
 const rustBindingSemantics: InvocationBindingSemantics = {
   scopeTypes: new Set(["function_item", "closure_expression"]),

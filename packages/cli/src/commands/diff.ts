@@ -109,7 +109,19 @@ const earlyDiffCommand = (args: readonly string[], cwd: string, locale: Locale):
   return Promise.resolve(undefined);
 };
 
-const stagedDiffRequest = (args: readonly string[], cwd: string): DiffRequest | undefined => {
+/**
+ * 暂存变更集的解析。
+ *
+ * N12（2026-09-25 复核确认）：`check --staged` 曾对**同一条 git 命令** spawn 两次
+ * ——`check` 自己解析一次（保护路径判据），`diff` 又解析一次（语义证据）。代价不只是
+ * 一个多余的子进程：两次读取之间索引可能变化，同一份报告的两段就会基于**不同快照**。
+ * 因此调用方已解析过时把结果传进来复用（与 `--worktree` 分支传入可分析路径同一做法）。
+ */
+const stagedDiffRequest = (
+  args: readonly string[],
+  cwd: string,
+  providedRawStaged?: readonly string[],
+): DiffRequest | undefined => {
   if (args.includes("--pre-commit")) {
     console.error("--staged 与 --pre-commit 不能同时使用");
     return undefined;
@@ -121,7 +133,7 @@ const stagedDiffRequest = (args: readonly string[], cwd: string): DiffRequest | 
   }
   // 先取原始 git 暂存变更，区分"暂存区无变更"与"有暂存但无可分析文件"
   //（体验反馈 2026-08-12：无变更却提示"没有可分析文件"是误导）。
-  const rawStaged = gitChangePaths(cwd, "staged");
+  const rawStaged = providedRawStaged ?? gitChangePaths(cwd, "staged");
   if (rawStaged.length === 0) {
     console.log("暂存区没有变更（无新增/修改的已跟踪文件）。");
     return { paths: [], changeOverrides: new Map(), outputMode: outputModeOf(args) };
@@ -154,11 +166,11 @@ const parseDiffRequest = (args: readonly string[], cwd: string): DiffRequest | u
   }
   const fileArgs = [...args];
   for (let index = fileArgs.length - 1; index >= 0; index--) {
-    if (fileArgs[index] === "--change-type" || fileArgs[index] === "--change-override" || fileArgs[index] === "--output-mode") fileArgs.splice(index, 2);
+    if (fileArgs[index] === "--change-type" || fileArgs[index] === "--change-override" || fileArgs[index] === "--change-override-file" || fileArgs[index] === "--output-mode") fileArgs.splice(index, 2);
     if (fileArgs[index] === "--human" || fileArgs[index] === "-H") fileArgs.splice(index, 1);
   }
   const providedPaths = fileArgs.filter((arg) => !arg.startsWith("--")).flatMap((arg) => arg.split(",")).map((path) => path.trim()).filter(Boolean);
-  if (providedPaths.length === 0) { console.error("用法: openarch check [--change-type <type>|--change-override <path>=<type>|--output-mode <summary|detail|full|human>] <files>"); return undefined; }
+  if (providedPaths.length === 0) { console.error("用法: openarch check [--change-type <type>|--change-override <path>=<type>|--change-override-file <json>|--output-mode <summary|detail|full|human>] <files>"); return undefined; }
   const paths = providedPaths.filter((path) => isAnalyzableSourceFile(path, cwd, "change-evidence"));
   if (paths.length === 0) { console.error(`指定路径中没有匹配当前项目 languages 配置的可分析文件（共 ${providedPaths.length} 个路径，均不可分析或不在 languages 扩展名内）。`); return undefined; }
   return { paths, changeOverrides, outputMode: outputModeOf(args), ...(changeType ? { changeType: changeType as ChangeKind } : {}) };
@@ -206,7 +218,16 @@ const worktreeSymbolUse = async (cwd: string, demand: SymbolUseDemand, waitForDi
   return [];
 };
 
-export const diffCommand: CommandHandler = async (args, context) => {
+/**
+ * `diffCommand` 是命令入口（第三参数缺省 ⇒ 自己解析暂存变更集）；
+ * `check` 已经解析过时以第三参数传入，避免第二次 spawn（N12）。
+ * 额外的**可选**参数使本函数仍可直接用作 `CommandHandler`。
+ */
+export const diffCommand = async (
+  args: readonly string[],
+  context: Parameters<CommandHandler>[1],
+  providedStagedPaths?: readonly string[],
+): Promise<number> => {
   if (args.includes("--staged") && args.includes("--pre-commit")) {
     console.error("--staged 与 --pre-commit 不能同时使用");
     return 3;
@@ -218,20 +239,21 @@ export const diffCommand: CommandHandler = async (args, context) => {
   const early = await earlyDiffCommand(args, context.cwd, context.locale);
   if (early !== undefined) return early;
   const implicitDeps = await readImplicitDeps();
-  const request = args.includes("--staged") ? stagedDiffRequest(args, context.cwd) : parseDiffRequest(args, context.cwd);
+  const request = args.includes("--staged") ? stagedDiffRequest(args, context.cwd, providedStagedPaths) : parseDiffRequest(args, context.cwd);
   if (!request) return 3;
   if (request.paths.length === 0) return 0;
   const locale = context.locale;
   const detail = args.includes("--verbose");
   if (request.changeType) return executeDiff(request, context.cwd, locale, undefined, undefined, undefined, detail);
-  const semantic = await automaticSemanticProfiles(
+  const outcome = await automaticSemanticProfiles(
     context.cwd,
     request.paths,
     request.changeOverrides,
     args.includes("--staged") ? "staged" : "worktree",
     locale,
   );
-  if (!semantic) return 3;
+  if (!outcome) return 3;
+  const semantic = outcome.snapshot;
   // 预筛（规格 §3.4）：静态上界为空（baseline inDegree=0）的变更文件跳过 LSP——
   // 符号消费者必为空（引用符号必须 import 其所在文件），无需启动昂贵的符号分析。
   const waitIndex = args.includes("--wait-index");

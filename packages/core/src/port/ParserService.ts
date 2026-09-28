@@ -29,6 +29,18 @@ export interface ParserService {
   readonly parseText: (path: string, text: string) => Effect.Effect<FileAst, ParseError>;
   /** tree-sitter query（S-expression 模式匹配）。仅 discover 隐式依赖时用，热路径（scan/diff）不调 */
   readonly query: (path: string, pattern: string) => Effect.Effect<QueryMatch[], ParseError>;
+  /**
+   * 对**调用方已经持有**的文本做 tree-sitter query，不再读盘。
+   *
+   * 存在理由：调用方（LSP symbol-use、契约判定）已把源码读进内存，而 `query(path, pattern)`
+   * 会重新 `readFileSync`；同一文件被读两次只是路径实现的副作用，不是语义要求。
+   *
+   * 缺省语义（fail-closed，刻意设计）：`queryText` 缺省**不等于**"查询结果为空"。
+   * 缺省时调用方必须回退到重新读盘的 `query(path, pattern)`（该路径会按"路径 + 内容
+   * SHA-256"命中解析树缓存），或者把该文件标记为不可判定；禁止把缺省当成空结果，
+   * 那会把"无法判定"静默降级为"没有风险"。
+   */
+  readonly queryText?: (path: string, text: string, pattern: string) => Effect.Effect<QueryMatch[], ParseError>;
   /** Optional language-semantic capability; unsupported strategies stay unavailable. */
   readonly invocationBindings?: (path: string) => Effect.Effect<readonly InvocationBindingFact[], ParseError>;
   /** 当前 adapter 支持的语言列表 */

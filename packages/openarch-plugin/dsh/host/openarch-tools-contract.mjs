@@ -5,6 +5,7 @@
  * 启动时感知各可消费机器契约的当前版本。本插件持有的版本认识见
  * openarch-contracts.mjs；不认识的目录 schema 或契约版本一律 fail-closed。
  */
+import { parameterPropertyMap } from "./openarch-contract.mjs";
 import { runCli, sessionCwdOf, tailChars, verdictOf } from "./openarch-tools-run.mjs";
 import { renderContractText } from "./openarch-tools-render.mjs";
 import { KNOWN_CONTRACTS, projectContractCatalog } from "./openarch-contracts.mjs";
@@ -24,7 +25,7 @@ export function buildContractTool(deps) {
   return {
     name: "openarch_contract",
     description: "读取上游 OpenArch 机器契约目录（contract --json）：各可消费 JSON 契约的当前版本与 openarch 版本。外部插件据此感知契约版本；本插件对未知契约版本 fail-closed。",
-    parameters: { type: "object", properties: {} },
+    parameters: parameterPropertyMap({ type: "object", properties: {} }),
     isConcurrencySafe: () => true,
     timeoutMs: 60_000,
     output: {

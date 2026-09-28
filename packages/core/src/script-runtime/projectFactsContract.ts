@@ -3,7 +3,7 @@
 import type { InvocationBindingFact } from "../domain/invocationBindings";
 import type { SemanticRelationFact, SemanticRelationReport } from "../semantic-relations/types";
 import type { FileKind, FileKindRule, TestCaseSpanFact } from "../domain/testGovernance";
-import type { Language } from "../domain/ast";
+import type { Language, MaxFuncBranchOwner } from "../domain/ast";
 import type { PathClass } from "../application/pathClass";
 import type { IndexEntry } from "../port/StorageService";
 
@@ -75,7 +75,7 @@ export const SCRIPT_FACT_CAPABILITIES: readonly ScriptFactCapabilityDescription[
     summaryId: "scriptFact.structureMetrics.summary",
     usageId: "scriptFact.structureMetrics.usage",
     unavailableActionId: "scriptFact.structureMetrics.unavailable",
-    outputs: ["facts.structureMetrics.value[]: path, repositoryPath, branchCount, weightedBranchTotal?, topLevelWeightedBranch?, maxFuncBranch?, nestingDepth, loc?, externalPassthroughCalls?, inDegree, outDegree, alphaStruct, imports?, connectedness?"],
+    outputs: ["facts.structureMetrics.value[]: path, repositoryPath, branchCount, weightedBranchTotal?, topLevelWeightedBranch?, maxFuncBranch?, maxFuncBranchOwner?{name,line?,weighted,ordinaryIf,guardIf,caseCount}, nestingDepth, loc?, externalPassthroughCalls?, inDegree, outDegree, alphaStruct, imports?, connectedness?"],
     lifecycle: "扩展能力；OpenArch 自身项目脚本当前不消费（策略 gate 直接读 baseline）。作为接入项目脚本 API 保留；2026-10-01 前无外部校准消费者则评估退役。",
   },
   {
@@ -181,6 +181,8 @@ export interface StructureMetricFact {
   readonly weightedBranchTotal?: number;
   readonly topLevelWeightedBranch?: number;
   readonly maxFuncBranch?: number;
+  /** 最大加权分支的归属与形态（report-only）：说出是哪个函数、权重由什么构成。 */
+  readonly maxFuncBranchOwner?: MaxFuncBranchOwner;
   readonly nestingDepth: number;
   readonly loc?: number;
   readonly externalPassthroughCalls?: number;

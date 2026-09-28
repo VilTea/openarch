@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CelAdapterLive } from "../../../src/adapter/rule/CelAdapter";
 import { gatePerFile, classifyPath, evaluateRules, type CompiledRule, type PathEntry } from "../../../src/application/governance/gate";
 import { unsupportedMetricRules } from "../../../src/application/governance/gateConfig";
-import { filterMetricsForScope, gateApp, gateDiagnosticFromError } from "../../../src/application/governance/gateApp";
+import { filterMetricsForScope, gateApp, gateDiagnosticFromError, type GateAppOutput } from "../../../src/application/governance/gateApp";
 import { createAnalysisScope } from "../../../src/domain/analysisScope";
 import { GateConfigurationError } from "../../../src/application/governance/gateConfig";
 import { BaselineSchemaError, IoError, ParseError } from "../../../src/errors/errors";
@@ -264,5 +264,75 @@ describe("gate failure diagnostics", () => {
       else process.env.OPENARCH_BASE_DIR = previousBase;
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("gate verdict is presentation-neutral", () => {
+  const scope = createAnalysisScope(["typescript"]);
+  const calibration = nextStructuralCalibrationState({ observed: createStructuralCalibrationProfile({
+    analysisScopeFingerprint: `${scope.fingerprint}:policy:typescript`, metricContractVersion: METRIC_CONTRACT_VERSION,
+    p95: { branch: 1, nesting: 1, loc: 1, alpha: 0, oneMinusConnectedness: 0, externalPassthrough: 0 },
+    population: [{ path: "src/a.ts", maxFuncBranch: 1, nestingDepth: 1, loc: 1, alphaStruct: 0, connectedness: 1, externalPassthroughCalls: 0 }],
+    weights: DEFAULT_CRL_STATE_WEIGHTS,
+  }) }).state;
+
+  const runGateWith = async (rules: readonly string[]): Promise<GateAppOutput> => {
+    const root = mkdtempSync(join(tmpdir(), "openarch-gate-neutral-"));
+    const previousBase = process.env.OPENARCH_BASE_DIR;
+    try {
+      mkdirSync(join(root, "baseline"), { recursive: true });
+      writeFileSync(join(root, "config.yml"), [
+        'languages: ["typescript"]',
+        "structural_policies:",
+        '  - id: ts', '    languages: ["typescript"]', "    mode: enforce", ...rules,
+      ].join("\n"));
+      writeFileSync(join(root, "baseline", "_index.json"), JSON.stringify({ version: "5.2", meta: {
+        scanAt: new Date().toISOString(), nFiles: 1, nProductionFiles: 1, languages: ["typescript"],
+        analysisScope: { fingerprint: scope.fingerprint, complete: true }, metricContractVersion: METRIC_CONTRACT_VERSION,
+        snapshotSha256: "c".repeat(64),
+        policyCalibrations: { ts: calibration },
+      }}));
+      writeFileSync(join(root, "baseline", "src-a.ts.json"), JSON.stringify({
+        path: "src/a.ts", language: "typescript", fileKind: "production", branchCount: 7, nestingDepth: 2, inDegree: 0, outDegree: 0,
+        alphaStruct: 0, maxFuncBranch: 7, loc: 10, externalPassthroughCalls: 0, connectedness: 1,
+      }));
+      process.env.OPENARCH_BASE_DIR = root;
+      return await Effect.runPromise(gateApp({ report: true }).pipe(Effect.provide(Layer.merge(CelAdapterLive, makeJsonFileStorageLive(root)))));
+    } finally {
+      if (previousBase === undefined) delete process.env.OPENARCH_BASE_DIR;
+      else process.env.OPENARCH_BASE_DIR = previousBase;
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+
+  // 语义中立护栏：mode 标注、调查方向措辞与 WARN 声明都只影响渲染，
+  // 不得改动裁决或退出码——PASS/BLOCK/WARN 的 code 与触发集合逐字段冻结。
+  it("pins verdict and exit code for PASS, WARN, and BLOCK fixtures", async () => {
+    const pass = await runGateWith(['    rules_warn:', '      - name: function complexity', '        condition: "max_func_branch > 500"']);
+    expect({ code: pass.code, verdict: pass.verdict, triggered: pass.report?.result.triggered }).toEqual({
+      code: 0, verdict: "PASS", triggered: [],
+    });
+
+    const block = await runGateWith(['    rules_block:', '      - name: function complexity', '        condition: "max_func_branch > 5"']);
+    expect({ code: block.code, verdict: block.verdict }).toEqual({ code: 2, verdict: "BLOCK" });
+  });
+
+  it("pins trigger facts for a WARN fixture", async () => {
+    const output = await runGateWith(['    rules_warn:', '      - name: function complexity', '        condition: "max_func_branch > 5"']);
+
+    expect({ code: output.code, verdict: output.verdict }).toEqual({ code: 1, verdict: "WARN" });
+    expect(output.report?.result.verdict).toBe("WARN");
+    expect(output.report?.result.triggered).toHaveLength(1);
+    const [trigger] = output.report?.result.triggered ?? [];
+    expect(trigger).toMatchObject({
+      name: "function complexity", level: "warn", condition: "max_func_branch > 5",
+      file: "src/a.ts", mode: "enforce",
+    });
+    // mode 只是新增标注：观察变量集合与数值保持不变（CEL 变量面没有增减）。
+    expect(Object.keys(trigger.observed ?? {}).sort()).toEqual([
+      "crl_local", "declaration_loc", "exposure", "language", "loc", "max_func_branch",
+      "module_shape", "nesting_depth", "p95", "path_class", "top_level_branch", "weighted_branch_total", "weights",
+    ]);
+    expect(trigger.observed).toMatchObject({ max_func_branch: 7, language: "typescript" });
   });
 });

@@ -9,6 +9,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { isKnownTestGovernanceSchema } from "./openarch-contracts.mjs";
 
 const cacheFileName = "dsh-test-governance.json";
 
@@ -20,7 +21,8 @@ export const readTestGovernanceCache = (root) => {
     const path = cachePath(root);
     if (!existsSync(path)) return null;
     const parsed = JSON.parse(readFileSync(path, "utf8"));
-    if (parsed && typeof parsed === "object" && parsed.schema === "test-governance-json-v1") return parsed;
+    // 契约版本识别统一走 openarch-contracts.mjs（包内唯一入口），不在本模块重写字面量。
+    if (parsed && typeof parsed === "object" && isKnownTestGovernanceSchema(parsed.schema)) return parsed;
     return null;
   } catch {
     return null;

@@ -78,7 +78,7 @@ describe("computeChangeSurfaceForProfiles", () => {
 
     expect(collection.availability).toBe("unavailable");
     expect(collection.surfaces).toEqual([]);
-    expect(collection.unavailableLanguages).toEqual([{ language: "typescript", reason: expect.stringContaining("missing") }]);
+    expect(collection.unavailableLanguages).toEqual([{ language: "typescript", reason: expect.stringContaining("missing"), files: ["src/api.ts"] }]);
   });
 
   it("report unavailable 时不输出该语言 C_push 数值，带原因", () => {
@@ -98,7 +98,7 @@ describe("computeChangeSurfaceForProfiles", () => {
     });
 
     expect(collection.surfaces).toEqual([]);
-    expect(collection.unavailableLanguages).toEqual([{ language: "rust", reason: "rust-analyzer executable is unavailable" }]);
+    expect(collection.unavailableLanguages).toEqual([{ language: "rust", reason: "rust-analyzer executable is unavailable", files: ["src/api.rs"] }]);
   });
 
   it("LSP 引用采集不完整（incomplete）时不输出 C_push（0 消费者会误导）", () => {
@@ -233,6 +233,15 @@ describe("computeChangeSurfaceForProfiles", () => {
     expect(collection.surfaces[0].result.contributions[0].consumers).toEqual([]);
     expect(collection.surfaces[0].result.total).toBe(0);
     expect(collection.unavailableLanguages).toEqual([]);
+    // 缺陷 B3 第二处：该分支此前完全静默，文件看起来"已确证 0 消费者"。
+    // 语言键投影按既有行为不新增条目，但逐文件缺口必须显式记账。
+    expect(collection.symbolEvidenceGaps).toEqual([{
+      file: "src/orphan.ts",
+      language: "typescript",
+      kind: "static-bound-empty",
+      anchors: ["orphanHelper"],
+      reason: expect.stringContaining("未查询"),
+    }]);
   });
 });
 
@@ -287,6 +296,117 @@ describe("cross-package intersection guard (calibration 2026-08-05)", () => {
       pathClasses,
     });
     expect(collection.surfaces).toHaveLength(1);
+    expect(collection.surfaces[0]!.result.provenance).toBe("symbol");
+  });
+});
+
+describe("evidence gap accounting (defect B3)", () => {
+  it("provider 不可用：不可用事实点名受影响文件，而不只是语言", () => {
+    const collection = computeChangeSurfaceForProfiles({
+      profiles: [
+        { file: "src/api.ts", beforeState: "git", changes: [{ anchor: "publish", kind: "public_method_sig" }] },
+        { file: "src/other.ts", beforeState: "git", changes: [{ anchor: "other", kind: "function_sig" }] },
+      ],
+      symbolUseReports: undefined,
+      reverseEdges: new Map([
+        [toAbsolute("src/api.ts"), [toAbsolute("src/client.ts")]],
+        [toAbsolute("src/other.ts"), [toAbsolute("src/consumer.ts")]],
+      ]),
+      pathClasses,
+    });
+
+    expect(collection.surfaces).toEqual([]);
+    // 语言键投影保持既有字段语义，同时携带受影响文件（同语言聚合、profile 顺序）
+    expect(collection.unavailableLanguages).toEqual([{
+      language: "typescript",
+      reason: expect.stringContaining("missing"),
+      files: ["src/api.ts", "src/other.ts"],
+    }]);
+    // 逐文件缺口：哪个文件、哪条声明、什么原因，一目了然
+    expect(collection.symbolEvidenceGaps).toEqual([
+      { file: "src/api.ts", language: "typescript", kind: "provider-unavailable", anchors: ["publish"], reason: expect.stringContaining("missing") },
+      { file: "src/other.ts", language: "typescript", kind: "provider-unavailable", anchors: ["other"], reason: expect.stringContaining("missing") },
+    ]);
+  });
+
+  it("工具链不可用：缺口原因就是 provider 的权威原因（不在别处重算）", () => {
+    const collection = computeChangeSurfaceForProfiles({
+      profiles: [{
+        file: "src/api.rs",
+        beforeState: "git",
+        changes: [{ anchor: "publish", kind: "public_method_sig" }],
+      }],
+      symbolUseReports: [{
+        origin: { language: "rust", providerId: "rust-analyzer-symbol-use", evidenceSource: "lsp" },
+        state: { availability: "unavailable", coverage: { declarations: "unavailable", repositoryReferences: "unavailable" }, reason: "rust-analyzer executable is unavailable" },
+        facts: [],
+      }],
+      reverseEdges: new Map([[toAbsolute("src/api.rs"), [toAbsolute("src/lib.rs")]]]),
+      pathClasses,
+    });
+
+    expect(collection.unavailableLanguages).toEqual([
+      { language: "rust", reason: "rust-analyzer executable is unavailable", files: ["src/api.rs"] },
+    ]);
+    expect(collection.symbolEvidenceGaps).toEqual([{
+      file: "src/api.rs",
+      language: "rust",
+      kind: "provider-unavailable",
+      anchors: ["publish"],
+      reason: "rust-analyzer executable is unavailable",
+    }]);
+  });
+
+  it("static-bound-empty：保留 provenance 与数值，同时留下显式未查询缺口", () => {
+    const collection = computeChangeSurfaceForProfiles({
+      profiles: [{
+        file: "src/orphan.ts",
+        beforeState: "git",
+        changes: [{ anchor: "orphanHelper", kind: "function_body" }],
+      }],
+      symbolUseReports: undefined,
+      reverseEdges: new Map(),
+      pathClasses,
+    });
+
+    // 既有行为不变：C_push=0 仍是结构性结论，availability 与数值一字不改
+    expect(collection.availability).toBe("available");
+    expect(collection.surfaces[0]!.result.provenance).toBe("static-bound-empty");
+    expect(collection.surfaces[0]!.staticBound).toBe(0);
+    expect(collection.surfaces[0]!.result.total).toBe(0);
+    // 缺口：符号/可见性证据未查询，不得被读成"符号级已确证 0 消费者"
+    expect(collection.symbolEvidenceGaps).toHaveLength(1);
+    expect(collection.symbolEvidenceGaps[0]).toMatchObject({
+      file: "src/orphan.ts",
+      kind: "static-bound-empty",
+      anchors: ["orphanHelper"],
+    });
+    expect(collection.symbolEvidenceGaps[0]!.reason).toContain("未查询");
+    // 与 provider 不可用可区分：这是"结构性 0，但证据未查询"，不是工具链故障
+    expect(collection.symbolEvidenceGaps.map((gap) => gap.kind)).toEqual(["static-bound-empty"]);
+  });
+
+  it("证据真正可用时不留任何缺口（不发明缺口）", () => {
+    const collection = computeChangeSurfaceForProfiles({
+      profiles: [{
+        file: "packages/app/src/api.ts",
+        beforeState: "git",
+        changes: [{ anchor: "Api.publish", kind: "public_method_sig" }],
+      }],
+      reverseEdges: new Map([[toAbsolute("packages/app/src/api.ts"), [toAbsolute("packages/app/src/client-a.ts")]]]),
+      symbolUseReports: [availableTsReport([
+        {
+          language: "typescript",
+          declaration: { file: "packages/app/src/api.ts", name: "publish", kind: "method", line: 5 },
+          publicSurface: "declared-public",
+          repositoryReferences: [{ file: "packages/app/src/client-a.ts", line: 12 }],
+        },
+      ])],
+      pathClasses,
+    });
+
+    expect(collection.symbolEvidenceGaps).toEqual([]);
+    expect(collection.unavailableLanguages).toEqual([]);
     expect(collection.surfaces[0]!.result.provenance).toBe("symbol");
   });
 });

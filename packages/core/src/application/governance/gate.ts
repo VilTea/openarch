@@ -17,10 +17,27 @@ import { classifyPath, type PathClass } from "../pathClass";
 
 export type GateVerdict = "PASS" | "WARN" | "BLOCK";
 
+/** 结构策略的裁决模式：只有 enforce 总体产出裁决，observe 只覆盖总体。 */
+export type GateTriggerMode = "observe" | "enforce";
+
 export interface GateRule {
   readonly name: string;
   readonly condition: string;
   readonly level: "block" | "warn";
+}
+
+/**
+ * 触发项是裁决事实，必须随身携带产生它的策略 mode——
+ * 否则渲染层无法区分“强制策略的触发”与“仅观察候选项”。
+ * mode 缺省表示旧的 enforce 路径（历史调用方）。
+ */
+export interface GateTrigger {
+  readonly name: string;
+  readonly level: string;
+  readonly condition: string;
+  readonly file?: string;
+  readonly observed?: Record<string, unknown>;
+  readonly mode?: GateTriggerMode;
 }
 
 export type PathEntry = PathClass;
@@ -40,7 +57,7 @@ export interface GateInput {
 
 export interface GateReport {
   readonly verdict: GateVerdict;
-  readonly triggered: readonly { name: string; level: string; condition: string; file?: string; observed?: Record<string, unknown> }[];
+  readonly triggered: readonly GateTrigger[];
 }
 
 // ---------------------------------------------------------------------------
@@ -52,14 +69,15 @@ export interface CompiledRule {
   readonly level: "block" | "warn";
   readonly evaluate: (vars: Record<string, unknown>) => boolean;
   readonly condition: string;
+  readonly mode?: GateTriggerMode;
 }
 
 export const evaluateRules = (
   compiled: readonly CompiledRule[],
   vars: Record<string, unknown>,
   filePath?: string,
-): { triggered: { name: string; level: string; condition: string; file?: string; observed?: Record<string, unknown> }[]; blocked: boolean; warned: boolean } => {
-  const triggered: { name: string; level: string; condition: string; file?: string; observed?: Record<string, unknown> }[] = [];
+): { triggered: GateTrigger[]; blocked: boolean; warned: boolean } => {
+  const triggered: GateTrigger[] = [];
   let blocked = false, warned = false;
   for (const r of compiled) {
     if (r.evaluate(vars)) {
@@ -77,7 +95,7 @@ export const evaluateRules = (
 export const gate = (input: GateInput) =>
   Effect.gen(function* () {
     const ruleSvc = yield* RuleService;
-    const triggered: { name: string; level: string; condition: string }[] = [];
+    const triggered: GateTrigger[] = [];
     let blocked = false, warned = false;
 
     const vars: Record<string, unknown> = {
@@ -114,12 +132,12 @@ export const gatePerFile = (
   }>,
   paths: readonly PathEntry[],
   options?: {
-    p95?: P95Values; weights?: CRLStateWeights;
+    p95?: P95Values; weights?: CRLStateWeights; mode?: GateTriggerMode;
   },
 ) =>
   Effect.gen(function* () {
     const ruleSvc = yield* RuleService;
-    const allTriggered: { name: string; level: string; condition: string; file?: string; observed?: Record<string, unknown> }[] = [];
+    const allTriggered: GateTrigger[] = [];
     let blocked = false, warned = false;
 
     const p95Vals = options?.p95;
@@ -129,7 +147,7 @@ export const gatePerFile = (
     const compiled: CompiledRule[] = [];
     for (const r of rules) {
       const c = yield* ruleSvc.compile(r.name, r.condition);
-      compiled.push({ name: r.name, level: r.level, evaluate: c.evaluate, condition: r.condition });
+      compiled.push({ name: r.name, level: r.level, evaluate: c.evaluate, condition: r.condition, mode: options?.mode });
     }
 
     for (const m of fileMetrics) {

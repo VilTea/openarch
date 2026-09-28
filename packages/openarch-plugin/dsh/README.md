@@ -101,6 +101,21 @@ Host 端 `createGovernanceCache` 采集一份有界快照，经两条通道对 C
 }
 ```
 
+`tools[].parameters` 记录的是**注册形态**：DSH 现行 `defineTool` 契约用
+`ParameterSchemaSpec` —— 隐式开放对象根的 per-property map（每个属性自带
+`type`/注解，必填写作 `required: true`），不再是 `{ type: "object", properties }`
+的 JSON Schema 包壳。模型侧看到的 wire schema 仍由 DSH 编译该映射得到
+（`{ type: "object", properties, required? }`），所以换形态不改模型的可见面。
+
+契约纪律（2026-09-26 对 DSH 检出 `0.1.5-rc.3` 实测）：`ctx.tools.register(definition)`
+只校验 `output {schema, render}`、`timeoutMs` 与保留名 `run_code`，**不编译也不校验
+`parameters`**。因此旧包壳形态也能注册成功——那是宿主对未知形状的宽容，不是合规：
+`defineTool`、`validateArgs` 与动态包 `harness.defineTool` 都会以
+`parameters.type must be a value schema object` 拒绝它，参数校验于是整条缺失。
+`openarch-tools.mjs` 用 `openarch-contract.mjs` 的 `parameterPropertyMap()` 统一投影，
+清单与实现共用同一份 `{type,properties}` 声明；`openarch-dsh-contract.test.ts`
+在能解析到本机 DSH 检出时直接拿真实库复验。
+
 本仓库自带一份完整样例 `dsh/examples/dsh-plugin.manifest.json`（内容与当前 `openarch-tools` 注册面一致）。`dsh/__tests__/openarch-schemas.test.ts` 内置一个只支持本仓库 schema 关键字子集的轻量校验器，持续把 schema、`DEFAULTS` 与真实 `GovernanceState` 产出对起来，防止文档漂移；它不引入 `ajv` 依赖，也不替代生产端校验。
 
 运行时硬编码同样以 schema 为单一事实源：`openarch-contract.mjs` 从 `dsh-config.schema.json` 推导配置白名单（未知键 warn 并丢弃，替代散落在各模块里的键名单）；`dsh/__tests__/openarch-contract.test.ts` 把 manifest 与真实模块导出（name/inject）、工具注册面（描述/参数/输出 schema/超时/并发）、prompt section 与 slot 注册逐项交叉校验，契约改动会在测试里立刻显形。
@@ -117,7 +132,10 @@ Host 端 `createGovernanceCache` 采集一份有界快照，经两条通道对 C
 - verdict 映射与 CLI 契约一致（`packages/cli/src/exit-code.ts`）：**0 PASS · 1 WARN · 2 BLOCK · 3/信号 ERROR**。
 - 报告文本有界（16 000 字符尾部）；CLI 进程级失败（spawn 失败、超时）返回 `{ok:false, verdict:"ERROR", error}`。
 - `openarch_scan` 后台任务对接 DSH `jobs` 注册表（`kind: "openarch"`，流式 `readOutput`、可 `job_kill`）。
-- 工具卡由 `presentCall`/`presentResult` 提供（generic card + verdict 标题），v1 不接管 `tool.call.toolview` 键，避免遮蔽报告正文。
+- 工具卡由 `presentCall`/`presentResult` 提供（generic card + verdict 标题）：`presentCall(args)` 返回
+  `ToolCallView`，`presentResult(args, result)` 的第二参是 `ToolResult = {content, isError, meta?}` ——
+  verdict 标题读 `result.meta`（由 `output.presentationMeta` 投影），失败态读 `result.isError`。
+  v1 不接管 `tool.call.toolview` 键，避免遮蔽报告正文。
 - 测试接缝：`ctx.get("openarch.exec")` / `ctx.get("openarch.spawn")` / `ctx.get("openarch.cwd")`，缺省用真实 `node:child_process`。
 - DSH 服务访问约定：硬依赖（`tools`/`systemPrompt`/`webServer`/`slots`/`timer`）声明在 `inject`；可选服务与测试接缝（`jobs`、`workspaceRegistry`、`openarch.*`）统一用 `ctx.get(...)`，缺失时回退默认实现。
 
@@ -152,13 +170,35 @@ Host 端 `createGovernanceCache` 采集一份有界快照，经两条通道对 C
 - 未初始化项目两个占位都渲染 `null`，普通会话零打扰。
 - 样式走 `--dsw-*` 主题变量 + 回退值，不覆盖全局主题；包内样式 `styles.insert` 随包清理。
 
+## 对齐的 DSH 契约版本（2026-09-26 核对）
+
+本插件按 DSH 检出 **`@deepseek-ai/dsh` 0.1.5-rc.3**（`C:\Users\Administrator\AppData\Roaming\npm\node_modules\@deepseek-ai\dsh`）
+的现行契约实现。该检出不含 CHANGELOG/migration 文档，权威分散在包的类型定义与实现里：
+
+| 契约面 | 权威位置（相对检出根 `node_modules/@deepseek-ai/`） |
+|---|---|
+| 工具定义/参数 DSL/输出/展示 | `dsh-tools/lib/types/schema.d.ts`（`DefineToolOptions`）、`dsh-tools/lib/types/index.d.ts`（`ToolDefinition`、`ToolResult`）、实现 `dsh-tools/lib/index.js`（`register()`、`defineTool()`、`schemaOf()`） |
+| `output.schema` 的 raw 子集 | `dsh-tools/lib/index.js` `assertSupportedJsonSchema()` / `checkSchemaNode()` |
+| 动态包沙箱 API | `dsh-cordis-host-runner/lib/index.js`（`sandboxDefineTool`、`HOST_BUILTIN_INSPECTION` 的 `harness` 三方法） |
+| 客户端 bundle 契约 | `dsh-client-modules/lib/types/client/manifest.d.ts`（`ClientBundleRegistration`）；`dsh-client-modules/README.md` |
+| 客户端占位 | `dsh-client-ui-layout` / `dsh-client-ui-*` 客户端产物里的 slot 契约（`ctx.slots.inject` + `ctx.slots.register({name,id,order,label})`） |
+| systemPrompt section | `dsh-system-prompt/lib/types/index.d.ts`（`PromptSection`、`SystemPrompt.section()`、`getSectionOrder()`） |
+| package.json.dsh | `dsh-package-manifest/lib/types/types.d.ts`（`DshManifest`） |
+| 后台任务 | `dsh-jobs/lib/types/index.d.ts`（`JobRegistry.start(spec: JobStart)`、`JobHooks`） |
+
+逐项核对的结论（无差异）：工具名/描述/参数面、`inject` 服务名（`tools`/`systemPrompt`/`webServer`/`slots`/`timer`）、
+slot 名与注册形状、`systemPrompt.section({name,order,text})`、`dsh.bundle.patch` + `dsh.client.platform`、`exports["./client"]`
+自注册 bundle、`jobs.start({kind,label,owner,run})`、`window.__ModuleLoader__.load({id,factory})` 均与现行契约一致；
+已修正的偏离见 `dsh/__tests__/openarch-dsh-contract.test.ts` 的文件头说明。
+
 ## 挂载方式
 
 > **Agent 预设已移除**：`openarch-agent-install --target dsh --preset` 不再可用（DSH 预设尚未稳定）。当前唯一正式路径是下面的 Bundle 看板；动态 Cordis 包仅用于本会话内验证/原型。
 
 ### 1. 动态 Cordis 包（本会话内验证 / 原型）
 
-- Host：`cordis_define` 的 `code.host` 使用本目录 Host 模块的函数体（动态运行环境无 `node:fs`/`child_process`，需把文件访问与进程执行改为 `ctx.get("fs")` + `ctx.get("subprocess")` 服务；工具注册必须经 `harness.defineTool(...)` 包装）。
+- Host：`cordis_define` 的 `code.host` 使用本目录 Host 模块的函数体（动态运行环境无 `node:fs`/`child_process`，需把文件访问与进程执行改为 `ctx.get("fs")` + `ctx.get("subprocess")` 服务）。
+- **工具注册必须经 `harness.defineTool(...)` / `harness.registerTool(ctx, tool)`**：沙箱里的 `ctx.tools.register` 只接受 `harness.defineTool` 打标过的定义，直接把静态构造器的返回值塞进去会被 `dynamic tool registration must use a tool returned by harness.defineTool(...)` 拒绝。构造器给的是**数据面**（name/description/parameters/output/execute），在沙箱里把 `parameters` 原样交给 `harness.defineTool` 即可——它接受同一份 `ParameterSchemaSpec`，并且兼容旧包壳形态（内部会 unwrap）。
 - Client：`code.client` 取 `client/openarch-dashboard.mjs` 函数体、去掉末尾 `export` 行即可（文件无 import，仅用 Builtin `React`/`host`/`styles`）。
 - **动态 Client 半没有网络（`fetch` 不可用）**：数据通道必须是包内私有 RPC——同一动态包必须包含一个 Host 半注册
   `harness.handle("openarch/governance-state", ...)`，Client 用 `host.call` 直连；fetch 回退只对静态打包（真实浏览器环境）有效。2026-08 实测：client-only 包 + fetch 回退会以 “fetch is not available in a dynamic client half” 失败。

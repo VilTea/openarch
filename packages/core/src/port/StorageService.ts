@@ -7,7 +7,7 @@ import type { MRDiagnosis } from "../domain/mrDiagnosis";
 import type { HistoryImpactFact } from "../domain/impactCalibration";
 import type { StructuralCalibrationState } from "../domain/calibration";
 import type { HistoryCompactionResult } from "../domain/historyRetention";
-import type { Language } from "../domain/ast";
+import type { Language, MaxFuncBranchOwner } from "../domain/ast";
 
 /** 单文件指标（per-file JSON 内容） */
 export interface IndexEntry {
@@ -33,8 +33,13 @@ export interface IndexEntry {
   /** 声明行（类型/接口/结构体头 + 函数签名行）：CRL loc 因子按实现行口径排除（校准 2026-08-08）。 */
   readonly declarationLoc?: number;
   readonly maxFuncBranch?: number;                    // 单函数最大加权分支数（卫语句/case 可为小数）
+  /** 最大加权分支的归属与形态（report-only）：让 WARN 能说出是哪个函数、权重由什么构成。 */
+  readonly maxFuncBranchOwner?: MaxFuncBranchOwner;
   readonly externalPassthroughCalls?: number;          // 已确认的直接非本地调用；成员/动态调用不计入
   readonly connectedness?: number;                     // 函数连通度（提取helper不罚）
+  /** 内部调用图形状的伴读值：单调用点助手占比（report-only，与 connectedness 同源、同族）。
+   *  不可判定（文件内无调用点）时不写入，而不是写 0。 */
+  readonly singleCallSiteRatio?: number;
   /** 文件内容身份（sha256）：增量扫描变更检测基准（校准 2026-08-08）。 */
   readonly contentSha256?: string;
   /** Current and preceding raw crl_local inputs; hashes avoid storing a second metric snapshot. */
@@ -65,6 +70,13 @@ export interface BaselineIndex {
     readonly maxDepthUsed?: number;
     readonly performanceMode?: string;
     readonly analysisScope?: { readonly fingerprint: string; readonly complete: boolean };
+    /**
+     * 语言形状声明的身份指纹（§6/Q2，2026-09-27）——**可选、非破坏追加**：
+     * 未声明 shapes 的项目不写该字段（旧 baseline 也没有），读取方按 `""`（未声明）处理 ⇒
+     * 现有项目零迁移。声明了 shapes 才写入，由唯一权威
+     * `application/baselineCompatibility` 同时消费 scope 与 shapes。
+     */
+    readonly shapesFingerprint?: string;
     readonly metricContractVersion?: string;
     /** Observed P95 profiles plus the explicitly sealed profile used by the gate. */
     readonly calibration?: StructuralCalibrationState;

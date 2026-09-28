@@ -18,7 +18,11 @@ export interface MetricDefinition extends CelVariableDefinition {
 
 // v4 persists parser-confirmed file language so structural policy populations
 // cannot reclassify entries from extension or directory heuristics at read time.
-export const METRIC_CONTRACT_VERSION = "metric-contract-v4";
+// v5 校准 2026-09-25：卫语句判据收敛为唯一权威实现（StructuralFacts.createGuardClauseDetector），
+// 带/不带花括号的等价形态不再产生不同权重。此前 TS/JS 的带花括号卫语句被误记为普通分支
+// （children[0] 读到 `{`），Java 的无花括号卫语句同样被误记 —— 所以 v5 会整体下调
+// maxFuncBranch 与 weightedBranchTotal，旧 baseline 必须 scan --rebuild 并重新校准 P95。
+export const METRIC_CONTRACT_VERSION = "metric-contract-v5";
 
 /**
  * CEL gate 变量的完整 authority（校准 2026-08-15）：
@@ -81,3 +85,39 @@ export const unsupportedCelVariablesInCondition = (condition: string): readonly 
     .filter(({ id, definition }) => !definition || (definition.role !== "gate" && definition.role !== "classifier"))
     .map(({ id }) => id)
     .sort();
+
+export interface NumericGateThreshold {
+  /** 条件里与该数字比较的 gate 指标。 */
+  readonly metricId: string;
+  /** 统一为「指标 <comparison> 阈值」的方向（反向写法会被翻转）。 */
+  readonly comparison: ">" | ">=" | "<" | "<=";
+  readonly threshold: number;
+}
+
+const FLIPPED: Readonly<Record<string, NumericGateThreshold["comparison"]>> =
+  { ">": "<", ">=": "<=", "<": ">", "<=": ">=" };
+
+/**
+ * 从 gate 条件里读出「gate 指标 vs 数字字面量」的阈值（校准 2026-09-25）。
+ *
+ * 存在的理由：项目把校准依据写成注释（"设为 >6 容忍约 5%"），而指标与总体演进后
+ * 注释不再成立、报告也不提示——监督者只能靠人肉复算。这里与 `metricIdsInCondition`
+ * 同源（同一份 authority、同一次去字符串处理），不引入第二套 CEL 解析：
+ * 只识别 `<metric> <cmp> <number>` 及其反向形式 `5 < max_func_branch`。
+ * 复合条件（`path_class == "domain" && max_func_branch > 5`）同样适用：阈值仍然唯一。
+ */
+export const numericGateThresholdsInCondition = (condition: string): readonly NumericGateThreshold[] => {
+  const source = condition.replace(/"[^"]*"|'[^']*'/g, " ");
+  const found: NumericGateThreshold[] = [];
+  const push = (metricId: string, comparison: string, literal: string, flipped = false): void => {
+    if (metricDefinition(metricId)?.role !== "gate") return;
+    const threshold = Number(literal);
+    if (!Number.isFinite(threshold)) return;
+    const direction = (flipped ? FLIPPED[comparison] : comparison) as NumericGateThreshold["comparison"];
+    if (!direction) return;
+    found.push({ metricId, comparison: direction, threshold });
+  };
+  for (const match of source.matchAll(/([A-Za-z_]\w*)\s*(>=|<=|>|<)\s*(\d+(?:\.\d+)?)/g)) push(match[1]!, match[2]!, match[3]!);
+  for (const match of source.matchAll(/(\d+(?:\.\d+)?)\s*(>=|<=|>|<)\s*([A-Za-z_]\w*)/g)) push(match[3]!, match[2]!, match[1]!, true);
+  return found;
+};

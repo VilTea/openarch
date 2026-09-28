@@ -19,6 +19,27 @@ const legacySkillRoots = [
   resolve(repositoryRoot, "packages", "openarch-plugin", "skills", "openarch"),
 ];
 
+/** 同一 locale 的四个 SKILL.md 发布位置：开发源、runtime 资产、packaged 资产、插件发现目录。 */
+const skillCopies = (locale: "zh" | "en"): readonly string[] => [
+  resolve(developmentSkillRoots[locale], "SKILL.md"),
+  resolve(runtimeSkillRoot, locale, "SKILL.md"),
+  resolve(packagedSkillRoot, locale, "SKILL.md"),
+  resolve(pluginDiscoverySkillRoots[locale], "SKILL.md"),
+];
+
+const gateResponseCopies = (locale: "zh" | "en"): readonly string[] =>
+  skillCopies(locale).map((path) => resolve(dirname(path), "gate-response.md"));
+
+/** 取 markdown 中一个二级小节（含标题），逐字用于跨副本比对。 */
+const section = (markdown: string, heading: string): string => {
+  const lines = markdown.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim() === heading);
+  if (start < 0) throw new Error(`section not found: ${heading}`);
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => line.startsWith("## "));
+  return [lines[start], ...(end < 0 ? rest : rest.slice(0, end))].join("\n").trim();
+};
+
 const filesUnder = (root: string, directory = root): readonly string[] => readdirSync(directory, { withFileTypes: true })
   .flatMap((entry) => entry.isDirectory()
     ? filesUnder(root, resolve(directory, entry.name))
@@ -143,6 +164,32 @@ describe.skipIf(!developmentTreePresent)("published OpenArch skill assets", () =
       expect(map).toContain(isZh ? "导航" : "navigation");
       expect(map).not.toContain("I_push =");
       expect(map).not.toContain("λ_ast");
+    }
+  });
+
+  // 认知点原则：WARN 语义只有一个权威陈述，四份 SKILL.md 的该小节必须逐字一致，不能再次漂移。
+  it("keeps the quality-optimization decision gate byte-identical across every SKILL.md copy", () => {
+    for (const locale of ["zh", "en"] as const) {
+      const heading = locale === "zh" ? "## 质量优化决策门" : "## Quality Optimization Decision Gate";
+      const sections = skillCopies(locale).map((path) => section(readFileSync(path, "utf8"), heading));
+      expect(new Set(sections).size, `${locale}: ${skillCopies(locale).join(", ")}`).toBe(1);
+      const authoritative = sections[0];
+      // 强制只覆盖显式约束（rules_block/hook/BLOCK）；WARN 一旦被写成整改要求即回归缺陷。
+      expect(authoritative).toContain(locale === "zh" ? "自动执行并汇报" : "execute and report automatically");
+      expect(authoritative).toContain("`rules_block`");
+      expect(authoritative).toContain(locale === "zh" ? "不是整改指令" : "not mandates");
+      expect(authoritative).not.toContain(locale === "zh" ? "门禁/规则强制要求的修复" : "Gate/rule-mandated repairs");
+    }
+  });
+
+  // gate-response.md 是 WARN 语义在技能侧的权威正文；四份副本必须同源。
+  it("keeps the gate-response WARN section byte-identical across every copy", () => {
+    for (const locale of ["zh", "en"] as const) {
+      const sections = gateResponseCopies(locale).map((path) => section(readFileSync(path, "utf8"), "## `WARN`"));
+      expect(new Set(sections).size, `${locale}: ${gateResponseCopies(locale).join(", ")}`).toBe(1);
+      const authoritative = sections[0];
+      expect(authoritative).toContain(locale === "zh" ? "不是必须执行的整改指令" : "is not a mandate");
+      expect(authoritative).toContain(locale === "zh" ? "经配置审计重新校准" : "audited config change");
     }
   });
 });

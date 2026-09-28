@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { collectGovernanceState, DEFAULTS } from "../host/openarch-state.mjs";
+import { projectTestGovernance } from "../host/openarch-tools-test.mjs";
 
 const dshRoot = fileURLToPath(new URL("../", import.meta.url));
 const schemaDir = join(dshRoot, "schema");
@@ -274,6 +275,48 @@ describe("openarch-schemas: GovernanceState 契约", () => {
     const state = await collectGovernanceState({ ...DEFAULTS, cwd: freshTmpDir(), execFileAsync: fakeExec("{}") });
     expect(state.initialized).toBe(false);
     assertValid(state, stateSchema);
+  });
+
+  /**
+   * D-G15 的防漂移测试：插件投影新增了 `decision.kinds`/`findings` 与顶层 `testCaseSpans`。
+   * `testGovernance` 在 state schema 里是 `additionalProperties: false` ⇒ **新增顶层字段必须
+   * 同步 schema**，否则 DSH 宿主会在校验时拒绝整份状态（本次自查正是靠这条发现的）。
+   *
+   * D-G18 复查：`unbaselined` 标记与 `decision.unbaselinedFindingCount` 都加在**开放的
+   * `decision` 内**（`additionalProperties: true`），因此**不需要**动 schema、也不会 bump 契约；
+   * 本用例显式带上未入 baseline 的 finding，防止将来有人把它们挪到顶层而 schema 没跟上。
+   */
+  it("插件 test 投影（含逐条 finding、unbaselined 标记与 testCaseSpans）通过 state schema 的 testGovernance 子模式", () => {
+    const projection = projectTestGovernance({
+      schema: "test-governance-json-v1",
+      verdict: "PASS",
+      decision: {
+        verdict: "PASS",
+        findingCount: 2,
+        findings: [
+          { file: "a.test.ts", case: "x", kind: "missing_assertion", line: 12, confidence: "low", evidence: ["no assertion"] },
+          { file: "b.test.ts", case: "y", kind: "empty_test_body", line: 7, confidence: "low", evidence: ["empty"], unbaselined: true },
+        ],
+        triggered: [],
+        errors: [],
+      },
+      collection: {
+        coverage: { status: "available", reasons: [], testFiles: 2, unbaselinedTestFiles: 0, providerHandledTestFiles: 2, unrecognizedTestFiles: 0, failedTestFiles: 0 },
+        providers: [], summaries: [], testCaseSpans: { availability: "available" },
+      },
+    });
+    // `oneOf[1].properties.testGovernance` 是 `$ref`，实体定义在 `$defs.testGovernance`
+    // （自包含、不含 $ref），因此直接对它校验。
+    const subSchema = stateSchema.$defs.testGovernance;
+    assertValid(JSON.parse(JSON.stringify(projection)), subSchema);
+    expect(projection.decision.kinds).toEqual({ missing_assertion: 1, empty_test_body: 1 });
+    expect(projection.decision.findings[1]).toMatchObject({ file: "b.test.ts", unbaselined: true });
+    expect(projection.decision.unbaselinedFindingCount).toBe(1);
+    // 新增信息全部留在开放的 `decision` 内：顶层键集未变 ⇒ state schema 与报告面预算都不用动。
+    expect(Object.keys(projection).sort()).toEqual(
+      ["bloat", "coverage", "decision", "providers", "schema", "suggestedAdapters", "summaries", "testCaseSpans", "verdict"],
+    );
+    expect(projection.testCaseSpans).toEqual({ availability: "available", reason: null });
   });
 
   it("state schema 的初始化分支与生产字段集同步", () => {

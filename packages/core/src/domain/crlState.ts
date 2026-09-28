@@ -34,6 +34,8 @@ export interface CRLStateInput {
   readonly declarationLoc?: number;
   readonly alphaStruct: number;
   readonly connectedness?: number;
+  /** 内部调用图形状的伴读值：单调用点助手占比（与 connectedness 同源，report-only，不参与任何求和）。 */
+  readonly singleCallSiteRatio?: number;
   readonly externalPassthroughCalls?: number;
   /** 透传调用数回退（旧 parser/存量条目）；normalizeLocalBurdenInputs 统一回退。 */
   readonly passthroughCalls?: number;
@@ -76,6 +78,14 @@ export interface CRLStateBreakdown {
   readonly moduleShape: number;
   readonly composite: number;
   readonly components: CRLStateComponents;
+  /**
+   * 单调用点助手占比：`moduleShape` 的**伴读值**，不是新的加权分量。
+   *
+   * 刻意不加 `CRLStateWeights` 维度、不加 `P95Values` 槽位：那会改 `calibrationWeightsFingerprint`
+   * 并作废已封存校准，而它是"解释"不是"裁决"。`null` 表示不可判定（文件内无调用点或旧分片无此事实），
+   * 渲染层必须显示为不可用而不是 0。
+   */
+  readonly singleCallSiteRatio: number | null;
 }
 
 export const computeCRLStateBreakdown = (
@@ -96,7 +106,10 @@ export const computeCRLStateBreakdown = (
   };
   const localBurden = components.branch + components.nesting + components.loc + components.externalPassthrough;
   const composite = localBurden + components.alpha + components.disconnectedness;
-  return { localBurden, exposure: m.alphaStruct, moduleShape: 1 - conn, composite, components };
+  return {
+    localBurden, exposure: m.alphaStruct, moduleShape: 1 - conn, composite, components,
+    singleCallSiteRatio: m.singleCallSiteRatio ?? null,
+  };
 };
 
 /** @deprecated Gate 应使用 computeCRLStateBreakdown().localBurden。 */

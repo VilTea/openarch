@@ -59,13 +59,19 @@ export const analysisRecoveryHint = (error: unknown, locale: Locale = "en"): str
 };
 
 export const printAnalysisError = (error: unknown, locale: Locale = "en"): void => {
-  const tagged = error as { _tag?: string; path?: string; cause?: unknown; message?: string } | null | undefined;
+  const tagged = error as { _tag?: string; path?: string; cause?: unknown; reason?: unknown; message?: string } | null | undefined;
   const tag = tagged?._tag ?? "UnknownError";
   const path = tagged?.path ? ` ${tagged.path}` : "";
   // CoordinationError carries a human-readable detail in message; prefer it over the raw cause category.
+  // 兜底顺序（2026-09-27 独立复验）：`cause` → `reason` → `message`。手写标记错误（如
+  // `GateConfigurationError`）把人话放在 `reason`；`Effect.fail(new Error("…"))` 只有 `message`。
+  // 此前只读 `cause`，于是非法配置在 `scan` 里只打印 `分析失败 [UnknownError]`、**原因整句丢失**。
+  const causeText = errorCauseText(tagged?.cause);
   const detail = tag === "CoordinationError" && typeof tagged?.message === "string" && tagged.message
     ? tagged.message
-    : errorCauseText(tagged?.cause);
+    : causeText || (typeof tagged?.reason === "string"
+      ? tagged.reason
+      : typeof tagged?.message === "string" ? tagged.message : "");
   const failure = message(locale, "analysis.failed", { tag, path, cause: detail ? `: ${detail}` : "" });
   const recovery = analysisRecoveryHint(error, locale);
   console.error(recovery ? `${failure}\n${recovery}` : failure);

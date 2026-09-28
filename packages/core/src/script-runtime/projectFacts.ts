@@ -98,6 +98,7 @@ const metricFact = (path: string, entry: IndexEntry): StructureMetricFact => ({
   weightedBranchTotal: entry.weightedBranchTotal,
   topLevelWeightedBranch: entry.topLevelWeightedBranch,
   maxFuncBranch: entry.maxFuncBranch,
+  maxFuncBranchOwner: entry.maxFuncBranchOwner,
   nestingDepth: entry.nestingDepth,
   loc: entry.loc,
   externalPassthroughCalls: entry.externalPassthroughCalls,

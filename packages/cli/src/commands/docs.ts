@@ -55,9 +55,25 @@ const resolveCheckMode = (unfilledOnly: boolean, similarOnly: boolean): DocsChec
   return undefined;
 };
 
+/** 判定人口披露（report-only）。
+ *
+ *  为什么需要它：未填写判定的**人口门槛**是 `DocumentFill` 的 `RECORD_ORIGIN` 来源行，
+ *  只有带该来源行的文档才进入判定。人口收窄时报告只显示"未填写 0"——那不等于"没有
+ *  未填写的记录"（「不可测 ≠ 0」）。本条披露把"判定门槛是什么、判定了多少"写进报告，
+ *  不改退出码、不新增阻断。
+ *
+ *  为什么判定的**篇数**是"不可枚举"而不是某个数字：判据只有"来源行 + 必填标题结构"
+ *  两条事实，"带来源行但没有出现任何必填标题"的文档在实现上无从枚举（手写来源与被截断
+ *  的记录无法区分）。如实报告这个边界，不编造一个不可靠的数字。 */
+const printPopulationDisclosure = (locale: "zh" | "en"): void => {
+  console.log(message(locale, "docs.populationThreshold"));
+  console.log(message(locale, "docs.populationUnknown"));
+};
+
 const printSimilarityOnly = (result: DocumentCheckReport, locale: "zh" | "en"): void => {
   console.log(message(locale, "docs.heading"));
   console.log(message(locale, "docs.scope", { scope: result.scopeId }));
+  printPopulationDisclosure(locale);
   if (result.candidates.length === 0) {
     console.log(message(locale, "docs.noCandidates"));
     return;
@@ -98,6 +114,7 @@ const print = (result: DocumentCheckReport, root: string, locale: "zh" | "en"): 
     return;
   }
   console.log(message(locale, "docs.indexed", { indexed: result.indexed, updated: result.updated }));
+  printPopulationDisclosure(locale);
   if (result.unfilled.length > 0) {
     console.log(message(locale, "docs.unfilled", { count: result.unfilled.length }));
     for (const path of result.unfilled) console.log(message(locale, "docs.unfilledEntry", { path }));

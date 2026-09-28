@@ -5,12 +5,18 @@
 /**
  * 把 TaggedError 的 _tag 映射到 CLI 退出码。
  *
- * | exit | 含义                                         |
- * |------|----------------------------------------------|
- * | 0    | PASS / hook 降级（LockTimeout，Step 2）      |
- * | 1    | WARN（--strict 升级，Step 2）                |
- * | 2    | BLOCK（Tier-1 红线，Step 2）                 |
- * | 3    | 内部错误（parse / CEL / IO / schema 失败）   |
+ * 本函数只负责**错误**那一半：未识别的错误一律 fail-closed 到 `3`（因此配置类错误
+ * ——如 `GateConfigurationError`——与解析/IO/schema 失败同为 `3`，不会退化成别的码）。
+ * 裁决那一半（`PASS`/`WARN`/`BLOCK` → `0`/`1`/`2`）在 gate / test / anti-patterns 命令里产生。
+ *
+ * | exit | 含义                                                                    |
+ * |------|-------------------------------------------------------------------------|
+ * | 0    | PASS / 无待调查信号 / hook 降级（LockTimeout，Step 2）                   |
+ * | 1    | WARN（已声明策略触发）、配置审计 drift、review/diff 的待解释事实          |
+ * | 2    | BLOCK（已声明策略强制）                                                  |
+ * | 3    | **事实不可用或配置/环境错误**：`UNAVAILABLE`（baseline 缺失、范围/形状身份不兼容、配置不可用）与 parse/CEL/IO/schema 失败 |
+ *
+ * 该映射同时被发行版 Skill 的 `gate-response.md`（退出码一节）陈述；改动这里必须同步那一节。
  */
 export const exitCodeFromError = (err: unknown): number => {
   if (err instanceof Error && err.name === "CoordinationError") return 3;

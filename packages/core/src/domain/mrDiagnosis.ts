@@ -35,6 +35,8 @@ export interface MRDiagnosis {
   readonly beforeSource: MRBeforeSource;
   readonly localBurden: MRLocalBurdenDiagnosis;
   readonly exposure: MRExposureDiagnosis;
+  /** 认知点形态：并列呈现，不进入 D_MR 数值，不与局部负担互相抵消。 */
+  readonly shape: MRShapeDiagnosis;
 }
 
 export interface MRLocalMetricsInput {
@@ -44,6 +46,37 @@ export interface MRLocalMetricsInput {
   readonly loc?: number;
   readonly externalPassthroughCalls?: number;
   readonly passthroughCalls?: number;
+  /** 认知点形态输入（report-only），不参与 localBurden 求和。 */
+  readonly connectedness?: number;
+  readonly functionCount?: number;
+  /** 单调用点助手占比（与 connectedness 同源的内部调用图形状投影）。 */
+  readonly singleCallSiteRatio?: number;
+}
+
+/**
+ * 认知点形态（report-only）：**不并入 `localBurden` 的恶化/改善求和**，只是并列呈现。
+ *
+ * 存在理由（校准 2026-09-25）：机械分解可以让 `maxFuncBranch` 下降、
+ * gate 变绿，同时让文件更碎（连通度下降）并新增只有一个调用点的助手。
+ * 认知点原则说“新增抽象但只有 1 个调用者通常是净增加”，
+ * 因此这两项代价必须在同一份变更诊断里可见，而不是留给使用方自己发现。
+ * 缺失一律为 `null`，绝不用 0 冒充。
+ */
+export interface MRShapeDiagnosis {
+  readonly connectednessBefore: number | null;
+  readonly connectednessAfter: number | null;
+  /** `1 - connectedness` 的变化：> 0 表示文件更碎（与 gate 的 `moduleShape` 同向）。 */
+  readonly moduleShapeDelta: number | null;
+  /** 函数/声明数量变化：> 0 表示新增了抽象。 */
+  readonly functionCountDelta: number | null;
+  /**
+   * 单调用点助手占比的变化：> 0 表示新增的抽象里"只用一次"的比例上升。
+   *
+   * 与 `moduleShapeDelta` 是**同一张内部调用图**的两个投影，必须并读：纯机械分解的典型形态是
+   * `moduleShapeDelta` 很小（助手都被主函数调用，图仍然连通）而本值明显上升——
+   * 只看连通性会把"一堆一次性助手"读成健康。
+   */
+  readonly singleCallSiteRatioDelta: number | null;
 }
 
 export interface MRDiagnosisInput {
@@ -109,11 +142,29 @@ export const computeMRDiagnosis = (input: MRDiagnosisInput): MRDiagnosis => {
   }
 
   const beforeAlpha = isComparable ? input.beforeAlpha ?? input.before?.alphaStruct : undefined;
+  // 形态事实同样只在 before 可比时给出差值；任一侧缺失即 null，不用 0 冒充。
+  const connectednessBefore = isComparable ? input.before?.connectedness ?? null : null;
+  const connectednessAfter = input.after.connectedness ?? null;
+  const functionCountBefore = isComparable ? input.before?.functionCount ?? null : null;
+  const functionCountAfter = input.after.functionCount ?? null;
+  // 单调用点占比：任一侧不可判定（null/缺失）就不给差值——"没有可判定的助手"不是 0。
+  const singleBefore = isComparable ? input.before?.singleCallSiteRatio ?? null : null;
+  const singleAfter = input.after.singleCallSiteRatio ?? null;
   return {
     file: input.file,
     scope: beforeSource === "introduced" ? "introduced" : beforeSource === "unavailable" ? "existing_unavailable" : "existing",
     beforeSource,
     localBurden: { metrics, deterioration, improvement },
     exposure: { before: beforeAlpha ?? null, after: input.after.alphaStruct, delta: beforeAlpha === undefined ? null : input.after.alphaStruct - beforeAlpha },
+    shape: {
+      connectednessBefore,
+      connectednessAfter,
+      moduleShapeDelta: connectednessBefore === null || connectednessAfter === null
+        ? null : (1 - connectednessAfter) - (1 - connectednessBefore),
+      functionCountDelta: functionCountBefore === null || functionCountAfter === null
+        ? null : functionCountAfter - functionCountBefore,
+      singleCallSiteRatioDelta: singleBefore === null || singleAfter === null
+        ? null : singleAfter - singleBefore,
+    },
   };
 };

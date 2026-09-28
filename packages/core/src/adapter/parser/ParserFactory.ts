@@ -28,6 +28,10 @@ export const TreeSitterParserLive = Layer.effect(
         strategyForFile(path)?.parseText(path, text) ?? unsupported(path, "parse text"),
       query: (path: string, pattern: string) =>
         strategyForFile(path)?.query(path, pattern) ?? unsupported(path, "query"),
+      // 契约面向可选：缺省时不静默返回空结果（见 port/ParserService 的缺省语义），
+      // 调用方必须显式回退到读盘的 query 或标记不可判定。
+      queryText: (path: string, text: string, pattern: string) =>
+        strategyForFile(path)?.queryText?.(path, text, pattern) ?? unsupported(path, "query text"),
       invocationBindings: (path: string) =>
         strategyForFile(path)?.invocationBindings?.(path) ?? unsupported(path, "invocation bindings"),
       supportedLanguages: Effect.succeed<readonly Language[]>(supportedLanguageIds()),

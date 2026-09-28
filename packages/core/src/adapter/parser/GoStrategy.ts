@@ -5,26 +5,23 @@ import { extractGoExportedFunctions } from "./ExportedSymbolExtractor";
 import { goModuleResolver } from "./GoModuleResolver";
 import { collectImportSources, type ImportSyntax } from "./ImportExtraction";
 import { resolveImportRefs } from "./ModuleResolver";
-import { collectStructuralFacts, type BranchClass, type LanguageStructuralSemantics } from "./StructuralFacts";
+import { collectStructuralFacts, createGuardClauseDetector, type BranchClass, type LanguageStructuralSemantics } from "./StructuralFacts";
 import { createTreeSitterRuntime } from "./TreeSitterRuntime";
 import { collectSemanticSurface, type DeclarationSyntax } from "./SemanticDeclarations";
 import { collectInvocationBindings, directTypeName, type InvocationBindingSemantics } from "./InvocationBindingFacts";
 
 const runtime = createTreeSitterRuntime("tree-sitter-go.wasm");
-const jumpTypes = new Set(["return_statement", "break_statement", "continue_statement", "goto_statement", "fallthrough_statement"]);
 const switchTypes = new Set(["expression_switch_statement", "type_switch_statement", "select_statement"]);
 const caseTypes = new Set(["expression_case", "type_case", "communication_case", "default_case"]);
 
-const isGuardClause = (ifNode: Node): boolean => {
-  const consequence = ifNode.childForFieldName?.("consequence");
-  if (!consequence) return false;
-  const statementList = consequence.namedChildren[0];
-  const firstStatement = statementList?.type === "statement_list" ? statementList.namedChildren[0] : statementList;
-  return firstStatement ? jumpTypes.has(firstStatement.type) : false;
-};
+// 卫语句判据来自共享实现：Go 的块 → statement_list → 语句 三层包裹由 containerTypes 声明。
+const guardClause = createGuardClauseDetector({
+  jumpTypes: new Set(["return_statement", "break_statement", "continue_statement", "goto_statement", "fallthrough_statement"]),
+  containerTypes: new Set(["block", "statement_list"]),
+});
 
 const classifyBranch = (node: Node): BranchClass | undefined => {
-  if (node.type === "if_statement") return isGuardClause(node) ? "guard" : "ordinary";
+  if (node.type === "if_statement") return guardClause(node) ? "guard" : "ordinary";
   if (switchTypes.has(node.type)) return "ordinary";
   if (caseTypes.has(node.type)) return "case";
   return undefined;
@@ -150,6 +147,7 @@ export const parseGoText = (filePath: string, text: string) =>
   });
 
 export const queryGo = runtime.query;
+export const queryTextGo = runtime.queryText;
 
 const goBindingSemantics: InvocationBindingSemantics = {
   scopeTypes: new Set(["function_declaration", "method_declaration", "func_literal"]),

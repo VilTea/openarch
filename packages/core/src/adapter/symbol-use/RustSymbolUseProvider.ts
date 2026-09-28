@@ -4,13 +4,31 @@ import { basename, delimiter, dirname, join } from "node:path";
 import type { SymbolUseProvider, SymbolUseProviderContext } from "../../symbol-use/provider";
 import { collectLspSymbolUse, type LspSymbolUseDefinition, type LspSymbolUseRuntime } from "./LspSymbolUse";
 
-const rustDefinition = {
+// `#[cfg]` 的权威判据是**属性语法节点**：注释里的 `// #[cfg(test)] kept for reference`
+// 不产生 `attribute_item`，因此不再伪造"超出校准范围"的证据（D6）。同一判据也在
+// `RustSemanticRelationProvider` 使用（同一概念一个权威入口）。
+export const RUST_CFG_RISK_QUERY = `(attribute_item (attribute (identifier) @name) (#eq? @name "cfg"))`;
+
+/**
+ * Rust 可见性语法事实（模块私有；对外只经 `rustDefinition.isInternal` 暴露，
+ * 规则本身只服务这一个判定点，不额外增加公开面）：
+ * - 无 `visibility_modifier` = 私有（crate 内）→ internal；
+ * - `pub(crate)` / `pub(super)` / `pub(self)` / `pub(in ...)` = 限定在 crate 内 → internal；
+ * - `pub` 才是对外可见面（`declared-public`）。
+ */
+const isInternalRustVisibility = (modifiers: string): boolean => {
+  const visibility = modifiers.replace(/\s+/g, "");
+  return visibility === "" || visibility.startsWith("pub(") ? true : visibility !== "pub";
+};
+
+export const rustDefinition = {
   language: "rust",
   providerId: "rust-analyzer-symbol-use",
   languageId: "rust",
-  declarationQueries: [{ kind: "function", pattern: "(function_item name: (identifier) @name)" }],
-  /** `pub(crate)`, `pub(super)` and `pub(in ...)` stay inside the analyzed crate. */
-  isInternal: (_name, source, startIndex) => !/\bpub\s+/.test(source.slice(Math.max(0, source.lastIndexOf("\n", startIndex) + 1), startIndex)),
+  // 修饰符由语法节点给出：`pub\nfn foo()` 的 `pub` 在同一 `function_item` 的
+  // `(visibility_modifier)` 里（D11 的 Rust 面）。
+  declarationQueries: [{ kind: "function", pattern: "(function_item (visibility_modifier)? @modifiers name: (identifier) @name)" }],
+  isInternal: ({ modifiers }) => isInternalRustVisibility(modifiers),
   launch: (executable) => ({ command: executable, args: [] }),
   requiresDiagnosticReadiness: true,
   // diagnostics 早于 find-references 完整索引（校准 2026-08-06）；用 workspace/symbol
@@ -32,7 +50,8 @@ const rustDefinition = {
   }],
   sourceRisks: [{
     reason: "Rust conditional compilation is outside the calibrated symbol-use scope",
-    detected: (source) => /#\s*\[\s*cfg(?:_|\s|\()/.test(source),
+    pattern: RUST_CFG_RISK_QUERY,
+    syntax: (matches) => matches.length > 0,
   }],
   workspaceScope: {
     declarationRisks: ({ files }) => files.some((file) => basename(file) === "build.rs")

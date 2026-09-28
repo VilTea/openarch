@@ -22,7 +22,7 @@ const pythonDefinition = {
   // Python data-model hooks are invoked by the runtime, so a repository
   // references query cannot establish that a __name__ declaration is unused.
   // Keep name-mangled __private implementations eligible for report-only facts.
-  isInternal: (name: string) => name.startsWith("_") && !/^__.*__$/.test(name),
+  isInternal: ({ name }) => name.startsWith("_") && !/^__.*__$/.test(name),
   isCandidate: (name: string) => !/^__.*__$/.test(name),
   workspaceScope: { repositoryReferenceRisks: pyrightWorkspaceRisks },
   // pyright returns an empty references result before its workspace index is

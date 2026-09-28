@@ -1,11 +1,24 @@
-import { CommandHandler, isAnalyzableSourceFile } from "../runtime";
-import { capabilityDriftSignal, evaluateProtectedPaths, loadProtectedPathPolicy } from "@openarch/core";
+import { Effect } from "effect";
+import { CommandHandler, isAnalyzableSourceFile, LiveLayer } from "../runtime";
+import { capabilityDriftSignal, evaluateProtectedPaths, loadProtectedPathPolicy, unbaselinedTestFiles } from "@openarch/core";
 import { auditCommand } from "./audit";
 import { diffCommand } from "./diff";
 import { gateCommand } from "./gate";
 import { testCommand } from "./test";
 import { gitChangePaths } from "../gitChangePaths";
 import { message } from "../i18n";
+
+/**
+ * report-only 提示：测试文件存在但尚未入 baseline（校准 2026-09-25）。
+ * 复用 `unbaselinedTestFiles`（与 `openarch test` 同一判据），只读事实、不改裁决、不跑 runner。
+ * 读取失败时保持沉默，不把"读不到基线"伪装成"没有未入基线的测试文件"。
+ */
+const unbaselinedTestHint = async (context: Parameters<CommandHandler>[1]): Promise<void> => {
+  const outcome = await Effect.runPromise(unbaselinedTestFiles().pipe(Effect.provide(LiveLayer), Effect.either));
+  if (outcome._tag === "Left" || outcome.right.length === 0) return;
+  console.log(message(context.locale, "check.unbaselinedTestFiles", { count: String(outcome.right.length) }));
+  for (const path of outcome.right.slice(0, 5)) console.log(message(context.locale, "check.unbaselinedTestFile", { path }));
+};
 
 const combinedExit = (codes: readonly number[]): number =>
   codes.includes(3) ? 3 : codes.includes(2) ? 2 : codes.includes(1) ? 1 : 0;
@@ -93,7 +106,9 @@ export const checkCommand: CommandHandler = async (args, context) => {
     const impact = worktree && worktreeAnalyzable.length > 0
       ? await diffCommand([...diffArgs, ...worktreeAnalyzable], context)
       : staged || manualPaths
-        ? await diffCommand(diffArgs, context)
+        // N12：把上面已解析的**同一份** staged 变更集传进去，diff 不再 spawn 第二次
+        // （否则两段报告可能基于不同索引快照）。
+        ? await diffCommand(diffArgs, context, staged ? stagedPaths : undefined)
         : 0;
     // diff 无可分析文件（如只有 baseline 变更）时不阻断后续测试治理——测试治理是全量
     // 静态分析，不依赖 diff 上下文（心流修复 2026-08-08：--worktree --tests 曾因
@@ -106,5 +121,8 @@ export const checkCommand: CommandHandler = async (args, context) => {
     ...(tests ? [await testCommand(verbose ? ["--verbose"] : [], context)] : []),
     protectedPolicy.code,
   ];
+  // 新增测试文件未入 baseline 时给一条 report-only 提示（校准 2026-09-25）：
+  // 此前只有 `openarch test` 报 test_files_missing_from_baseline，不主动跑 test 就会漏掉。
+  if (report && !tests) await unbaselinedTestHint(context);
   return combinedExit(results);
 };

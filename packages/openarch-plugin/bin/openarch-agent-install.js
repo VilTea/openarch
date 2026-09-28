@@ -11,7 +11,16 @@ const valueFor = (name) => {
 
 const target = valueFor("--target");
 const requestedLocale = valueFor("--locale");
-const supportedTargets = new Set(["codex", "cursor", "opencode", "claude", "dsh"]);
+/**
+ * 目标清单必须与 core 的 `AGENT_SKILL_TARGETS` 一致（唯一权威）。
+ *
+ * 本 bin 刻意**不依赖** `@openarch/core`（插件包 `dependencies` 为空，要在 `npx` 安装前就能跑），
+ * 所以这里只能保留一份副本 —— 2026-09-27 复验证明这正是漏掉 `reasonix` 的原因
+ * （`--target reasonix` 直接 exit 2，而项目级 `openarch init --agent reasonix` 一直是支持的）。
+ * 副本由 `packages/cli/__tests__/unit/pluginInstaller.test.ts` 的"逐目标安装"守卫盯着：
+ * 任何一边增删目标，守卫立刻变红。
+ */
+const supportedTargets = new Set(["claude", "codex", "cursor", "opencode", "reasonix", "dsh"]);
 const systemLocale = Intl.DateTimeFormat().resolvedOptions().locale.toLowerCase().startsWith("zh") ? "zh" : "en";
 const locale = requestedLocale ?? systemLocale;
 
@@ -21,17 +30,20 @@ if (process.argv.includes("--preset")) {
 }
 
 if (!target || !supportedTargets.has(target) || !["zh", "en"].includes(locale) || process.argv.includes("--scope")) {
-  console.error("Usage: openarch-agent-install --target <codex|cursor|opencode|claude|dsh> [--locale <zh|en>]");
+  console.error("Usage: openarch-agent-install --target <claude|codex|cursor|opencode|reasonix|dsh> [--locale <zh|en>]");
   process.exit(2);
 }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const skill = resolve(root, "assets", "agent-skills", "openarch", "locales", locale);
 const userRoots = {
+  claude: resolve(homedir(), ".claude"),
   codex: process.env.CODEX_HOME ?? resolve(homedir(), ".codex"),
   cursor: resolve(homedir(), ".cursor"),
   opencode: resolve(homedir(), ".config", "opencode"),
-  claude: resolve(homedir(), ".claude"),
+  // 与项目级 `targetRoots.reasonix = ".reasonix/skills"`（core agentSkill）和 CLI 的
+  // `detectHarness()`（`REASONIX_SESSION`/`REASONIX_HOME`）同一约定。
+  reasonix: process.env.REASONIX_HOME ?? resolve(homedir(), ".reasonix"),
   dsh: process.env.DSH_HOME ?? resolve(homedir(), ".dsh"),
 };
 

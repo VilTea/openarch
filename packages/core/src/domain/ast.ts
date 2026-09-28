@@ -44,11 +44,48 @@ export interface SemanticSurface {
   readonly unsupportedTopLevel: readonly string[];
 }
 
+/**
+ * 单函数最大加权分支的“归属与形态”（report-only 事实）。
+ *
+ * 存在理由（校准 2026-09-25）：`maxFuncBranch` 只持久化一个标量，于是 WARN 明细
+ * 物理上无法说出是哪个函数越界，Agent 只能盲拆；同时字段名假装它是“分支个数”，
+ * 而取值是 0.3/1.0 的加权和，使用方只能靠自写脚本复刻口径（历史见
+ * 内部经验记录）。
+ * 这里把“归属 + 权重分解”作为同一份事实一次持久化，使
+ * `名称 / 行号 / 加权值 / 普通 if / 卫语句 / case` 只有一个权威来源。
+ */
+export interface MaxFuncBranchOwner {
+  readonly name: string;
+  /** 1-based 声明行号。 */
+  readonly line?: number;
+  /** 加权分支值（与 maxFuncBranch 同口径）。 */
+  readonly weighted: number;
+  /** 普通 if/switch 计数（权重 1.0）。 */
+  readonly ordinaryIf: number;
+  /** 卫语句计数（权重 0.3）。 */
+  readonly guardIf: number;
+  /** switch/match case 计数（权重 0.3）。 */
+  readonly caseCount: number;
+}
+
 /** 函数级指标（in-memory only，不持久化。per-file JSON 只存 cohesion 标量） */
 export interface FunctionInfo {
   readonly name: string;
+  /** 1-based 声明行号（结构性事实，供报告定位与归属计算）。 */
+  readonly line?: number;
   readonly branchCount: number;
   readonly calls: readonly string[];   // 该函数调用的函数名（去重）
+  /**
+   * 该函数体内**每个 callee 的原始调用点个数**（未去重，与 `calls` 同一次遍历产出；
+   * 键集合与 `calls` 相同）。存在理由：`calls` 去重后只能回答"调用了哪些函数"，
+   * 回答不了"某个助手被调了几次"——而"单调用点助手"正是内部调用图的形态事实之一
+   * （见 `domain/cohesion.ts`）。刻意不拆成"总次数"再按 callee 均摊：那会编造分布。
+   */
+  readonly callCounts?: Readonly<Record<string, number>>;
+  /** 形态分解：说明 branchCount 由什么构成，避免“分支个数”的误读。 */
+  readonly ordinaryBranches?: number;
+  readonly guardBranches?: number;
+  readonly caseBranches?: number;
 }
 
 /** 单个源文件解析后的 AST 指标快照（值对象，immutable） */

@@ -135,15 +135,25 @@ const withQualifiedNames = (declarations: readonly JavaTypeDeclaration[]): reado
   return qualified;
 };
 
+/** 声明收集（pipeline 已把整批源码读进 `sources`）：
+ *  - `packageNameOf` 直接用 pipeline 的文本，不再自己 `readFileSync`；
+ *  - 声明查询用 `queryText` 复用同一份文本，而不是让 port 按路径再读一次盘。
+ *  两者都在同一次运行内、同一份内容上求值，因此与"各自读盘"逐字等价（审计 §4.2）。
+ *  `queryText` 缺省时按 `ParserService` 的缺省语义回退到读盘的 `query(path, pattern)`
+ *  ——回退路径是同一个 pattern 与同一份 grammar，不是第二套判定（fail-closed）。 */
 const typeDeclarations = async (
   parser: ParserService,
   files: readonly string[],
+  sources: ReadonlyMap<string, string>,
 ): Promise<readonly JavaTypeDeclaration[]> => {
   const declarations: JavaTypeDeclaration[] = [];
   for (const file of files) {
-    const source = readFileSync(file, "utf8");
+    const source = sources.get(file) ?? readFileSync(file, "utf8");
     const packageName = packageNameOf(source);
-    const matches = await Effect.runPromise(parser.query(file, DECLARATION_QUERY).pipe(Effect.catchAll(() => Effect.succeed([]))));
+    const query = parser.queryText
+      ? parser.queryText(file, source, DECLARATION_QUERY)
+      : parser.query(file, DECLARATION_QUERY);
+    const matches = await Effect.runPromise(query.pipe(Effect.catchAll(() => Effect.succeed([]))));
     for (const match of matches) {
       const name = captureOf(match, "name");
       const declaration = declarationNodeOf(match);

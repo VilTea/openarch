@@ -38,6 +38,23 @@ describe("JavaStrategy", () => {
     ]));
   }));
 
+  it("无花括号的卫语句与带花括号形态同权（0.1.5 只识别后者）", () => withTemporaryDirectory("parse-java-guard-form", async (dir) => {
+    const sourceRoot = join(dir, "src", "main", "java", "demo");
+    mkdirSync(sourceRoot, { recursive: true });
+    writeFileSync(join(dir, "pom.xml"), "<project />");
+    const braced = join(sourceRoot, "Braced.java");
+    const bare = join(sourceRoot, "Bare.java");
+    writeFileSync(braced, "package demo; public class Braced { void run(String v) { if (v == null) { return; } } }");
+    writeFileSync(bare, "package demo; public class Bare { void run(String v) { if (v == null) return; } }");
+    const [bracedAst, bareAst] = await Promise.all([
+      Effect.runPromise(parse(braced).pipe(Effect.provide(TreeSitterParserLive))),
+      Effect.runPromise(parse(bare).pipe(Effect.provide(TreeSitterParserLive))),
+    ]);
+    // 卫语句 0.3：两种等价写法必须同值，否则“加花括号”就成了零语义收益的降分操作。
+    expect(bracedAst.maxFuncBranch).toBeCloseTo(0.3, 5);
+    expect(bareAst.maxFuncBranch).toBeCloseTo(0.3, 5);
+  }));
+
   it("extracts fully-qualified package references without import statements (JUnit-style)", () => withTemporaryDirectory("parse-java-fq", async (dir) => {
     const sourceRoot = join(dir, "src", "main", "java", "demo");
     mkdirSync(sourceRoot, { recursive: true });

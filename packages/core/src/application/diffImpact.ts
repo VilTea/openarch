@@ -18,6 +18,7 @@ import type { CRLStateWeights, P95Values } from "../domain/crlState";
 import { weightedBranchTotalOf } from "../domain/branchMetrics";
 import type { SemanticBeforeMetrics, SemanticBeforeState } from "./semanticDiff";
 import { projectBaselineEntry } from "./baselineEntry";
+import { computeInternalCallShape } from "../domain/cohesion";
 
 // ── 单文件冲击输入 / 输出 ──
 
@@ -100,6 +101,14 @@ export const computeFileImpact = (input: ImpactInput): ImpactOutput => {
     : beforeSource === "baseline"
       ? oldEntry ?? undefined
       : undefined;
+  const writeEntry = projectBaselineEntry({ ast, fileKind, inDegree: inDeg, alphaStruct: a, previous: oldEntry });
+  // `writeEntry` 已用同一权威算过内部调用图形状（`computeInternalCallShape`）：这里直接取它的投影，
+  // 不再为 D_MR 单独再算一次（同一概念一个入口）。
+  const afterShape = {
+    connectedness: writeEntry.connectedness,
+    functionCount: ast.functionCount,
+    ...(writeEntry.singleCallSiteRatio === undefined ? {} : { singleCallSiteRatio: writeEntry.singleCallSiteRatio }),
+  };
   const mrDetail = computeMRDiagnosis({
     file: ast.path,
     before: beforeMetrics,
@@ -109,14 +118,14 @@ export const computeFileImpact = (input: ImpactInput): ImpactOutput => {
       maxFuncBranch: ast.maxFuncBranch, branchCount: ast.branchCount,
       nestingDepth: ast.nestingDepth, loc: ast.loc,
       externalPassthroughCalls: ast.externalPassthroughCalls ?? ast.passthroughCalls,
+      // 认知点形态：与 baselineEntry 同源，只呈现不参与 D_MR 求和。
+      ...afterShape,
       alphaStruct: a,
     },
     p95: input.p95,
     weights: input.crlStateWeights,
   });
   const dMR = isProduction ? mrDetail.localBurden.deterioration : 0;
-
-  const writeEntry = projectBaselineEntry({ ast, fileKind, inDegree: inDeg, alphaStruct: a, previous: oldEntry });
 
   return {
     absPath, relPath, alphaStruct: a, deltaI: dI, severityBudget,

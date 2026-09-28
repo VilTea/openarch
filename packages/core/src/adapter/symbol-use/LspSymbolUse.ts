@@ -2,6 +2,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Effect } from "effect";
+import { ParseError } from "../../errors/errors";
 import type { Language } from "../../domain/ast";
 import type { QueryCapture, QueryMatch, ParserService } from "../../port/ParserService";
 import type { SymbolUseRequest } from "../../port/SymbolUseService";
@@ -33,10 +34,35 @@ export interface LspCoverageRisk {
   readonly detected: (matches: readonly QueryMatch[]) => boolean;
 }
 
-export interface LspSourceRisk {
-  readonly reason: string;
-  readonly detected: (source: string) => boolean;
+/** 声明候选的可见性输入：修饰符文本来自**语法节点**（如 `(modifiers)` / `(visibility_modifier)`），
+ *  不是"名字同行之前的源码切片"——后者在修饰符与名字分行时（`public\nvoid foo()`）会漏判公开面。
+ *  `source` / `startIndex` 是声明名在源码中的位置，**供 `LspSymbolUseDefinition.isCandidate`
+ *  使用**（按名字/位置过滤候选）；`isInternal` 只读 `modifiers`。 */
+export interface LspDeclarationVisibility {
+  readonly name: string;
+  /** 语法节点给出的修饰符/可见性文本；无修饰符时为空串。 */
+  readonly modifiers: string;
+  /** 声明名所在文件的源码文本，供 isCandidate 读取上下文。 */
+  readonly source: string;
+  /** 声明名的 0-based 源码偏移，供 isCandidate 定位。 */
+  readonly startIndex: number;
 }
+
+export interface LspSourceRisk {
+  readonly pattern: string;
+  readonly reason: string;
+  /**
+   * 只接收语法查询结果：风险证据必须来自语法节点，注释/字符串里的提及不产生节点。
+   * 这里刻意不接收整份源码文本——`node.text`/全文正则重建语言语义是设计契约
+   * （设计契约）禁止的路径。
+   */
+  readonly syntax: (matches: readonly QueryMatch[]) => boolean;
+}
+
+/** 取 `(comment) @comment` 捕获的每一行文本（Go build 约束/generated 标记按语言约定
+ *  必须位于注释首行，判定侧仍需行锚定；`#match?` 只有子串语义，不提供锚定）。 */
+export const commentLinesOf = (match: QueryMatch): readonly string[] =>
+  (match.captures.find((capture) => capture.name === "comment")?.text ?? "").split("\n");
 
 export interface LspWorkspaceScope {
   /**
@@ -61,7 +87,7 @@ export interface LspSymbolUseDefinition {
    */
   readonly candidateConcurrency?: number;
   /** Classifies a candidate as internal or declared-public after it is accepted. */
-  readonly isInternal: (name: string, source: string, startIndex: number) => boolean;
+  readonly isInternal: (declaration: LspDeclarationVisibility) => boolean;
   /** Excludes declarations whose language runtime semantics cannot support this fact family. */
   readonly isCandidate?: (name: string, source: string, startIndex: number) => boolean;
   /** Exact server invocation is a language protocol fact, never inferred by the transport. */
@@ -69,7 +95,8 @@ export interface LspSymbolUseDefinition {
   /** Until a real workspace calibration exists, facts remain useful report-only evidence. */
   readonly coverageCeilingReason?: string;
   readonly coverageRisks?: readonly LspCoverageRisk[];
-  /** Source-level constructs that invalidate whole-scope reference completeness. */
+  /** Source-level constructs that invalidate whole-scope reference completeness.
+   *  取证通道是语法查询（`pattern` + `syntax`），不是整份源码文本正则。 */
   readonly sourceRisks?: readonly LspSourceRisk[];
   /** Workspace topology constraints for a calibrated complete-reference scope. */
   readonly workspaceScope?: LspWorkspaceScope;
@@ -212,9 +239,39 @@ const candidatesForQuery = (
     kind: query.kind,
     line: capture.startLine,
     startIndex: capture.startIndex,
-    publicSurface: definition.isInternal(capture.text, source, capture.startIndex) ? "internal" : "declared-public",
+    publicSurface: definition.isInternal({
+      name: capture.text,
+      // 声明查询用可选捕获 `(modifiers)? @modifiers` 取语法节点的修饰符文本；
+      // 捕获缺省 = 该声明没有修饰符节点（不是"取不到"）。
+      modifiers: match.captures.find((item) => item.name === "modifiers")?.text ?? "",
+      source,
+      startIndex: capture.startIndex,
+    }) ? "internal" : "declared-public",
   }];
 });
+
+/**
+ * 对**调用方已持有**的源码文本做查询的首选通道：`queryText` 缺省时回退到读盘的
+ * `query(path, pattern)`（同一个 pattern、同一份 grammar；`query` 内部就是"读文件后转
+ * `queryText`"，所以是等价回退，不是另一套判定）。
+ *
+ * fail-closed：两处都拿不到（调用方实现的 parser 没有 `queryText`、或路径侧读取失败）
+ * 时**失败**向上传播，由 `collectDeclarations` 的 catchAll 把该文件标记为
+ * `incomplete`；绝不返回空数组冒充"没有风险"。
+ *
+ * 边界：held text 是调用方读取时的内容；文件若在"读取后、查询前"被改写，结果对应旧内容——
+ * 这是"用调用方文本"的固有语义，本函数不保证与磁盘一致。
+ */
+const queryForText = (
+  parser: ParserService,
+  file: string,
+  source: string,
+  pattern: string,
+): Effect.Effect<readonly QueryMatch[], ParseError> =>
+  Effect.gen(function* () {
+    if (parser.queryText) return yield* parser.queryText(file, source, pattern);
+    return yield* parser.query(file, pattern);
+  });
 
 const collectDeclarations = (
   parser: ParserService,
@@ -227,14 +284,19 @@ const collectDeclarations = (
     catch: (error) => error,
   }).pipe(
     Effect.flatMap((source) => Effect.all({
-      declarations: Effect.all(definition.declarationQueries.map((query) => parser.query(file, query.pattern).pipe(
+      // 三个查询点都走"调用方已持有的文本"：本文件的正文刚在上一步读过，再让 port 按路径
+      // 读一次盘只是实现副作用（`adapter/parser/TreeSitterRuntime.ts` 的 `query` 内部同样是
+      // 读文件后转 `queryText`）。pattern 与判定回调逐字不变，命中集合因此不变。
+      declarations: Effect.all(definition.declarationQueries.map((query) => queryForText(parser, file, source, query.pattern).pipe(
         Effect.map((matches) => candidatesForQuery(file, source, query, matches, definition, namesByFile?.get(file))),
       )), { concurrency: 1 }),
-      risks: Effect.all((definition.coverageRisks ?? []).map((risk) => parser.query(file, risk.pattern).pipe(
+      // sourceRisks 与 coverageRisks 共用语法查询通道：查询失败（例如语法不可用）会让整个
+      // 文件落入下方 catchAll → incomplete，绝不被当作"没有风险"（fail-closed）。
+      risks: Effect.all((definition.coverageRisks ?? []).map((risk) => queryForText(parser, file, source, risk.pattern).pipe(
         Effect.map((matches) => risk.detected(matches) ? risk.reason : undefined),
-      )).concat((definition.sourceRisks ?? []).map((risk) =>
-        Effect.succeed(risk.detected(source) ? risk.reason : undefined),
-      )), { concurrency: 1 }),
+      )).concat((definition.sourceRisks ?? []).map((risk) => queryForText(parser, file, source, risk.pattern).pipe(
+        Effect.map((matches) => risk.syntax(matches) ? risk.reason : undefined),
+      ))), { concurrency: 1 }),
     }, { concurrency: 1 }).pipe(
       Effect.map(({ declarations, risks }) => ({
         candidates: declarations.flat(), incomplete: false, riskReasons: risks.filter((reason): reason is string => Boolean(reason)),
